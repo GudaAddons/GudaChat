@@ -388,6 +388,287 @@ local function CreateScrollbar(chatFrame)
 end
 
 ---------------------------------------------------------------------------
+-- Chat header bar (hover-reveal, icon buttons)
+---------------------------------------------------------------------------
+
+local ASSET_PATH = "Interface\\AddOns\\GudaChat\\Assets\\"
+local ICON_SIZE = 16
+local HEADER_HEIGHT = 22
+local chatHeader
+
+local function GetChatTabName(index)
+    local tab = _G["ChatFrame" .. index .. "Tab"]
+    if tab then
+        local name = tab.Text and tab.Text:GetText() or tab:GetText()
+        if name and name ~= "" then return name end
+    end
+    return "Chat " .. index
+end
+
+-- Small icon button helper
+local function CreateIconButton(parent, texturePath, size, tooltip)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(size, size)
+
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture(texturePath)
+    icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
+    btn.icon = icon
+
+    btn:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        if tooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(tooltip, 1, 1, 1)
+            GameTooltip:Show()
+        end
+        -- Keep header visible while hovering buttons
+        if chatHeader then chatHeader:SetAlpha(1) end
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
+        GameTooltip:Hide()
+    end)
+
+    return btn
+end
+
+local function CreateChatHeader(parentFrame)
+    local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
+    header:SetHeight(HEADER_HEIGHT)
+    header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -2, 0)
+    header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 2, 0)
+    header:SetFrameStrata("MEDIUM")
+    header:SetFrameLevel(100)
+    header:SetAlpha(0)
+
+    header:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    header:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
+    header:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.5)
+
+    -- Hover detection zone (covers header + chat frame area)
+    local hoverZone = CreateFrame("Frame", nil, UIParent)
+    hoverZone:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
+    hoverZone:SetPoint("BOTTOMRIGHT", parentFrame, "BOTTOMRIGHT", 0, 0)
+    hoverZone:SetFrameStrata("BACKGROUND")
+    hoverZone:EnableMouse(false)
+
+    local fadeIn, fadeOut
+    local isHovering = false
+
+    local function ShowHeader()
+        if isHovering then return end
+        isHovering = true
+        if fadeOut then fadeOut:Stop() end
+        fadeIn = header:CreateAnimationGroup()
+        local anim = fadeIn:CreateAnimation("Alpha")
+        anim:SetFromAlpha(header:GetAlpha())
+        anim:SetToAlpha(1)
+        anim:SetDuration(0.15)
+        fadeIn:SetScript("OnFinished", function() header:SetAlpha(1) end)
+        fadeIn:Play()
+    end
+
+    local function HideHeader()
+        if not isHovering then return end
+        isHovering = false
+        -- Delay hide slightly so moving between buttons doesn't flicker
+        C_Timer.After(0.3, function()
+            if isHovering then return end
+            -- Check if mouse is still over header or chat area
+            if header:IsMouseOver() or parentFrame:IsMouseOver() then
+                isHovering = true
+                return
+            end
+            if fadeIn then fadeIn:Stop() end
+            fadeOut = header:CreateAnimationGroup()
+            local anim = fadeOut:CreateAnimation("Alpha")
+            anim:SetFromAlpha(header:GetAlpha())
+            anim:SetToAlpha(0)
+            anim:SetDuration(0.25)
+            fadeOut:SetScript("OnFinished", function() header:SetAlpha(0) end)
+            fadeOut:Play()
+        end)
+    end
+
+    -- Detect hover via OnUpdate on a monitoring frame
+    local monitor = CreateFrame("Frame")
+    monitor:SetScript("OnUpdate", function()
+        local over = header:IsMouseOver() or parentFrame:IsMouseOver()
+        -- Also check if any dropdown is open
+        local dropdownOpen = GudaChatTabDropdown and GudaChatTabDropdown:IsShown()
+        if over or dropdownOpen then
+            ShowHeader()
+        else
+            HideHeader()
+        end
+    end)
+
+    header:EnableMouse(true)
+
+    -------------------------------------------------------------------
+    -- Left side: Tab switcher icon + dropdown
+    -------------------------------------------------------------------
+    local tabBtn = CreateIconButton(header, ASSET_PATH .. "characters.png", ICON_SIZE, "Chat Tabs")
+    tabBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
+
+    -- Tab dropdown
+    local dropdown = CreateFrame("Frame", "GudaChatTabDropdown", tabBtn, "BackdropTemplate")
+    dropdown:SetFrameStrata("TOOLTIP")
+    dropdown:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    dropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    dropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    dropdown:Hide()
+
+    local menuButtons = {}
+
+    local function CloseDropdown()
+        dropdown:Hide()
+    end
+
+    local function RefreshDropdown()
+        for _, mb in ipairs(menuButtons) do
+            mb:Hide()
+            mb:SetParent(nil)
+        end
+        wipe(menuButtons)
+
+        local yOff = -4
+        local maxW = 60
+
+        for i = 1, NUM_CHAT_WINDOWS do
+            local cf = _G["ChatFrame" .. i]
+            local tab = _G["ChatFrame" .. i .. "Tab"]
+            if cf and tab then
+                local name = GetChatTabName(i)
+                local isDocked = cf.isDocked or (i == 1)
+                if isDocked then
+                    local mb = CreateFrame("Button", nil, dropdown)
+                    mb:SetHeight(20)
+                    mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
+                    mb:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -4, yOff)
+
+                    local mbText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    mbText:SetPoint("LEFT", mb, "LEFT", 6, 0)
+                    mbText:SetText(name)
+
+                    local isActive = (SELECTED_CHAT_FRAME == cf) or (DEFAULT_CHAT_FRAME == cf and i == 1)
+                    mbText:SetTextColor(isActive and 1 or 0.7, isActive and 1 or 0.7, isActive and 1 or 0.7, isActive and 1 or 0.8)
+
+                    mb:SetScript("OnEnter", function()
+                        mbText:SetTextColor(1, 1, 1, 1)
+                    end)
+                    mb:SetScript("OnLeave", function()
+                        local active = (SELECTED_CHAT_FRAME == cf) or (DEFAULT_CHAT_FRAME == cf and i == 1)
+                        if not active then
+                            mbText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+                        end
+                    end)
+
+                    local frameIndex = i
+                    mb:SetScript("OnClick", function()
+                        FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
+                        CloseDropdown()
+                    end)
+
+                    local tw = mbText:GetStringWidth() + 16
+                    if tw > maxW then maxW = tw end
+                    yOff = yOff - 20
+                    tinsert(menuButtons, mb)
+                end
+            end
+        end
+
+        dropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
+        dropdown:ClearAllPoints()
+        dropdown:SetPoint("TOPLEFT", tabBtn, "BOTTOMLEFT", -4, -2)
+    end
+
+    tabBtn:SetScript("OnClick", function()
+        if dropdown:IsShown() then
+            CloseDropdown()
+        else
+            RefreshDropdown()
+            dropdown:Show()
+        end
+    end)
+
+    -- Close dropdown when clicking outside
+    local closer = CreateFrame("Frame", nil, dropdown)
+    closer:SetScript("OnUpdate", function()
+        if dropdown:IsShown() and not dropdown:IsMouseOver() and not tabBtn:IsMouseOver() then
+            if IsMouseButtonDown("LeftButton") then
+                CloseDropdown()
+            end
+        end
+    end)
+
+    -------------------------------------------------------------------
+    -- Left side: Combat log icon
+    -------------------------------------------------------------------
+    local combatBtn = CreateIconButton(header, ASSET_PATH .. "combat.png", ICON_SIZE, "Combat Log")
+    combatBtn:SetPoint("LEFT", tabBtn, "RIGHT", 6, 0)
+
+    combatBtn:SetScript("OnClick", function()
+        if ChatFrame2 then
+            if ChatFrame2:IsShown() then
+                FCF_SelectDockFrame(ChatFrame1)
+            else
+                FCF_SelectDockFrame(ChatFrame2)
+            end
+        end
+    end)
+
+    -- Keep existing OnEnter/OnLeave for icon color + tooltip
+    combatBtn:HookScript("OnClick", function() CloseDropdown() end)
+
+    -------------------------------------------------------------------
+    -- Center: Current tab name
+    -------------------------------------------------------------------
+    local tabLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tabLabel:SetPoint("CENTER", header, "CENTER", 0, 0)
+    tabLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
+    tabLabel:SetText(GetChatTabName(1))
+
+    -- Update label when tabs switch
+    hooksecurefunc("FCF_SelectDockFrame", function(cf)
+        if not cf then return end
+        for i = 1, NUM_CHAT_WINDOWS do
+            if _G["ChatFrame" .. i] == cf then
+                tabLabel:SetText(GetChatTabName(i))
+                break
+            end
+        end
+    end)
+
+    -------------------------------------------------------------------
+    -- Right side: Settings icon
+    -------------------------------------------------------------------
+    local settingsBtn = CreateIconButton(header, ASSET_PATH .. "cog.png", ICON_SIZE, "Settings")
+    settingsBtn:SetPoint("RIGHT", header, "RIGHT", -4, 0)
+
+    settingsBtn:SetScript("OnClick", function()
+        ns.ToggleSettings()
+        CloseDropdown()
+    end)
+
+    chatHeader = header
+    ns.chatHeader = header
+    return header
+end
+
+---------------------------------------------------------------------------
 -- Settings popup
 ---------------------------------------------------------------------------
 
@@ -599,18 +880,38 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             end
         end)
 
-        if FCF_DockUpdate then
-            hooksecurefunc("FCF_DockUpdate", RehideAllTabs)
+        -- Hook all functions that can show/restore tabs
+        local tabHookTargets = {
+            "FCF_DockUpdate",
+            "FCF_SelectDockFrame",
+            "FCF_OpenNewWindow",
+            "FCF_Close",
+            "FCF_DockFrame",
+            "FCF_UnDockFrame",
+            "FCF_SetTabPosition",
+            "FCF_Tab_OnShow",
+        }
+        for _, funcName in ipairs(tabHookTargets) do
+            if _G[funcName] then
+                hooksecurefunc(funcName, RehideAllTabs)
+            end
         end
-        if FCF_SelectDockFrame then
-            hooksecurefunc("FCF_SelectDockFrame", RehideAllTabs)
-        end
+
+        -- Also catch channel events that trigger tab changes
+        local tabWatcher = CreateFrame("Frame")
+        tabWatcher:RegisterEvent("CHANNEL_UI_UPDATE")
+        tabWatcher:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")
+        tabWatcher:RegisterEvent("UPDATE_CHAT_WINDOWS")
+        tabWatcher:SetScript("OnEvent", function()
+            C_Timer.After(0.1, RehideAllTabs)
+        end)
 
         ChatFrame1:SetFading(GudaChatDB.fading)
         ApplyClassColors()
         EnableCopyLinks()
         SetupLinkHook()
         CreateScrollbar(ChatFrame1)
+        CreateChatHeader(ChatFrame1)
 
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r loaded — type |cffffd200/gc|r for settings")
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
