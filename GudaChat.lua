@@ -54,15 +54,139 @@ local function ApplyChatMargins()
     end
 end
 
+---------------------------------------------------------------------------
+-- Emoji Picker
+---------------------------------------------------------------------------
+
+local EMOJI_PICKER_ITEMS = {
+    { plain = ":)",    file = "emoji_smile.png" },
+    { plain = ":(",    file = "emoji_sad.png" },
+    { plain = ":D",    file = "emoji_grin.png" },
+    { plain = ":P",    file = "emoji_tongue.png" },
+    { plain = ";)",    file = "emoji_wink.png" },
+    { plain = ":O",    file = "emoji_surprised.png" },
+    { plain = "xD",    file = "emoji_laugh.png" },
+    { plain = ":'(",   file = "emoji_cry.png" },
+    { plain = ">:(",   file = "emoji_angry.png" },
+    { plain = "B)",    file = "emoji_cool.png" },
+    { plain = "<3",    file = "emoji_heart.png" },
+    { plain = ":+1:",  file = "emoji_thumbsup.png" },
+    { plain = ":-1:",  file = "emoji_thumbsdown.png" },
+    { plain = ":fire:",    file = "emoji_fire.png" },
+    { plain = ":skull:",   file = "emoji_skull.png" },
+    { plain = ":poop:",    file = "emoji_poop.png" },
+    { plain = ":clown:",   file = "emoji_clown.png" },
+    { plain = ":nerd:",    file = "emoji_nerd.png" },
+    { plain = ":eyeroll:", file = "emoji_eyeroll.png" },
+    { plain = ":thinking:",file = "emoji_thinking.png" },
+    { plain = "zzz",       file = "emoji_zzz.png" },
+    { plain = ":star:",    file = "emoji_star.png" },
+    { plain = ":moon:",    file = "emoji_moon.png" },
+    { plain = ":check:",   file = "emoji_check.png" },
+    { plain = ":x:",       file = "emoji_x.png" },
+    { plain = ":diamond:", file = "emoji_diamond.png" },
+    { plain = ":circle:",  file = "emoji_circle.png" },
+    { plain = ":triangle:",file = "emoji_triangle.png" },
+    { plain = ":square:",  file = "emoji_square.png" },
+    { plain = ":cross:",   file = "emoji_cross.png" },
+}
+
+local emojiPickerFrame
+local function CreateEmojiPicker()
+    local COLS = 8
+    local BTN_SIZE = 24
+    local PADDING = 4
+    local MARGIN = 8
+
+    local rows = math.ceil(#EMOJI_PICKER_ITEMS / COLS)
+    local width = MARGIN * 2 + COLS * BTN_SIZE + (COLS - 1) * PADDING
+    local height = MARGIN * 2 + rows * BTN_SIZE + (rows - 1) * PADDING
+
+    local f = CreateFrame("Frame", "GudaChatEmojiPicker", UIParent, "BackdropTemplate")
+    f:SetSize(width, height)
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(200)
+    f:SetClampedToScreen(true)
+
+    f:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    f:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+
+    for i, entry in ipairs(EMOJI_PICKER_ITEMS) do
+        local col = (i - 1) % COLS
+        local row = math.floor((i - 1) / COLS)
+
+        local btn = CreateFrame("Button", nil, f)
+        btn:SetSize(BTN_SIZE, BTN_SIZE)
+        btn:SetPoint("TOPLEFT", f, "TOPLEFT", MARGIN + col * (BTN_SIZE + PADDING), -(MARGIN + row * (BTN_SIZE + PADDING)))
+
+        local tex = btn:CreateTexture(nil, "ARTWORK")
+        tex:SetPoint("CENTER")
+        tex:SetSize(BTN_SIZE - 4, BTN_SIZE - 4)
+        tex:SetTexture("Interface\\AddOns\\GudaChat\\Assets\\" .. entry.file)
+
+        local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints()
+        highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+        highlight:SetVertexColor(1, 1, 1, 0.15)
+
+        btn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(entry.plain, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        btn:SetScript("OnClick", function()
+            if f.editBox then
+                f.editBox:Insert(entry.plain .. " ")
+                f.editBox:SetFocus()
+            end
+            f:Hide()
+        end)
+    end
+
+    f:Hide()
+    tinsert(UISpecialFrames, "GudaChatEmojiPicker")
+    emojiPickerFrame = f
+    return f
+end
+
+function ToggleEmojiPicker(editBox)
+    local picker = emojiPickerFrame or CreateEmojiPicker()
+    if picker:IsShown() then
+        picker:Hide()
+        return
+    end
+
+    picker.editBox = editBox
+    picker:ClearAllPoints()
+    local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
+    if pos == "top" then
+        picker:SetPoint("TOPRIGHT", editBox, "BOTTOMRIGHT", 0, -2)
+    else
+        picker:SetPoint("BOTTOMRIGHT", editBox, "TOPRIGHT", 0, 2)
+    end
+    picker:Show()
+end
+
 local function StyleEditBox(chatFrame, index)
     local eb = _G["ChatFrame" .. index .. "EditBox"]
     if not eb then return end
 
-    -- Strip Blizzard edit box textures
+    -- Strip Blizzard edit box textures (preserve cursor)
     for _, region in pairs({eb:GetRegions()}) do
         if region:GetObjectType() == "Texture" then
-            region:SetTexture(nil)
-            region:Hide()
+            local layer = region:GetDrawLayer()
+            if layer ~= "OVERLAY" then
+                region:SetTexture(nil)
+                region:Hide()
+            end
         end
     end
     local focusLeft = _G["ChatFrame" .. index .. "EditBoxFocusLeft"]
@@ -94,12 +218,36 @@ local function StyleEditBox(chatFrame, index)
         eb.gudaBg = bg
     end
 
-    eb:SetTextInsets(8, 8, 0, 0)
+    eb:SetTextInsets(8, 28, 0, 0)
 
     local header = _G["ChatFrame" .. index .. "EditBoxHeader"]
     if header then
         header:SetTextColor(0.6, 0.6, 0.6)
     end
+
+    -- Emoji picker button
+    local emojiBtn = CreateFrame("Button", nil, eb)
+    emojiBtn:SetSize(18, 18)
+    emojiBtn:SetPoint("RIGHT", eb, "RIGHT", -5, 0)
+
+    local emojiIcon = emojiBtn:CreateTexture(nil, "ARTWORK")
+    emojiIcon:SetAllPoints()
+    emojiIcon:SetTexture("Interface\\AddOns\\GudaChat\\Assets\\emoji_smile.png")
+    emojiIcon:SetAlpha(0.5)
+
+    emojiBtn:SetScript("OnEnter", function() emojiIcon:SetAlpha(1) end)
+    emojiBtn:SetScript("OnLeave", function() emojiIcon:SetAlpha(0.5) end)
+    emojiBtn:SetScript("OnClick", function()
+        ToggleEmojiPicker(eb)
+    end)
+
+    -- Show/hide based on emoji setting
+    if GudaChatDB and GudaChatDB.emojis then
+        emojiBtn:Show()
+    else
+        emojiBtn:Hide()
+    end
+    eb.emojiBtn = emojiBtn
 
     eb:SetAlpha(1)
     eb.chatFrame = chatFrame
@@ -304,6 +452,81 @@ local function EnableCopyLinks()
     ChatFrame_AddMessageEventFilter("CHAT_MSG_INSTANCE_CHAT_LEADER", FilterAddURLLinks)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", FilterAddURLLinks)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", FilterAddURLLinks)
+end
+
+---------------------------------------------------------------------------
+-- Emoji text replacement
+---------------------------------------------------------------------------
+
+local EMOJI_PATH = "Interface\\AddOns\\GudaChat\\Assets\\"
+local DEFAULT_EMOJI_SIZE = 12
+local EMOJI_REPLACEMENTS = {
+    { plain = ":)",   pattern = ":%)",    file = "emoji_smile.png" },
+    { plain = ":(",   pattern = ":%(",    file = "emoji_sad.png" },
+    { plain = ":D",   pattern = ":D",     file = "emoji_grin.png" },
+    { plain = ":P",   pattern = ":P",     file = "emoji_tongue.png" },
+    { plain = ";)",   pattern = ";%)",    file = "emoji_wink.png" },
+    { plain = ":O",   pattern = ":O",     file = "emoji_surprised.png" },
+    { plain = "<3",   pattern = "<3",     file = "emoji_heart.png" },
+    { plain = ":star:",    pattern = ":star:",    file = "emoji_star.png" },
+    { plain = ":skull:",   pattern = ":skull:",   file = "emoji_skull.png" },
+    { plain = ":check:",   pattern = ":check:",   file = "emoji_check.png" },
+    { plain = ":x:",       pattern = ":x:",       file = "emoji_x.png" },
+    { plain = ":moon:",    pattern = ":moon:",    file = "emoji_moon.png" },
+    { plain = ":diamond:", pattern = ":diamond:", file = "emoji_diamond.png" },
+    { plain = ":circle:",  pattern = ":circle:",  file = "emoji_circle.png" },
+    { plain = ":triangle:",pattern = ":triangle:",file = "emoji_triangle.png" },
+    { plain = ":square:",  pattern = ":square:",  file = "emoji_square.png" },
+    { plain = ":cross:",   pattern = ":cross:",   file = "emoji_cross.png" },
+    { plain = "xD",   pattern = "xD",    file = "emoji_laugh.png" },
+    { plain = "XD",   pattern = "XD",    file = "emoji_laugh.png" },
+    { plain = ":'(",  pattern = ":'%(",  file = "emoji_cry.png" },
+    { plain = "zzz",  pattern = "zzz",   file = "emoji_zzz.png" },
+    { plain = ":+1:",  pattern = ":%+1:",  file = "emoji_thumbsup.png" },
+    { plain = ":-1:",  pattern = ":%-1:",  file = "emoji_thumbsdown.png" },
+    { plain = ">:(",  pattern = ">:%(",   file = "emoji_angry.png" },
+    { plain = "B)",   pattern = "B%)",    file = "emoji_cool.png" },
+    { plain = ":fire:",  pattern = ":fire:",  file = "emoji_fire.png" },
+    { plain = ":poop:",  pattern = ":poop:",  file = "emoji_poop.png" },
+    { plain = ":clown:", pattern = ":clown:", file = "emoji_clown.png" },
+    { plain = ":nerd:",  pattern = ":nerd:",  file = "emoji_nerd.png" },
+    { plain = ":eyeroll:", pattern = ":eyeroll:", file = "emoji_eyeroll.png" },
+    { plain = ":thinking:", pattern = ":thinking:", file = "emoji_thinking.png" },
+}
+
+local function FilterAddEmojis(self, event, msg, ...)
+    if not GudaChatDB or not GudaChatDB.emojis then return false end
+
+    local size = GudaChatDB.emojiSize or DEFAULT_EMOJI_SIZE
+    local changed = false
+    for _, entry in ipairs(EMOJI_REPLACEMENTS) do
+        if msg:find(entry.plain, 1, true) then
+            local tex = "|T" .. EMOJI_PATH .. entry.file .. ":" .. size .. "|t"
+            msg = msg:gsub(entry.pattern, tex)
+            changed = true
+        end
+    end
+
+    if changed then
+        return false, msg, ...
+    end
+    return false
+end
+
+local EMOJI_CHANNELS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+    "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
+    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
+    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_CHANNEL",
+}
+
+local function EnableEmojis()
+    for _, channel in ipairs(EMOJI_CHANNELS) do
+        ChatFrame_AddMessageEventFilter(channel, FilterAddEmojis)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -874,6 +1097,79 @@ local function CreateSeparator(parent, label)
     return container
 end
 
+local function CreateSlider(parent, label, minVal, maxVal, step, currentVal, onChange)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetHeight(36)
+
+    local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    text:SetPoint("LEFT", container, "LEFT", 0, 0)
+    text:SetText(label)
+
+    local useModernSlider = DoesTemplateExist and DoesTemplateExist("MinimalSliderWithSteppersTemplate")
+    local slider, valueText
+
+    if useModernSlider then
+        slider = CreateFrame("Slider", nil, container, "MinimalSliderWithSteppersTemplate")
+        slider:SetPoint("LEFT", container, "CENTER", -50, 0)
+        slider:SetPoint("RIGHT", container, "RIGHT", -50, 0)
+        slider:SetHeight(20)
+
+        local steps = (maxVal - minVal) / step
+        slider:Init(currentVal, minVal, maxVal, steps, {
+            [MinimalSliderWithSteppersMixin.Label.Right] = CreateMinimalSliderFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+                return WHITE_FONT_COLOR:WrapTextInColorCode(string.format("%d", value))
+            end)
+        })
+
+        slider:RegisterCallback("OnValueChanged", function(_, value)
+            value = math.floor(value + 0.5)
+            onChange(value)
+        end)
+
+        container.GetValue = function() return slider:GetValue() end
+        container.SetValue = function(_, val) slider:SetValue(val) end
+    else
+        slider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate")
+        slider:SetPoint("LEFT", container, "CENTER", -50, 0)
+        slider:SetPoint("RIGHT", container, "RIGHT", -55, 0)
+        slider:SetMinMaxValues(minVal, maxVal)
+        slider:SetValueStep(step)
+        slider:SetObeyStepOnDrag(true)
+        slider.Text:SetText("")
+        slider.Low:SetText("")
+        slider.High:SetText("")
+        slider:SetValue(currentVal)
+
+        valueText = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        valueText:SetPoint("LEFT", slider, "RIGHT", 5, 0)
+        valueText:SetWidth(40)
+        valueText:SetJustifyH("LEFT")
+        valueText:SetText(currentVal)
+
+        slider:SetScript("OnValueChanged", function(self, value)
+            value = math.floor(value + 0.5)
+            valueText:SetText(value)
+            onChange(value)
+        end)
+
+        container.GetValue = function() return slider:GetValue() end
+        container.SetValue = function(_, val) slider:SetValue(val) end
+    end
+
+    container:EnableMouseWheel(true)
+    container:SetScript("OnMouseWheel", function(self, delta)
+        local current = container.GetValue()
+        local val = current + (delta * step)
+        val = math.max(minVal, math.min(maxVal, val))
+        container.SetValue(nil, val)
+        onChange(math.floor(val + 0.5))
+    end)
+
+    container.slider = slider
+    container.valueText = valueText
+    return container
+end
+
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
     f:SetSize(340, 382)
@@ -947,6 +1243,21 @@ local function CreateSettingsFrame()
         GudaChatDB.copyLinks = checked
     end))
 
+    AddControl(CreateCheckbox(content, "Emojis", GudaChatDB.emojis, function(checked)
+        GudaChatDB.emojis = checked
+        for i = 1, NUM_CHAT_WINDOWS do
+            local eb = _G["ChatFrame" .. i .. "EditBox"]
+            if eb and eb.emojiBtn then
+                if checked then eb.emojiBtn:Show() else eb.emojiBtn:Hide() end
+            end
+        end
+        if not checked and emojiPickerFrame then emojiPickerFrame:Hide() end
+    end))
+
+    AddControl(CreateSlider(content, "Emoji size", 10, 32, 1, GudaChatDB.emojiSize or DEFAULT_EMOJI_SIZE, function(value)
+        GudaChatDB.emojiSize = value
+    end))
+
     -- Section: Input Bar
     AddControl(CreateSeparator(content, "Input Bar"))
 
@@ -1018,6 +1329,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.locked == nil then
             GudaChatDB.locked = false
         end
+        if GudaChatDB.emojis == nil then
+            GudaChatDB.emojis = true
+        end
+        if GudaChatDB.emojiSize == nil then
+            GudaChatDB.emojiSize = DEFAULT_EMOJI_SIZE
+        end
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -1076,6 +1393,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ChatFrame1:SetFading(GudaChatDB.fading)
         ApplyClassColors()
         EnableCopyLinks()
+        EnableEmojis()
         SetupLinkHook()
         CreateScrollbar(ChatFrame1)
         CreateChatHeader(ChatFrame1)
