@@ -1309,6 +1309,130 @@ contextCloser:SetScript("OnUpdate", function()
     end
 end)
 
+---------------------------------------------------------------------------
+-- Combat log filtering (My Actions / What Happened to Me?)
+---------------------------------------------------------------------------
+
+local combatLogFilter = "all" -- "all", "mine", "tome"
+local shouldShowCombatMessage = true
+
+-- Event listener for COMBAT_LOG_EVENT_UNFILTERED
+local combatFilterFrame = CreateFrame("Frame")
+combatFilterFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+combatFilterFrame:SetScript("OnEvent", function()
+    if combatLogFilter == "all" then
+        shouldShowCombatMessage = true
+        return
+    end
+
+    local _, _, _, sourceGUID, _, _, _, destGUID = CombatLogGetCurrentEventInfo()
+    local playerGUID = UnitGUID("player")
+
+    if combatLogFilter == "mine" then
+        shouldShowCombatMessage = (sourceGUID == playerGUID)
+    elseif combatLogFilter == "tome" then
+        shouldShowCombatMessage = (destGUID == playerGUID)
+    end
+end)
+
+-- Override ChatFrame2.AddMessage to filter based on combat log mode
+local origCF2AddMessage
+local function HookCombatLogAddMessage()
+    if not ChatFrame2 then return end
+    if origCF2AddMessage then return end
+    origCF2AddMessage = ChatFrame2.AddMessage
+    ChatFrame2.AddMessage = function(self, ...)
+        if combatLogFilter ~= "all" and not shouldShowCombatMessage then
+            return
+        end
+        return origCF2AddMessage(self, ...)
+    end
+end
+
+-- Subtab bar UI
+local combatSubTabs
+
+local function CreateCombatSubTabs(header)
+    local bar = CreateFrame("Frame", "GudaChatCombatSubTabs", UIParent, "BackdropTemplate")
+    bar:SetHeight(20)
+    bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -1)
+    bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -1)
+    bar:SetFrameStrata("MEDIUM")
+    bar:SetFrameLevel(101)
+
+    bar:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    bar:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    bar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+    bar:EnableMouse(true)
+    bar:SetAlpha(0)
+    bar:Hide()
+
+    local tabs = {}
+    local tabDefs = {
+        { key = "all",  label = "All" },
+        { key = "mine", label = "My Actions" },
+        { key = "tome", label = "What Happened to Me?" },
+    }
+
+    local xOff = 6
+    for _, def in ipairs(tabDefs) do
+        local btn = CreateFrame("Button", nil, bar)
+        btn:SetHeight(16)
+
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+        text:SetText(def.label)
+        btn.text = text
+
+        btn:SetWidth(text:GetStringWidth() + 8)
+        btn:SetPoint("LEFT", bar, "LEFT", xOff, 0)
+        xOff = xOff + btn:GetWidth() + 8
+
+        local function UpdateColors()
+            for _, t in ipairs(tabs) do
+                if t.key == combatLogFilter then
+                    t.btn.text:SetTextColor(1, 1, 1, 1)
+                else
+                    t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                end
+            end
+        end
+
+        btn:SetScript("OnClick", function()
+            combatLogFilter = def.key
+            shouldShowCombatMessage = true
+            UpdateColors()
+        end)
+
+        btn:SetScript("OnEnter", function(self)
+            self.text:SetTextColor(0.9, 0.9, 0.9, 1)
+            if chatHeader then chatHeader:SetAlpha(1) end
+        end)
+        btn:SetScript("OnLeave", function()
+            UpdateColors()
+        end)
+
+        tinsert(tabs, { key = def.key, btn = btn })
+    end
+
+    -- Set initial colors
+    for _, t in ipairs(tabs) do
+        if t.key == combatLogFilter then
+            t.btn.text:SetTextColor(1, 1, 1, 1)
+        else
+            t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+        end
+    end
+
+    combatSubTabs = bar
+    return bar
+end
+
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
@@ -1346,8 +1470,12 @@ local function CreateChatHeader(parentFrame)
         anim:SetFromAlpha(header:GetAlpha())
         anim:SetToAlpha(1)
         anim:SetDuration(0.15)
-        fadeIn:SetScript("OnFinished", function() header:SetAlpha(1) end)
+        fadeIn:SetScript("OnFinished", function()
+            header:SetAlpha(1)
+            if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(1) end
+        end)
         fadeIn:Play()
+        if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
         if ns.scrollbar then ns.scrollbar.FadeIn() end
     end
 
@@ -1357,8 +1485,9 @@ local function CreateChatHeader(parentFrame)
         -- Delay hide slightly so moving between buttons doesn't flicker
         C_Timer.After(0.3, function()
             if isHovering then return end
-            -- Check if mouse is still over header or chat area
-            if header:IsMouseOver() or parentFrame:IsMouseOver() then
+            -- Check if mouse is still over header, chat area, or subtabs
+            if header:IsMouseOver() or parentFrame:IsMouseOver()
+                or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver()) then
                 isHovering = true
                 return
             end
@@ -1368,8 +1497,12 @@ local function CreateChatHeader(parentFrame)
             anim:SetFromAlpha(header:GetAlpha())
             anim:SetToAlpha(0)
             anim:SetDuration(0.25)
-            fadeOut:SetScript("OnFinished", function() header:SetAlpha(0) end)
+            fadeOut:SetScript("OnFinished", function()
+                header:SetAlpha(0)
+                if combatSubTabs then combatSubTabs:SetAlpha(0) end
+            end)
             fadeOut:Play()
+            if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
             if ns.scrollbar then ns.scrollbar.FadeOut() end
         end)
     end
@@ -1378,6 +1511,7 @@ local function CreateChatHeader(parentFrame)
     local monitor = CreateFrame("Frame")
     monitor:SetScript("OnUpdate", function()
         local over = header:IsMouseOver() or parentFrame:IsMouseOver()
+            or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver())
         -- Also check if any dropdown is open (our custom or Blizzard's)
         local dropdownOpen = GudaChatTabDropdown and GudaChatTabDropdown:IsShown()
         local blizzDropdownOpen = DropDownList1 and DropDownList1:IsShown()
@@ -1428,7 +1562,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Left side: Tab switcher icon + dropdown
     -------------------------------------------------------------------
-    local tabBtn = CreateIconButton(header, ASSET_PATH .. "characters.png", ICON_SIZE, "Chat Tabs")
+    local tabBtn = CreateIconButton(header, ASSET_PATH .. "logo.png", ICON_SIZE, "Chat Tabs")
     tabBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
 
     -- Tab dropdown
@@ -1607,6 +1741,26 @@ local function CreateChatHeader(parentFrame)
     settingsBtn:SetScript("OnClick", function()
         ns.ToggleSettings()
         CloseDropdown()
+    end)
+
+    -------------------------------------------------------------------
+    -- Combat log subtabs
+    -------------------------------------------------------------------
+    CreateCombatSubTabs(header)
+    HookCombatLogAddMessage()
+
+    -- Show/hide subtab bar when switching tabs
+    hooksecurefunc("FCF_SelectDockFrame", function(cf)
+        if combatSubTabs then
+            if cf == ChatFrame2 then
+                combatSubTabs:Show()
+            else
+                combatSubTabs:Hide()
+                -- Reset filter when leaving combat log
+                combatLogFilter = "all"
+                shouldShowCombatMessage = true
+            end
+        end
     end)
 
     chatHeader = header
