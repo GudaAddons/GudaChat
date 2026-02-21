@@ -898,8 +898,25 @@ local function CreateScrollbar(chatFrame)
         end
     end)
 
-    ns.scrollbar = slider
     return slider
+end
+
+local function FadeInScrollbar()
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf and cf.gudaScrollbar and cf:IsVisible() then
+            cf.gudaScrollbar.FadeIn()
+        end
+    end
+end
+
+local function FadeOutScrollbar()
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf and cf.gudaScrollbar and cf:IsVisible() then
+            cf.gudaScrollbar.FadeOut()
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1662,9 +1679,13 @@ local function ReplayHistory()
     local start = math.max(1, #all - 9)
 
     ChatFrame1:AddMessage("|cff555555--- previous session ---|r")
+    if GudaChatDB.whisperTab and ns.whisperFrame then
+        ns.whisperFrame:AddMessage("|cff555555--- previous session ---|r")
+    end
 
     local tsFmt = GetCVar("showTimestamps")
     if tsFmt == "none" then tsFmt = nil end
+    local dim = 0.5
 
     for i = start, #all do
         local entry = all[i]
@@ -1672,13 +1693,14 @@ local function ReplayHistory()
         local info = chatType and ChatTypeInfo[chatType]
         local r, g, b = 0.6, 0.6, 0.6
         if info then r, g, b = info.r, info.g, info.b end
+        r, g, b = r * dim, g * dim, b * dim
 
         local senderName = entry.sender:match("^([^%-]+)") or entry.sender
         local nameLink
         if GudaChatDB.classColors and entry.class and RAID_CLASS_COLORS[entry.class] then
             local cc = RAID_CLASS_COLORS[entry.class]
             nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
-                cc.r*255, cc.g*255, cc.b*255, entry.sender, senderName)
+                cc.r*dim*255, cc.g*dim*255, cc.b*dim*255, entry.sender, senderName)
         else
             nameLink = string.format("|Hplayer:%s|h[%s]|h", entry.sender, senderName)
         end
@@ -1687,30 +1709,26 @@ local function ReplayHistory()
         local levelStr = ""
         if entry.level then
             local lr, lg, lb = GetLevelDifficultyColor(entry.level)
-            levelStr = string.format("|cff%02x%02x%02x[%d]|r ", lr*255, lg*255, lb*255, entry.level)
+            levelStr = string.format("|cff%02x%02x%02x[%d]|r ", lr*dim*255, lg*dim*255, lb*dim*255, entry.level)
         end
 
         -- Timestamp
         local timePrefix = ""
         if tsFmt then
-            timePrefix = "|cff999999" .. date(tsFmt, entry.time) .. "|r"
+            timePrefix = "|cff4d4d4d" .. date(tsFmt, entry.time) .. "|r"
         end
 
         -- Format like original WoW chat using CHAT_X_GET patterns
         local body
         if entry.channel == "Whisper" and entry.outgoing then
-            -- "To [PlayerName]: [70] message"
             body = string.format("To %s: %s%s", nameLink, levelStr, entry.message)
         elseif entry.channel == "Whisper" then
-            -- "[PlayerName] whispers: [70] message"
             body = string.format("%s whispers: %s%s", nameLink, levelStr, entry.message)
         else
             local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
             if verb then
-                -- "PlayerName says/yells: [70] message"
                 body = string.format("%s %s: %s%s", nameLink, verb, levelStr, entry.message)
             else
-                -- "[Channel] PlayerName: [70] message"
                 body = string.format("[%s] %s: %s%s", entry.channel, nameLink, levelStr, entry.message)
             end
         end
@@ -1718,6 +1736,9 @@ local function ReplayHistory()
         body = timePrefix .. body
 
         ChatFrame1:AddMessage(body, r, g, b)
+        if entry.channel == "Whisper" and GudaChatDB.whisperTab and ns.whisperFrame then
+            ns.whisperFrame:AddMessage(body, r, g, b)
+        end
     end
 end
 
@@ -1764,7 +1785,7 @@ local function CreateChatHeader(parentFrame)
         end)
         fadeIn:Play()
         if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
-        if ns.scrollbar then ns.scrollbar.FadeIn() end
+        FadeInScrollbar()
     end
 
     local function HideHeader()
@@ -1793,7 +1814,7 @@ local function CreateChatHeader(parentFrame)
             end)
             fadeOut:Play()
             if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
-            if ns.scrollbar then ns.scrollbar.FadeOut() end
+            FadeOutScrollbar()
         end)
     end
 
