@@ -23,11 +23,11 @@ local function PositionEditBox(chatFrame, index, position)
     if not eb then return end
     eb:ClearAllPoints()
     if position == "top" then
-        eb:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -2, 4)
-        eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 2, 4)
+        eb:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -4, 4)
+        eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 4, 4)
     else
-        eb:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -2, -4)
-        eb:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 2, -4)
+        eb:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -4, -4)
+        eb:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 4, -4)
     end
 end
 
@@ -39,8 +39,8 @@ local function ApplyChatMargins()
     local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
     local topPad = (pos == "top") and INPUT_BAR_MARGIN or 0
     local botPad = (pos == "bottom") and INPUT_BAR_MARGIN or 0
-    local topClamp = (pos == "top") and 32 or 0
-    local botClamp = (pos == "bottom") and INPUT_BAR_CLAMP or 0
+    local topClamp = (pos == "top") and 32 or 4
+    local botClamp = (pos == "bottom") and INPUT_BAR_CLAMP or 4
 
     for i = 1, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
@@ -48,7 +48,7 @@ local function ApplyChatMargins()
             if cf.SetTextInsets then
                 cf:SetTextInsets(0, 0, topPad, botPad)
             end
-            cf:SetClampRectInsets(0, 0, topClamp, -botClamp)
+            cf:SetClampRectInsets(-4, 4, topClamp, -botClamp)
             cf:SetClampedToScreen(true)
         end
     end
@@ -106,7 +106,7 @@ local function StyleEditBox(chatFrame, index)
 
     eb:HookScript("OnEditFocusGained", function(self)
         if self.gudaBg then
-            self.gudaBg:SetBackdropBorderColor(0.4, 0.7, 1.0, 0.8)
+            self.gudaBg:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
         end
     end)
     eb:HookScript("OnEditFocusLost", function(self)
@@ -184,7 +184,7 @@ local function ShowCopyPopup(text)
             insets = { left = 1, right = 1, top = 1, bottom = 1 },
         })
         f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-        f:SetBackdropBorderColor(0.4, 0.7, 1.0, 0.8)
+        f:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
         f:EnableMouse(true)
         f:SetMovable(true)
         f:RegisterForDrag("LeftButton")
