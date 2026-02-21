@@ -440,7 +440,6 @@ local combatLogFilter = "all"
 local shouldShowCombatMessage = true
 
 local combatFilterFrame = CreateFrame("Frame")
-combatFilterFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 combatFilterFrame:SetScript("OnEvent", function()
     if combatLogFilter == "all" then
         shouldShowCombatMessage = true
@@ -603,8 +602,6 @@ ns.SetupWhisperFrame = SetupWhisperFrame
 
 -- Listen for incoming whispers to trigger blink notification
 local whisperListener = CreateFrame("Frame")
-whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
-whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
 whisperListener:SetScript("OnEvent", function()
     if not GudaChatDB or not GudaChatDB.whisperTab then return end
     if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
@@ -1199,6 +1196,12 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     CreateCombatSubTabs(header)
     HookCombatLogAddMessage()
+    -- COMBAT_LOG_EVENT_UNFILTERED is restricted in Retail; only register where available
+    if CombatLogGetCurrentEventInfo and (select(4, GetBuildInfo()) or 0) < 110000 then
+        combatFilterFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
+    whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
 
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if combatSubTabs then

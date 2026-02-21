@@ -45,9 +45,6 @@ local HISTORY_EVENTS = {
     "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
     "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
 }
-for _, ev in ipairs(HISTORY_EVENTS) do
-    historyCaptureFrame:RegisterEvent(ev)
-end
 historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.historyEnabled then return end
     local channelKey = event:gsub("CHAT_MSG_", "")
@@ -87,6 +84,12 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         tremove(bucket, 1)
     end
 end)
+
+function ns.RegisterHistoryEvents()
+    for _, ev in ipairs(HISTORY_EVENTS) do
+        historyCaptureFrame:RegisterEvent(ev)
+    end
+end
 
 ---------------------------------------------------------------------------
 -- Replay history on login

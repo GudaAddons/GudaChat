@@ -147,6 +147,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.EnableCopyLinks()
         ns.EnableEmojis()
         ns.SetupLinkHook()
+        ns.RegisterHistoryEvents()
         ns.ForEachChatWindow(function(cf)
             ns.CreateScrollbar(cf)
             if GudaChatDB.hideScrollbar and cf.gudaScrollbar then
