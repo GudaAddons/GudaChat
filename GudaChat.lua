@@ -1548,6 +1548,59 @@ whisperListener:SetScript("OnEvent", function()
     end
 end)
 
+-- History channel mapping and filter keys
+local HISTORY_CHANNEL_LABELS = {
+    SAY = "Say", YELL = "Yell", GUILD = "Guild", OFFICER = "Officer",
+    WHISPER = "Whisper", WHISPER_INFORM = "Whisper",
+    PARTY = "Party", PARTY_LEADER = "Party",
+    RAID = "Raid", RAID_LEADER = "Raid",
+    INSTANCE_CHAT = "Instance", INSTANCE_CHAT_LEADER = "Instance",
+    BN_WHISPER = "Whisper", BN_WHISPER_INFORM = "Whisper",
+}
+
+local HISTORY_FILTER_KEYS = {
+    "Say", "Yell", "Guild", "Officer", "Whisper", "Party", "Raid", "Instance",
+}
+
+-- Message capture for chat history
+local historyCaptureFrame = CreateFrame("Frame")
+local HISTORY_EVENTS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
+    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
+}
+for _, ev in ipairs(HISTORY_EVENTS) do
+    historyCaptureFrame:RegisterEvent(ev)
+end
+historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
+    if not GudaChatDB or not GudaChatDB.historyEnabled then return end
+    local channelKey = event:gsub("CHAT_MSG_", "")
+    local label = HISTORY_CHANNEL_LABELS[channelKey]
+    if not label then return end
+
+    local bucket = GudaChatDB.history[label]
+    if not bucket then
+        GudaChatDB.history[label] = {}
+        bucket = GudaChatDB.history[label]
+    end
+
+    tinsert(bucket, {
+        time = time(),
+        channel = label,
+        sender = sender or "",
+        message = msg or "",
+    })
+
+    -- Trim oldest entries per channel
+    local maxPerChannel = math.floor((GudaChatDB.historyMax or 500) / #HISTORY_FILTER_KEYS)
+    while #bucket > maxPerChannel do
+        tremove(bucket, 1)
+    end
+end)
+
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
@@ -1962,10 +2015,21 @@ local function CreateChatHeader(parentFrame)
     end)
 
     -------------------------------------------------------------------
+    -- Right side: History icon
+    -------------------------------------------------------------------
+    local historyBtn = CreateIconButton(header, ASSET_PATH .. "history.png", ICON_SIZE - 1, "History")
+    historyBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
+
+    historyBtn:SetScript("OnClick", function()
+        ns.ToggleHistory()
+        CloseDropdown()
+    end)
+
+    -------------------------------------------------------------------
     -- Right side: Chat Type (emote) icon
     -------------------------------------------------------------------
     local chatTypeBtn = CreateIconButton(header, ASSET_PATH .. "chat.png", ICON_SIZE - 1, "Chat Type")
-    chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
+    chatTypeBtn:SetPoint("RIGHT", historyBtn, "LEFT", -6, 0)
 
     local chatTypeDropdown = CreateFrame("Frame", "GudaChatTypeDropdown", chatTypeBtn, "BackdropTemplate")
     chatTypeDropdown:SetFrameStrata("TOOLTIP")
@@ -2368,9 +2432,28 @@ local function CreateDropdown(parent, label, options, currentValue, onChange)
     return container
 end
 
+StaticPopupDialogs["GUDACHAT_CLEAR_HISTORY"] = {
+    text = "Are you sure you want to clear all chat history?",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    OnAccept = function()
+        if GudaChatDB and GudaChatDB.history then
+            for k in pairs(GudaChatDB.history) do
+                wipe(GudaChatDB.history[k])
+            end
+        end
+        if historyFrame and historyFrame.RefreshHistory then
+            historyFrame:RefreshHistory()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(340, 540)
+    f:SetSize(340, 460)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -2402,104 +2485,194 @@ local function CreateSettingsFrame()
         f:SetUserPlaced(false)
     end)
 
-    -- Content area
-    local content = CreateFrame("Frame", nil, f)
-    content:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -32)
-    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
-
-    -- Build controls with vertical stacking
-    local yOffset = 0
-    local controls = {}
-
-    local function AddControl(widget)
-        widget:SetParent(content)
-        widget:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -yOffset)
-        widget:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -yOffset)
-        yOffset = yOffset + widget:GetHeight() + 8
-        tinsert(controls, widget)
+    -------------------------------------------------------------------
+    -- Tabs (Blizzard style)
+    -------------------------------------------------------------------
+    local tabTemplate
+    if DoesTemplateExist and DoesTemplateExist("PanelTopTabButtonTemplate") then
+        tabTemplate = "PanelTopTabButtonTemplate"
+    else
+        tabTemplate = "TabButtonTemplate"
     end
 
-    -- Section: Chat Window
-    AddControl(CreateSeparator(content, "Chat Window"))
+    local tabDefs = { "General", "Messages", "History" }
+    local tabPanels = {}
+    local tabs = {}
 
-    AddControl(CreateCheckbox(content, "Lock chat position", GudaChatDB.locked, function(checked)
-        GudaChatDB.locked = checked
-        ApplyLockState()
-    end))
-
-    AddControl(CreateCheckbox(content, "Disable message fading", not GudaChatDB.fading, function(checked)
-        GudaChatDB.fading = not checked
-        ChatFrame1:SetFading(GudaChatDB.fading)
-    end))
-
-    -- Section: Messages
-    AddControl(CreateSeparator(content, "Messages"))
-
-    AddControl(CreateCheckbox(content, "Class colored names", GudaChatDB.classColors, function(checked)
-        GudaChatDB.classColors = checked
-        ApplyClassColors()
-    end))
-
-    AddControl(CreateCheckbox(content, "Show player level", GudaChatDB.showLevel, function(checked)
-        GudaChatDB.showLevel = checked
-    end))
-
-    AddControl(CreateCheckbox(content, "Copyable links", GudaChatDB.copyLinks, function(checked)
-        GudaChatDB.copyLinks = checked
-    end))
-
-    local currentTimestamp = GetCVar("showTimestamps") or "none"
-    AddControl(CreateDropdown(content, "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
-        SetCVar("showTimestamps", value)
-    end))
-
-    -- Section: Emojis
-    AddControl(CreateSeparator(content, "Emojis"))
-
-    AddControl(CreateCheckbox(content, "Enable emojis", GudaChatDB.emojis, function(checked)
-        GudaChatDB.emojis = checked
-        for i = 1, NUM_CHAT_WINDOWS do
-            local eb = _G["ChatFrame" .. i .. "EditBox"]
-            if eb and eb.emojiBtn then
-                if checked then eb.emojiBtn:Show() else eb.emojiBtn:Hide() end
-            end
-        end
-        if not checked and emojiPickerFrame then emojiPickerFrame:Hide() end
-    end))
-
-    AddControl(CreateSlider(content, "Emoji size", 10, 32, 1, GudaChatDB.emojiSize or DEFAULT_EMOJI_SIZE, function(value)
-        GudaChatDB.emojiSize = value
-    end))
-
-    -- Section: Tabs
-    AddControl(CreateSeparator(content, "Tabs"))
-
-    AddControl(CreateCheckbox(content, "Whisper tab", GudaChatDB.whisperTab, function(checked)
-        GudaChatDB.whisperTab = checked
-        if checked then
-            SetupWhisperFrame()
-            if ns.whisperBtn then ns.whisperBtn:Show() end
+    for i, label in ipairs(tabDefs) do
+        local tab = CreateFrame("Button", "GudaChatSettingsPopupTab" .. i, f, tabTemplate)
+        if i == 1 then
+            tab:SetPoint("TOPLEFT", f, "TOPLEFT", 5, -24)
         else
-            if ns.whisperFrame and ns.whisperFrame:IsShown() then
-                FCF_SelectDockFrame(ChatFrame1)
+            tab:SetPoint("TOPLEFT", tabs[i - 1], "TOPRIGHT", 4, 0)
+        end
+        tab:SetText(label)
+        tab:SetID(i)
+        tab:SetScript("OnShow", function(self)
+            PanelTemplates_TabResize(self, 8, nil, 36)
+            PanelTemplates_DeselectTab(self)
+        end)
+        tabs[i] = tab
+    end
+
+    PanelTemplates_SetNumTabs(f, #tabDefs)
+
+    -- Create tab content panels
+    for i = 1, #tabDefs do
+        local panel = CreateFrame("Frame", nil, f)
+        panel:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -60)
+        panel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
+        panel:Hide()
+        tabPanels[i] = panel
+    end
+
+    local function SelectSettingsTab(id)
+        PanelTemplates_SetTab(f, id)
+        for i, panel in ipairs(tabPanels) do
+            if i == id then panel:Show() else panel:Hide() end
+        end
+    end
+
+    for i, tab in ipairs(tabs) do
+        tab:SetScript("OnClick", function() SelectSettingsTab(i) end)
+    end
+
+    -------------------------------------------------------------------
+    -- Helper: build controls in a panel
+    -------------------------------------------------------------------
+    local function BuildPanel(panel)
+        local yOff = 0
+        local ctrls = {}
+        local function Add(widget)
+            widget:SetParent(panel)
+            widget:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -yOff)
+            widget:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -yOff)
+            yOff = yOff + widget:GetHeight() + 8
+            tinsert(ctrls, widget)
+        end
+        return Add, ctrls
+    end
+
+    -------------------------------------------------------------------
+    -- Tab 1: General
+    -------------------------------------------------------------------
+    do
+        local Add = BuildPanel(tabPanels[1])
+
+        Add(CreateSeparator(tabPanels[1], "Chat Window"))
+
+        Add(CreateCheckbox(tabPanels[1], "Lock chat position", GudaChatDB.locked, function(checked)
+            GudaChatDB.locked = checked
+            ApplyLockState()
+        end))
+
+        Add(CreateCheckbox(tabPanels[1], "Disable message fading", not GudaChatDB.fading, function(checked)
+            GudaChatDB.fading = not checked
+            ChatFrame1:SetFading(GudaChatDB.fading)
+        end))
+
+        local currentTimestamp = GetCVar("showTimestamps") or "none"
+        Add(CreateDropdown(tabPanels[1], "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
+            SetCVar("showTimestamps", value)
+        end))
+
+        Add(CreateSeparator(tabPanels[1], "Input Bar"))
+
+        Add(CreateCheckbox(tabPanels[1], "Show input bar on top", GudaChatDB.inputPosition == "top", function(checked)
+            GudaChatDB.inputPosition = checked and "top" or "bottom"
+            for i = 1, NUM_CHAT_WINDOWS do
+                PositionEditBox(_G["ChatFrame" .. i], i, GudaChatDB.inputPosition)
             end
-            if ns.whisperBtn then ns.whisperBtn:Hide() end
-        end
-    end))
+            ApplyChatMargins()
+        end))
 
-    -- Section: Input Bar
-    AddControl(CreateSeparator(content, "Input Bar"))
+        Add(CreateSeparator(tabPanels[1], "Tabs"))
 
-    local inputTopCb = CreateCheckbox(content, "Show input bar on top", GudaChatDB.inputPosition == "top", function(checked)
-        GudaChatDB.inputPosition = checked and "top" or "bottom"
-        for i = 1, NUM_CHAT_WINDOWS do
-            PositionEditBox(_G["ChatFrame" .. i], i, GudaChatDB.inputPosition)
-        end
-        ApplyChatMargins()
-    end)
-    AddControl(inputTopCb)
+        Add(CreateCheckbox(tabPanels[1], "Whisper tab", GudaChatDB.whisperTab, function(checked)
+            GudaChatDB.whisperTab = checked
+            if checked then
+                SetupWhisperFrame()
+                if ns.whisperBtn then ns.whisperBtn:Show() end
+            else
+                if ns.whisperFrame and ns.whisperFrame:IsShown() then
+                    FCF_SelectDockFrame(ChatFrame1)
+                end
+                if ns.whisperBtn then ns.whisperBtn:Hide() end
+            end
+        end))
+    end
 
-    f.controls = controls
+    -------------------------------------------------------------------
+    -- Tab 2: Messages
+    -------------------------------------------------------------------
+    do
+        local Add = BuildPanel(tabPanels[2])
+
+        Add(CreateSeparator(tabPanels[2], "Messages"))
+
+        Add(CreateCheckbox(tabPanels[2], "Class colored names", GudaChatDB.classColors, function(checked)
+            GudaChatDB.classColors = checked
+            ApplyClassColors()
+        end))
+
+        Add(CreateCheckbox(tabPanels[2], "Show player level", GudaChatDB.showLevel, function(checked)
+            GudaChatDB.showLevel = checked
+        end))
+
+        Add(CreateCheckbox(tabPanels[2], "Copyable links", GudaChatDB.copyLinks, function(checked)
+            GudaChatDB.copyLinks = checked
+        end))
+
+        Add(CreateSeparator(tabPanels[2], "Emojis"))
+
+        Add(CreateCheckbox(tabPanels[2], "Enable emojis", GudaChatDB.emojis, function(checked)
+            GudaChatDB.emojis = checked
+            for i = 1, NUM_CHAT_WINDOWS do
+                local eb = _G["ChatFrame" .. i .. "EditBox"]
+                if eb and eb.emojiBtn then
+                    if checked then eb.emojiBtn:Show() else eb.emojiBtn:Hide() end
+                end
+            end
+            if not checked and emojiPickerFrame then emojiPickerFrame:Hide() end
+        end))
+
+        Add(CreateSlider(tabPanels[2], "Emoji size", 10, 32, 1, GudaChatDB.emojiSize or DEFAULT_EMOJI_SIZE, function(value)
+            GudaChatDB.emojiSize = value
+        end))
+    end
+
+    -------------------------------------------------------------------
+    -- Tab 3: History
+    -------------------------------------------------------------------
+    do
+        local Add = BuildPanel(tabPanels[3])
+
+        Add(CreateSeparator(tabPanels[3], "History"))
+
+        Add(CreateCheckbox(tabPanels[3], "Enable history", GudaChatDB.historyEnabled ~= false, function(checked)
+            GudaChatDB.historyEnabled = checked
+        end))
+
+        Add(CreateSlider(tabPanels[3], "Max messages", 100, 2000, 100, GudaChatDB.historyMax or 500, function(value)
+            GudaChatDB.historyMax = value
+        end))
+
+        local clearBtn = CreateFrame("Button", nil, tabPanels[3], "UIPanelButtonTemplate")
+        clearBtn:SetSize(120, 24)
+        clearBtn:SetText("Clear History")
+        local clearContainer = CreateFrame("Frame", nil, tabPanels[3])
+        clearContainer:SetHeight(30)
+        clearBtn:SetParent(clearContainer)
+        clearBtn:SetPoint("LEFT", clearContainer, "LEFT", 0, 0)
+        clearBtn:SetScript("OnClick", function()
+            StaticPopup_Show("GUDACHAT_CLEAR_HISTORY")
+        end)
+        Add(clearContainer)
+    end
+
+    -- Default to General tab
+    SelectSettingsTab(1)
+
     f:Hide()
     return f
 end
@@ -2516,6 +2689,365 @@ local function ToggleSettings()
 end
 
 ns.ToggleSettings = ToggleSettings
+
+---------------------------------------------------------------------------
+-- Chat History
+---------------------------------------------------------------------------
+
+local historyFrame
+
+local function CreateHistoryFrame()
+    local f = CreateFrame("Frame", "GudaChatHistoryPopup", UIParent, "ButtonFrameTemplate")
+    f:SetSize(500, 500)
+    f:SetPoint("CENTER")
+    f:SetMovable(true)
+    f:SetClampedToScreen(true)
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(200)
+    f:EnableMouse(true)
+
+    tinsert(UISpecialFrames, "GudaChatHistoryPopup")
+
+    ButtonFrameTemplate_HidePortrait(f)
+    ButtonFrameTemplate_HideButtonBar(f)
+    if f.Inset then f.Inset:Hide() end
+
+    f:SetTitle("GudaChat History")
+
+    -- Drag region
+    local drag = CreateFrame("Frame", nil, f)
+    drag:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+    drag:SetPoint("TOPRIGHT", f, "TOPRIGHT", -28, 0)
+    drag:SetHeight(24)
+    drag:EnableMouse(true)
+    drag:RegisterForDrag("LeftButton")
+    drag:SetScript("OnDragStart", function()
+        f:StartMoving()
+        f:SetUserPlaced(false)
+    end)
+    drag:SetScript("OnDragStop", function()
+        f:StopMovingOrSizing()
+        f:SetUserPlaced(false)
+    end)
+
+    -- Content area (below channel tabs)
+    local content = CreateFrame("Frame", nil, f)
+    content:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -60)
+    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
+
+    -------------------------------------------------------------------
+    -- Channel filter tabs (Blizzard tab style)
+    -------------------------------------------------------------------
+    local selectedFilter = "All"
+
+    local tabTemplate
+    if DoesTemplateExist and DoesTemplateExist("PanelTopTabButtonTemplate") then
+        tabTemplate = "PanelTopTabButtonTemplate"
+    else
+        tabTemplate = "TabButtonTemplate"
+    end
+
+    local channelTabDefs = {
+        { key = "All",      short = "All" },
+        { key = "Say",      short = "S" },
+        { key = "Yell",     short = "Y" },
+        { key = "Guild",    short = "G" },
+        { key = "Officer",  short = "O" },
+        { key = "Whisper",  short = "W" },
+        { key = "Party",    short = "P" },
+        { key = "Raid",     short = "R" },
+        { key = "Instance", short = "I" },
+    }
+
+    local channelTabs = {}
+    for i, def in ipairs(channelTabDefs) do
+        local tab = CreateFrame("Button", "GudaChatHistoryPopupTab" .. i, f, tabTemplate)
+        if i == 1 then
+            tab:SetPoint("TOPLEFT", f, "TOPLEFT", 5, -24)
+        else
+            tab:SetPoint("TOPLEFT", channelTabs[i - 1], "TOPRIGHT", 4, 0)
+        end
+        tab:SetText(def.short)
+        tab:SetID(i)
+        tab:SetScript("OnShow", function(self)
+            PanelTemplates_TabResize(self, 4, nil, 10)
+            PanelTemplates_DeselectTab(self)
+        end)
+
+        tab:HookScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(def.key, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        tab:HookScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+
+        channelTabs[i] = tab
+    end
+
+    PanelTemplates_SetNumTabs(f, #channelTabDefs)
+
+    local function SelectChannelTab(id)
+        PanelTemplates_SetTab(f, id)
+        selectedFilter = channelTabDefs[id].key
+        if f.RefreshHistory then f:RefreshHistory() end
+    end
+
+    for i, tab in ipairs(channelTabs) do
+        tab:SetScript("OnClick", function() SelectChannelTab(i) end)
+    end
+
+    -- Search box
+    local searchBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
+    searchBox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    searchBox:SetPoint("TOPRIGHT", content, "TOPRIGHT", -50, 0)
+    searchBox:SetHeight(22)
+    searchBox:SetFontObject(ChatFontNormal)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    searchBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
+    searchBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    searchBox:SetTextInsets(6, 6, 0, 0)
+
+    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    placeholder:SetPoint("LEFT", searchBox, "LEFT", 8, 0)
+    placeholder:SetText("Search...")
+    searchBox:SetScript("OnEditFocusGained", function(self)
+        placeholder:Hide()
+        self:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
+    end)
+    searchBox:SetScript("OnEditFocusLost", function(self)
+        if self:GetText() == "" then placeholder:Show() end
+        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    -- Copy button (opens selectable copy window)
+    local copyBtn = CreateFrame("Button", nil, content)
+    copyBtn:SetSize(44, 22)
+    copyBtn:SetPoint("LEFT", searchBox, "RIGHT", 4, 0)
+    local copyBtnText = copyBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    copyBtnText:SetPoint("CENTER")
+    copyBtnText:SetText("Copy")
+    copyBtnText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+    copyBtn:SetScript("OnEnter", function()
+        copyBtnText:SetTextColor(1, 0.8, 0, 1)
+        GameTooltip:SetOwner(copyBtn, "ANCHOR_TOP")
+        GameTooltip:SetText("Copy visible messages", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    copyBtn:SetScript("OnLeave", function()
+        copyBtnText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+        GameTooltip:Hide()
+    end)
+
+    -- ScrollingMessageFrame for colored display
+    local msgFrame = CreateFrame("ScrollingMessageFrame", "GudaChatHistoryMsgFrame", content)
+    msgFrame:SetPoint("TOPLEFT", searchBox, "BOTTOMLEFT", 0, -4)
+    msgFrame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+    msgFrame:SetFontObject(GameFontNormal)
+    msgFrame:SetJustifyH("LEFT")
+    msgFrame:SetFading(false)
+    msgFrame:SetMaxLines(2000)
+    msgFrame:SetIndentedWordWrap(true)
+    msgFrame:EnableMouseWheel(true)
+    msgFrame:SetHyperlinksEnabled(true)
+    msgFrame:SetScript("OnMouseWheel", function(self, delta)
+        if delta > 0 then
+            self:ScrollUp()
+            self:ScrollUp()
+            self:ScrollUp()
+        else
+            self:ScrollDown()
+            self:ScrollDown()
+            self:ScrollDown()
+        end
+    end)
+
+    -- Gather and format entries
+    local function GatherEntries()
+        local results = {}
+        local historyDB = GudaChatDB and GudaChatDB.history or {}
+        local searchText = searchBox:GetText():lower()
+
+        if selectedFilter == "All" then
+            for _, channelKey in ipairs(HISTORY_FILTER_KEYS) do
+                local bucket = historyDB[channelKey]
+                if bucket then
+                    for _, entry in ipairs(bucket) do
+                        local matchesSearch = (searchText == "") or
+                            entry.message:lower():find(searchText, 1, true) or
+                            entry.sender:lower():find(searchText, 1, true)
+                        if matchesSearch then
+                            tinsert(results, entry)
+                        end
+                    end
+                end
+            end
+            table.sort(results, function(a, b) return a.time < b.time end)
+        else
+            local bucket = historyDB[selectedFilter]
+            if bucket then
+                for _, entry in ipairs(bucket) do
+                    local matchesSearch = (searchText == "") or
+                        entry.message:lower():find(searchText, 1, true) or
+                        entry.sender:lower():find(searchText, 1, true)
+                    if matchesSearch then
+                        tinsert(results, entry)
+                    end
+                end
+            end
+        end
+        return results
+    end
+
+    -- Reverse lookup: display label -> ChatTypeInfo key
+    local CHANNEL_TO_CHATTYPE = {
+        Say = "SAY", Yell = "YELL", Guild = "GUILD", Officer = "OFFICER",
+        Whisper = "WHISPER", Party = "PARTY", Raid = "RAID",
+        Instance = "INSTANCE_CHAT",
+    }
+
+    local function FormatColoredEntry(entry)
+        local timeStr = date("%H:%M", entry.time)
+        local senderName = entry.sender:match("^([^%-]+)") or entry.sender
+        local chanColor = "999999"
+        local chatType = CHANNEL_TO_CHATTYPE[entry.channel]
+        local info = chatType and ChatTypeInfo[chatType]
+        if info then
+            chanColor = string.format("%02x%02x%02x", info.r * 255, info.g * 255, info.b * 255)
+        end
+        return string.format(
+            "|cff808080%s|r |cff%s[%s]|r |cffcccccc%s:|r |cff%s%s|r",
+            timeStr, chanColor, entry.channel, senderName, chanColor, entry.message)
+    end
+
+    local function FormatPlainEntry(entry)
+        local timeStr = date("%H:%M", entry.time)
+        local senderName = entry.sender:match("^([^%-]+)") or entry.sender
+        return string.format("%s [%s] %s: %s", timeStr, entry.channel, senderName, entry.message)
+    end
+
+    local lastEntries = {}
+
+    function f:RefreshHistory()
+        msgFrame:Clear()
+        local entries = GatherEntries()
+        lastEntries = entries
+        -- AddMessage in chronological order (oldest first, newest at bottom)
+        for _, entry in ipairs(entries) do
+            msgFrame:AddMessage(FormatColoredEntry(entry))
+        end
+        msgFrame:ScrollToBottom()
+    end
+
+    -- Copy window: EditBox popup for selecting/copying plain text
+    copyBtn:SetScript("OnClick", function()
+        if #lastEntries == 0 then return end
+        local lines = {}
+        for _, entry in ipairs(lastEntries) do
+            tinsert(lines, FormatPlainEntry(entry))
+        end
+        local plainText = table.concat(lines, "\n")
+
+        -- Reuse the existing copy popup pattern
+        if not f.copyFrame then
+            local cf = CreateFrame("Frame", "GudaChatHistoryCopyPopup", UIParent, "BackdropTemplate")
+            cf:SetSize(480, 300)
+            cf:SetPoint("CENTER")
+            cf:SetFrameStrata("TOOLTIP")
+            cf:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 },
+            })
+            cf:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+            cf:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
+            cf:EnableMouse(true)
+            cf:SetMovable(true)
+            cf:RegisterForDrag("LeftButton")
+            cf:SetScript("OnDragStart", cf.StartMoving)
+            cf:SetScript("OnDragStop", function(self)
+                self:StopMovingOrSizing()
+                self:SetUserPlaced(false)
+            end)
+            tinsert(UISpecialFrames, "GudaChatHistoryCopyPopup")
+
+            local label = cf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -6)
+            label:SetText("Select text and Ctrl+C to copy. Escape to close.")
+            label:SetTextColor(0.6, 0.6, 0.6)
+
+            local scrollFrame = CreateFrame("ScrollFrame", "GudaChatHistoryCopyScroll", cf, "UIPanelScrollFrameTemplate")
+            scrollFrame:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -22)
+            scrollFrame:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", -28, 8)
+
+            local eb = CreateFrame("EditBox", nil, scrollFrame)
+            eb:SetFontObject(GameFontNormal)
+            eb:SetMultiLine(true)
+            eb:SetAutoFocus(false)
+            eb:SetWidth(scrollFrame:GetWidth())
+            eb:SetTextColor(0.9, 0.9, 0.9)
+            scrollFrame:SetScrollChild(eb)
+            scrollFrame:SetScript("OnSizeChanged", function(self, w)
+                eb:SetWidth(w)
+            end)
+
+            eb:SetScript("OnEscapePressed", function() cf:Hide() end)
+            -- Read-only
+            eb:SetScript("OnTextChanged", function(self, userInput)
+                if userInput and self.gudaText then
+                    self:SetText(self.gudaText)
+                end
+            end)
+
+            cf.editBox = eb
+            f.copyFrame = cf
+        end
+
+        f.copyFrame.editBox.gudaText = plainText
+        f.copyFrame.editBox:SetText(plainText)
+        f.copyFrame:Show()
+        f.copyFrame.editBox:HighlightText()
+        f.copyFrame.editBox:SetFocus()
+    end)
+
+    searchBox:SetScript("OnTextChanged", function(self, userInput)
+        if userInput and f.RefreshHistory then f:RefreshHistory() end
+    end)
+
+    -------------------------------------------------------------------
+    -- Initialize
+    -------------------------------------------------------------------
+    SelectChannelTab(1)
+
+    f:SetScript("OnShow", function(self)
+        self:RefreshHistory()
+    end)
+
+    f:Hide()
+    return f
+end
+
+local function ToggleHistory()
+    if not historyFrame then
+        historyFrame = CreateHistoryFrame()
+    end
+    if historyFrame:IsShown() then
+        historyFrame:Hide()
+    else
+        historyFrame:Show()
+    end
+end
+
+ns.ToggleHistory = ToggleHistory
 
 ---------------------------------------------------------------------------
 -- Slash commands
@@ -2569,6 +3101,15 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
         if GudaChatDB.whisperTab == nil then
             GudaChatDB.whisperTab = false
+        end
+        -- History: per-channel buckets
+        if type(GudaChatDB.history) ~= "table" or GudaChatDB.history[1] ~= nil then
+            -- Reset if old flat-array format or missing
+            GudaChatDB.history = {}
+        end
+        GudaChatDB.historyMax = GudaChatDB.historyMax or 500
+        if GudaChatDB.historyEnabled == nil then
+            GudaChatDB.historyEnabled = true
         end
         self:UnregisterEvent("ADDON_LOADED")
 
