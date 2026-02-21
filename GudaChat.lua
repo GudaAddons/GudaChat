@@ -902,6 +902,7 @@ local function CreateScrollbar(chatFrame)
 end
 
 local function FadeInScrollbar()
+    if GudaChatDB and GudaChatDB.hideScrollbar then return end
     for i = 1, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
         if cf and cf.gudaScrollbar and cf:IsVisible() then
@@ -911,6 +912,7 @@ local function FadeInScrollbar()
 end
 
 local function FadeOutScrollbar()
+    if GudaChatDB and GudaChatDB.hideScrollbar then return end
     for i = 1, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
         if cf and cf.gudaScrollbar and cf:IsVisible() then
@@ -2712,6 +2714,21 @@ local function CreateSettingsFrame()
             ChatFrame1:SetFading(GudaChatDB.fading)
         end))
 
+        Add(CreateCheckbox(tabPanels[1], "Hide scrollbar", GudaChatDB.hideScrollbar, function(checked)
+            GudaChatDB.hideScrollbar = checked
+            for i = 1, NUM_CHAT_WINDOWS do
+                local cf = _G["ChatFrame" .. i]
+                if cf and cf.gudaScrollbar then
+                    if checked then
+                        cf.gudaScrollbar:Hide()
+                    else
+                        cf.gudaScrollbar:Show()
+                        cf.gudaScrollbar:SetAlpha(0)
+                    end
+                end
+            end
+        end))
+
         local currentTimestamp = GetCVar("showTimestamps") or "none"
         Add(CreateDropdown(tabPanels[1], "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
             SetCVar("showTimestamps", value)
@@ -3429,6 +3446,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             local cf = _G["ChatFrame" .. i]
             if cf then
                 CreateScrollbar(cf)
+                if GudaChatDB.hideScrollbar and cf.gudaScrollbar then
+                    cf.gudaScrollbar:Hide()
+                end
             end
         end
         if GudaChatDB.whisperTab then
