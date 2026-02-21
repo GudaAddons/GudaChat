@@ -2732,8 +2732,8 @@ local function CreateHistoryFrame()
 
     -- Content area (below channel tabs)
     local content = CreateFrame("Frame", nil, f)
-    content:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -60)
-    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
+    content:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -60)
+    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 16)
 
     -------------------------------------------------------------------
     -- Channel filter tabs (Blizzard tab style)
@@ -2813,7 +2813,21 @@ local function CreateHistoryFrame()
     })
     searchBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
     searchBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
-    searchBox:SetTextInsets(6, 6, 0, 0)
+    searchBox:SetTextInsets(6, 20, 0, 0)
+
+    -- Clear button inside search box
+    local clearSearchBtn = CreateFrame("Button", nil, searchBox)
+    clearSearchBtn:SetSize(14, 14)
+    clearSearchBtn:SetPoint("RIGHT", searchBox, "RIGHT", -4, 0)
+    clearSearchBtn:SetNormalTexture(ASSET_PATH .. "close.png")
+    clearSearchBtn:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
+    clearSearchBtn:SetScript("OnEnter", function(self)
+        self:GetNormalTexture():SetVertexColor(1, 1, 1)
+    end)
+    clearSearchBtn:SetScript("OnLeave", function(self)
+        self:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
+    end)
+    clearSearchBtn:Hide()
 
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     placeholder:SetPoint("LEFT", searchBox, "LEFT", 8, 0)
@@ -2827,25 +2841,25 @@ local function CreateHistoryFrame()
         self:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
     end)
     searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
-    -- Copy button (opens selectable copy window)
-    local copyBtn = CreateFrame("Button", nil, content)
-    copyBtn:SetSize(44, 22)
+    -- Click anywhere on the frame clears search focus
+    f:HookScript("OnMouseDown", function()
+        searchBox:ClearFocus()
+    end)
+    content:SetScript("OnMouseDown", function()
+        searchBox:ClearFocus()
+    end)
+
+    -- Copy button (Blizzard style, red background)
+    local copyBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    copyBtn:SetSize(50, 22)
     copyBtn:SetPoint("LEFT", searchBox, "RIGHT", 4, 0)
-    local copyBtnText = copyBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    copyBtnText:SetPoint("CENTER")
-    copyBtnText:SetText("Copy")
-    copyBtnText:SetTextColor(0.6, 0.45, 0.0, 0.8)
-    copyBtn:SetScript("OnEnter", function()
-        copyBtnText:SetTextColor(1, 0.8, 0, 1)
-        GameTooltip:SetOwner(copyBtn, "ANCHOR_TOP")
-        GameTooltip:SetText("Copy visible messages", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    copyBtn:SetScript("OnLeave", function()
-        copyBtnText:SetTextColor(0.6, 0.45, 0.0, 0.8)
-        GameTooltip:Hide()
-    end)
+    copyBtn:SetText("Copy")
+    local copyNt = copyBtn:GetNormalTexture()
+    if copyNt then copyNt:SetVertexColor(0.6, 0.1, 0.1) end
+    local copyPt = copyBtn:GetPushedTexture()
+    if copyPt then copyPt:SetVertexColor(0.5, 0.05, 0.05) end
 
     -- ScrollingMessageFrame for colored display
     local msgFrame = CreateFrame("ScrollingMessageFrame", "GudaChatHistoryMsgFrame", content)
@@ -2949,6 +2963,10 @@ local function CreateHistoryFrame()
 
     -- Copy window: EditBox popup for selecting/copying plain text
     copyBtn:SetScript("OnClick", function()
+        if f.copyFrame and f.copyFrame:IsShown() then
+            f.copyFrame:Hide()
+            return
+        end
         if #lastEntries == 0 then return end
         local lines = {}
         for _, entry in ipairs(lastEntries) do
@@ -3019,7 +3037,20 @@ local function CreateHistoryFrame()
         f.copyFrame.editBox:SetFocus()
     end)
 
+    clearSearchBtn:SetScript("OnClick", function()
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+        placeholder:Show()
+        clearSearchBtn:Hide()
+        if f.RefreshHistory then f:RefreshHistory() end
+    end)
+
     searchBox:SetScript("OnTextChanged", function(self, userInput)
+        if self:GetText() ~= "" then
+            clearSearchBtn:Show()
+        else
+            clearSearchBtn:Hide()
+        end
         if userInput and f.RefreshHistory then f:RefreshHistory() end
     end)
 
@@ -3029,7 +3060,7 @@ local function CreateHistoryFrame()
     SelectChannelTab(1)
 
     f:SetScript("OnShow", function(self)
-        self:RefreshHistory()
+        SelectChannelTab(1)
     end)
 
     f:Hide()
