@@ -471,6 +471,31 @@ local function CreateScrollbar(chatFrame)
         SyncSlider()
     end)
 
+    slider:SetAlpha(0)
+
+    local sbFadeIn, sbFadeOut
+    function slider.FadeIn()
+        if sbFadeOut then sbFadeOut:Stop() end
+        sbFadeIn = slider:CreateAnimationGroup()
+        local anim = sbFadeIn:CreateAnimation("Alpha")
+        anim:SetFromAlpha(slider:GetAlpha())
+        anim:SetToAlpha(1)
+        anim:SetDuration(0.15)
+        sbFadeIn:SetScript("OnFinished", function() slider:SetAlpha(1) end)
+        sbFadeIn:Play()
+    end
+
+    function slider.FadeOut()
+        if sbFadeIn then sbFadeIn:Stop() end
+        sbFadeOut = slider:CreateAnimationGroup()
+        local anim = sbFadeOut:CreateAnimation("Alpha")
+        anim:SetFromAlpha(slider:GetAlpha())
+        anim:SetToAlpha(0)
+        anim:SetDuration(0.25)
+        sbFadeOut:SetScript("OnFinished", function() slider:SetAlpha(0) end)
+        sbFadeOut:Play()
+    end
+
     ns.scrollbar = slider
     return slider
 end
@@ -525,8 +550,8 @@ end
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
-    header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -3, 0)
-    header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 3, 0)
+    header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -4, 0)
+    header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 4, 0)
     header:SetFrameStrata("MEDIUM")
     header:SetFrameLevel(100)
     header:SetAlpha(0)
@@ -561,6 +586,7 @@ local function CreateChatHeader(parentFrame)
         anim:SetDuration(0.15)
         fadeIn:SetScript("OnFinished", function() header:SetAlpha(1) end)
         fadeIn:Play()
+        if ns.scrollbar then ns.scrollbar.FadeIn() end
     end
 
     local function HideHeader()
@@ -582,6 +608,7 @@ local function CreateChatHeader(parentFrame)
             anim:SetDuration(0.25)
             fadeOut:SetScript("OnFinished", function() header:SetAlpha(0) end)
             fadeOut:Play()
+            if ns.scrollbar then ns.scrollbar.FadeOut() end
         end)
     end
 
