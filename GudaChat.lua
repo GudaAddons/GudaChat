@@ -1723,13 +1723,19 @@ local function CreateSlider(parent, label, minVal, maxVal, step, currentVal, onC
 end
 
 local TIMESTAMP_OPTIONS = {
-    { label = "None",        value = "none" },
-    { label = "03:27",       value = "%I:%M " },
-    { label = "03:27:32",    value = "%I:%M:%S " },
-    { label = "03:27 PM",    value = "%I:%M %p " },
-    { label = "03:27:32 PM", value = "%I:%M:%S %p " },
-    { label = "15:27",       value = "%H:%M " },
-    { label = "15:27:32",    value = "%H:%M:%S " },
+    { label = "None",          value = "none" },
+    { label = "03:27",         value = "%I:%M " },
+    { label = "03:27:32",      value = "%I:%M:%S " },
+    { label = "03:27 PM",      value = "%I:%M %p " },
+    { label = "03:27:32 PM",   value = "%I:%M:%S %p " },
+    { label = "15:27",         value = "%H:%M " },
+    { label = "15:27:32",      value = "%H:%M:%S " },
+    { label = "[03:27]",       value = "[%I:%M] " },
+    { label = "[03:27:32]",    value = "[%I:%M:%S] " },
+    { label = "[03:27 PM]",    value = "[%I:%M %p] " },
+    { label = "[03:27:32 PM]", value = "[%I:%M:%S %p] " },
+    { label = "[15:27]",       value = "[%H:%M] " },
+    { label = "[15:27:32]",    value = "[%H:%M:%S] " },
 }
 
 local dropdownCounter = 0
