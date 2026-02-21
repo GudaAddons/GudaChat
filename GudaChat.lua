@@ -1556,9 +1556,11 @@ local function CreateChatHeader(parentFrame)
         -- Delay hide slightly so moving between buttons doesn't flicker
         C_Timer.After(0.3, function()
             if isHovering then return end
-            -- Check if mouse is still over header, chat area, or subtabs
+            -- Check if mouse is still over header, chat area, subtabs, or dropdowns
             if header:IsMouseOver() or parentFrame:IsMouseOver()
-                or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver()) then
+                or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver())
+                or (GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown() and GudaChatTypeDropdown:IsMouseOver())
+                or (GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown() and GudaChatEmoteSubMenu:IsMouseOver()) then
                 isHovering = true
                 return
             end
@@ -1585,10 +1587,11 @@ local function CreateChatHeader(parentFrame)
             or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver())
         -- Also check if any dropdown is open (our custom or Blizzard's)
         local dropdownOpen = GudaChatTabDropdown and GudaChatTabDropdown:IsShown()
+        local chatTypeOpen = (GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown()) or (GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown())
         local blizzDropdownOpen = DropDownList1 and DropDownList1:IsShown()
         local contextMenuOpen = contextMenu and contextMenu:IsShown()
         local fontMenuOpen = fontSubMenu and fontSubMenu:IsShown()
-        if over or dropdownOpen or blizzDropdownOpen or contextMenuOpen or fontMenuOpen then
+        if over or dropdownOpen or chatTypeOpen or blizzDropdownOpen or contextMenuOpen or fontMenuOpen then
             ShowHeader()
         else
             HideHeader()
@@ -1932,26 +1935,54 @@ local function CreateChatHeader(parentFrame)
     chatTypeDropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
     chatTypeDropdown:Hide()
 
-    local chatTypeEntries = {
-        { label = "Say",          cmd = "/s" },
-        { label = "Party Chat",   cmd = "/p" },
-        { label = "Raid",         cmd = "/raid" },
-        { label = "Battleground", cmd = "/bg" },
-        { label = "Guild Chat",   cmd = "/g" },
-        { label = "Yell",         cmd = "/y" },
-        { label = "Whisper",      cmd = "/w" },
-        { label = "Emote",        cmd = "/e" },
-        { label = "Reply",        cmd = "/r" },
+    -- Emote submenu
+    local emoteSubMenu = CreateFrame("Frame", "GudaChatEmoteSubMenu", chatTypeDropdown, "BackdropTemplate")
+    emoteSubMenu:SetFrameStrata("TOOLTIP")
+    emoteSubMenu:SetFrameLevel(chatTypeDropdown:GetFrameLevel() + 1)
+    emoteSubMenu:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    emoteSubMenu:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    emoteSubMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    emoteSubMenu:Hide()
+
+    local emoteList = {
+        { label = "Wave",     cmd = "/wave" },
+        { label = "Dance",    cmd = "/dance" },
+        { label = "Bow",      cmd = "/bow" },
+        { label = "Cheer",    cmd = "/cheer" },
+        { label = "Clap",     cmd = "/clap" },
+        { label = "Cry",      cmd = "/cry" },
+        { label = "Flex",     cmd = "/flex" },
+        { label = "Goodbye",  cmd = "/goodbye" },
+        { label = "Hello",    cmd = "/hello" },
+        { label = "Kiss",     cmd = "/kiss" },
+        { label = "Laugh",    cmd = "/laugh" },
+        { label = "No",       cmd = "/no" },
+        { label = "Point",    cmd = "/point" },
+        { label = "Rude",     cmd = "/rude" },
+        { label = "Salute",   cmd = "/salute" },
+        { label = "Shy",      cmd = "/shy" },
+        { label = "Sit",      cmd = "/sit" },
+        { label = "Sleep",    cmd = "/sleep" },
+        { label = "Smile",    cmd = "/smile" },
+        { label = "Thank",    cmd = "/thank" },
+        { label = "Yes",      cmd = "/yes" },
+        { label = "Angry",    cmd = "/angry" },
+        { label = "Beg",      cmd = "/beg" },
+        { label = "Applaud",  cmd = "/applaud" },
     }
 
-    local ctYOff = -4
-    local ctMaxW = 60
-
-    for _, entry in ipairs(chatTypeEntries) do
-        local mb = CreateFrame("Button", nil, chatTypeDropdown)
+    local emYOff = -4
+    local emMaxW = 60
+    for _, entry in ipairs(emoteList) do
+        local mb = CreateFrame("Button", nil, emoteSubMenu)
         mb:SetHeight(20)
-        mb:SetPoint("TOPLEFT", chatTypeDropdown, "TOPLEFT", 4, ctYOff)
-        mb:SetPoint("TOPRIGHT", chatTypeDropdown, "TOPRIGHT", -4, ctYOff)
+        mb:SetPoint("TOPLEFT", emoteSubMenu, "TOPLEFT", 4, emYOff)
+        mb:SetPoint("TOPRIGHT", emoteSubMenu, "TOPRIGHT", -4, emYOff)
 
         local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
@@ -1974,8 +2005,75 @@ local function CreateChatHeader(parentFrame)
 
         local slash = entry.cmd
         mb:SetScript("OnClick", function()
+            DoEmote(slash:sub(2):upper())
+            emoteSubMenu:Hide()
+            chatTypeDropdown:Hide()
+        end)
+
+        local tw = labelText:GetStringWidth() + cmdText:GetStringWidth() + 32
+        if tw > emMaxW then emMaxW = tw end
+        emYOff = emYOff - 20
+    end
+    emoteSubMenu:SetSize(emMaxW + 8, math.abs(emYOff) + 4)
+
+    -- Main chat type entries
+    local chatTypeEntries = {
+        { label = "Say",          cmd = "/s" },
+        { label = "Party Chat",   cmd = "/p" },
+        { label = "Raid",         cmd = "/raid" },
+        { label = "Battleground", cmd = "/bg" },
+        { label = "Guild Chat",   cmd = "/g" },
+        { label = "Yell",         cmd = "/y" },
+        { label = "Whisper",      cmd = "/w" },
+        { label = "Emote",        cmd = "/e",  hasArrow = true },
+        { label = "Reply",        cmd = "/r" },
+    }
+
+    local ctYOff = -4
+    local ctMaxW = 60
+
+    for _, entry in ipairs(chatTypeEntries) do
+        local mb = CreateFrame("Button", nil, chatTypeDropdown)
+        mb:SetHeight(20)
+        mb:SetPoint("TOPLEFT", chatTypeDropdown, "TOPLEFT", 4, ctYOff)
+        mb:SetPoint("TOPRIGHT", chatTypeDropdown, "TOPRIGHT", -4, ctYOff)
+
+        local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
+        labelText:SetText(entry.label)
+        labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+
+        local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
+        cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+
+        if entry.hasArrow then
+            cmdText:SetText(">")
+        else
+            cmdText:SetText(entry.cmd)
+        end
+
+        mb:SetScript("OnEnter", function()
+            labelText:SetTextColor(1, 1, 1, 1)
+            cmdText:SetTextColor(0.6, 0.6, 0.6, 1)
+            if entry.hasArrow then
+                emoteSubMenu:ClearAllPoints()
+                emoteSubMenu:SetPoint("BOTTOMRIGHT", chatTypeDropdown, "BOTTOMLEFT", -2, 0)
+                emoteSubMenu:Show()
+            else
+                emoteSubMenu:Hide()
+            end
+        end)
+        mb:SetScript("OnLeave", function()
+            labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+            cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+        end)
+
+        local slash = entry.cmd
+        mb:SetScript("OnClick", function()
             ChatFrame_OpenChat(slash .. " ", ChatFrame1)
             chatTypeDropdown:Hide()
+            emoteSubMenu:Hide()
         end)
 
         local tw = labelText:GetStringWidth() + cmdText:GetStringWidth() + 32
@@ -1988,6 +2086,7 @@ local function CreateChatHeader(parentFrame)
     chatTypeBtn:SetScript("OnClick", function(self)
         if chatTypeDropdown:IsShown() then
             chatTypeDropdown:Hide()
+            emoteSubMenu:Hide()
         else
             chatTypeDropdown:ClearAllPoints()
             chatTypeDropdown:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 4, 2)
@@ -1998,9 +2097,13 @@ local function CreateChatHeader(parentFrame)
 
     local ctCloser = CreateFrame("Frame", nil, chatTypeDropdown)
     ctCloser:SetScript("OnUpdate", function()
-        if chatTypeDropdown:IsShown() and not chatTypeDropdown:IsMouseOver() and not chatTypeBtn:IsMouseOver() then
+        if chatTypeDropdown:IsShown()
+            and not chatTypeDropdown:IsMouseOver()
+            and not chatTypeBtn:IsMouseOver()
+            and not (emoteSubMenu:IsShown() and emoteSubMenu:IsMouseOver()) then
             if IsMouseButtonDown("LeftButton") then
                 chatTypeDropdown:Hide()
+                emoteSubMenu:Hide()
             end
         end
     end)
