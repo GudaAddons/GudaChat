@@ -3051,6 +3051,71 @@ local function CreateHistoryFrame()
         end
     end)
 
+    -- Scrollbar for history
+    local histSlider = CreateFrame("Slider", nil, msgFrame, "BackdropTemplate")
+    histSlider:SetWidth(6)
+    histSlider:SetPoint("TOPRIGHT", msgFrame, "TOPRIGHT", -2, -2)
+    histSlider:SetPoint("BOTTOMRIGHT", msgFrame, "BOTTOMRIGHT", -2, 2)
+    histSlider:SetOrientation("VERTICAL")
+    histSlider:SetMinMaxValues(0, 1)
+    histSlider:SetValue(0)
+    histSlider:SetValueStep(1)
+    histSlider:SetObeyStepOnDrag(true)
+    histSlider:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        insets = { left = 0, right = 0, top = 0, bottom = 0 },
+    })
+    histSlider:SetBackdropColor(0, 0, 0, 0.3)
+
+    local histThumb = histSlider:CreateTexture(nil, "OVERLAY")
+    histThumb:SetTexture("Interface\\Buttons\\WHITE8x8")
+    histThumb:SetVertexColor(1, 1, 1, 0.4)
+    histThumb:SetSize(6, 30)
+    histSlider:SetThumbTexture(histThumb)
+
+    histSlider:SetScript("OnEnter", function()
+        histThumb:SetVertexColor(1, 1, 1, 0.7)
+    end)
+    histSlider:SetScript("OnLeave", function()
+        histThumb:SetVertexColor(1, 1, 1, 0.4)
+    end)
+
+    histSlider:SetScript("OnValueChanged", function(self, value)
+        local maxScroll = msgFrame:GetMaxScrollRange()
+        local offset = maxScroll - value
+        if offset >= 0 then
+            msgFrame:SetScrollOffset(offset)
+        end
+    end)
+
+    local function SyncHistSlider()
+        local maxScroll = msgFrame:GetMaxScrollRange()
+        histSlider:SetMinMaxValues(0, maxScroll)
+        local offset = msgFrame:GetScrollOffset()
+        histSlider:SetValue(maxScroll - offset)
+    end
+
+    hooksecurefunc(msgFrame, "SetScrollOffset", SyncHistSlider)
+
+    local histTicker = CreateFrame("Frame")
+    histTicker:SetScript("OnUpdate", function(self, dt)
+        self.elapsed = (self.elapsed or 0) + dt
+        if self.elapsed >= 0.2 then
+            self.elapsed = 0
+            SyncHistSlider()
+        end
+    end)
+
+    histSlider:EnableMouseWheel(true)
+    histSlider:SetScript("OnMouseWheel", function(self, delta)
+        if delta > 0 then
+            msgFrame:ScrollUp()
+        else
+            msgFrame:ScrollDown()
+        end
+        SyncHistSlider()
+    end)
+
     -- Gather and format entries
     local function GatherEntries()
         local results = {}
@@ -3213,7 +3278,7 @@ local function CreateHistoryFrame()
 
             local label = cf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             label:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -6)
-            label:SetText("Select text and Ctrl+C to copy. Escape to close.")
+            label:SetText("Ctrl+C to copy. Escape to close.")
             label:SetTextColor(0.6, 0.6, 0.6)
 
             local scrollFrame = CreateFrame("ScrollFrame", "GudaChatHistoryCopyScroll", cf, "UIPanelScrollFrameTemplate")
@@ -3224,30 +3289,42 @@ local function CreateHistoryFrame()
             eb:SetFontObject(GameFontHighlight)
             eb:SetMultiLine(true)
             eb:SetAutoFocus(false)
-            eb:SetWidth(scrollFrame:GetWidth())
             eb:SetTextColor(0.9, 0.9, 0.9)
-            scrollFrame:SetScrollChild(eb)
-            scrollFrame:SetScript("OnSizeChanged", function(self, w)
-                eb:SetWidth(w)
+            eb:SetMaxLetters(0)
+            eb:SetScript("OnEscapePressed", function() cf:Hide() end)
+            eb:SetScript("OnEnter", function(self)
+                scrollFrame:UpdateScrollChildRect()
+                self:SetFocus()
+            end)
+            eb:SetScript("OnLeave", function(self)
+                self:ClearFocus()
+            end)
+            eb:SetScript("OnCursorChanged", function(self, x, y, w, h)
+                scrollFrame:SetVerticalScroll(-y)
             end)
 
-            eb:SetScript("OnEscapePressed", function() cf:Hide() end)
-            -- Read-only
-            eb:SetScript("OnTextChanged", function(self, userInput)
-                if userInput and self.gudaText then
-                    self:SetText(self.gudaText)
-                end
-            end)
+            scrollFrame:SetScrollChild(eb)
 
             cf.editBox = eb
+            cf.scrollFrame = scrollFrame
             f.copyFrame = cf
         end
 
-        f.copyFrame.editBox.gudaText = plainText
-        f.copyFrame.editBox:SetText(plainText)
+        local eb = f.copyFrame.editBox
+        eb:SetWidth(f.copyFrame.scrollFrame:GetWidth() or 440)
+        eb:SetText("")
+        eb:SetMaxLetters(0)
+        for i = #lastEntries, 1, -1 do
+            eb:SetCursorPosition(0)
+            eb:Insert(FormatPlainEntry(lastEntries[i]) .. "\n")
+        end
+        -- Trim leading whitespace
+        eb:SetText(eb:GetText():gsub("^[\n ]+", ""))
+        f.copyFrame.scrollFrame:UpdateScrollChildRect()
         f.copyFrame:Show()
-        f.copyFrame.editBox:HighlightText()
-        f.copyFrame.editBox:SetFocus()
+        eb:SetCursorPosition(0)
+        eb:HighlightText()
+        eb:SetFocus()
     end)
 
     clearSearchBtn:SetScript("OnClick", function()
