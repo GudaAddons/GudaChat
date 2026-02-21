@@ -16,6 +16,8 @@ end
 -- Edit box positioning
 ---------------------------------------------------------------------------
 
+local INPUT_BAR_MARGIN = 6
+
 local function PositionEditBox(chatFrame, index, position)
     local eb = _G["ChatFrame" .. index .. "EditBox"]
     if not eb then return end
@@ -26,6 +28,29 @@ local function PositionEditBox(chatFrame, index, position)
     else
         eb:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -2, -4)
         eb:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 2, -4)
+    end
+end
+
+-- Add margin to chat messages on the side where the input bar sits,
+-- and reserve screen-edge space so the input bar doesn't go off-screen.
+local INPUT_BAR_CLAMP = 36 -- 28px bar + 4px gap + 4px breathing room
+
+local function ApplyChatMargins()
+    local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
+    local topPad = (pos == "top") and INPUT_BAR_MARGIN or 0
+    local botPad = (pos == "bottom") and INPUT_BAR_MARGIN or 0
+    local topClamp = (pos == "top") and 25 or 0
+    local botClamp = (pos == "bottom") and INPUT_BAR_CLAMP or 0
+
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf then
+            if cf.SetTextInsets then
+                cf:SetTextInsets(0, 0, topPad, botPad)
+            end
+            cf:SetClampRectInsets(0, 0, topClamp, -botClamp)
+            cf:SetClampedToScreen(true)
+        end
     end
 end
 
@@ -326,7 +351,41 @@ local function StripChatChrome(index)
     KillFrame(_G["ChatFrame" .. index .. "ButtonFrame"])
     KillFrame(_G["ChatFrame" .. index .. "Tab"])
 
+    -- Remove Blizzard's built-in spacing (ApplyChatMargins sets proper clamp insets later)
+    cf:SetClampRectInsets(0, 0, 0, 0)
+    cf:SetClampedToScreen(true)
+
+    -- Remove text insets (method name varies by client version)
+    if cf.SetTextInsets then
+        cf:SetTextInsets(0, 0, 0, 0)
+    elseif cf.SetInsertMode then
+        -- fallback
+    end
+
+    -- Blizzard's FCF_UpdateButtonSide sets indented text area — override it
+    if cf.SetIndentedWordWrap then
+        cf:SetIndentedWordWrap(false)
+    end
+
+    -- Hide the background/border textures that have built-in padding
+    local bg = _G["ChatFrame" .. index .. "Background"]
+    if bg then bg:Hide() end
+    local resize = _G["ChatFrame" .. index .. "ResizeButton"]
+    if resize then KillFrame(resize) end
+
     StyleEditBox(cf, index)
+end
+
+-- Prevent Blizzard from re-adding button side spacing; apply our margins instead
+if FCF_UpdateButtonSide then
+    hooksecurefunc("FCF_UpdateButtonSide", function(cf)
+        if cf and cf.SetTextInsets then
+            local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
+            local topPad = (pos == "top") and INPUT_BAR_MARGIN or 0
+            local botPad = (pos == "bottom") and INPUT_BAR_MARGIN or 0
+            cf:SetTextInsets(0, 0, topPad, botPad)
+        end
+    end)
 end
 
 local function RehideAllTabs()
@@ -866,6 +925,7 @@ local function CreateSettingsFrame()
         for i = 1, NUM_CHAT_WINDOWS do
             PositionEditBox(_G["ChatFrame" .. i], i, GudaChatDB.inputPosition)
         end
+        ApplyChatMargins()
     end)
     AddControl(inputTopCb)
 
@@ -981,6 +1041,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         CreateScrollbar(ChatFrame1)
         CreateChatHeader(ChatFrame1)
         ApplyLockState()
+        ApplyChatMargins()
 
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r loaded — type |cffffd200/gc|r for settings")
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
