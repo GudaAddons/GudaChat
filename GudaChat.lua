@@ -2158,21 +2158,26 @@ local function CreateChatHeader(parentFrame)
     end)
 
     -------------------------------------------------------------------
+    -- Right side: Chat Type (emote) icon
+    -------------------------------------------------------------------
+    local chatTypeBtn = CreateIconButton(header, ASSET_PATH .. "chat.png", ICON_SIZE - 1, "Chat Type")
+    chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
+
+    -------------------------------------------------------------------
     -- Right side: History icon
     -------------------------------------------------------------------
     local historyBtn = CreateIconButton(header, ASSET_PATH .. "history.png", ICON_SIZE - 1, "History")
-    historyBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
+    historyBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -6, 0)
+    ns.historyBtn = historyBtn
 
     historyBtn:SetScript("OnClick", function()
         ns.ToggleHistory()
         CloseDropdown()
     end)
 
-    -------------------------------------------------------------------
-    -- Right side: Chat Type (emote) icon
-    -------------------------------------------------------------------
-    local chatTypeBtn = CreateIconButton(header, ASSET_PATH .. "chat.png", ICON_SIZE - 1, "Chat Type")
-    chatTypeBtn:SetPoint("RIGHT", historyBtn, "LEFT", -6, 0)
+    if GudaChatDB and not GudaChatDB.historyEnabled then
+        historyBtn:Hide()
+    end
 
     local chatTypeDropdown = CreateFrame("Frame", "GudaChatTypeDropdown", chatTypeBtn, "BackdropTemplate")
     chatTypeDropdown:SetFrameStrata("TOOLTIP")
@@ -2602,7 +2607,7 @@ local function CreateSettingsFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("DIALOG")
-    f:SetFrameLevel(200)
+    f:SetToplevel(true)
     f:EnableMouse(true)
 
     tinsert(UISpecialFrames, "GudaChatSettingsPopup")
@@ -2810,6 +2815,13 @@ local function CreateSettingsFrame()
 
         Add(CreateCheckbox(tabPanels[3], "Enable history", GudaChatDB.historyEnabled ~= false, function(checked)
             GudaChatDB.historyEnabled = checked
+            if ns.historyBtn then
+                if checked then
+                    ns.historyBtn:Show()
+                else
+                    ns.historyBtn:Hide()
+                end
+            end
         end))
 
         Add(CreateSlider(tabPanels[3], "Max messages", 100, 2000, 100, GudaChatDB.historyMax or 500, function(value)
@@ -2844,6 +2856,7 @@ local function ToggleSettings()
         settingsFrame:Hide()
     else
         settingsFrame:Show()
+        PanelTemplates_SetTab(settingsFrame, 1)
     end
 end
 
@@ -2862,7 +2875,7 @@ local function CreateHistoryFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("DIALOG")
-    f:SetFrameLevel(200)
+    f:SetToplevel(true)
     f:EnableMouse(true)
 
     tinsert(UISpecialFrames, "GudaChatHistoryPopup")
