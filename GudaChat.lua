@@ -89,6 +89,14 @@ local EMOJI_PICKER_ITEMS = {
     { plain = ":triangle:",file = "emoji_triangle.png" },
     { plain = ":square:",  file = "emoji_square.png" },
     { plain = ":cross:",   file = "emoji_cross.png" },
+    { plain = ":cat:",     file = "emoji_cat.png" },
+    { plain = ":cat_laugh:", file = "emoji_cat_laugh.png" },
+    { plain = ":cat_heart:", file = "emoji_cat_heart.png" },
+    { plain = ":cat_cry:", file = "emoji_cat_cry.png" },
+    { plain = ":party:",   file = "emoji_party.png" },
+    { plain = ":confetti:",file = "emoji_confetti.png" },
+    { plain = ":trophy:",  file = "emoji_trophy.png" },
+    { plain = ":clap:",    file = "emoji_clap.png" },
 }
 
 local emojiPickerFrame
@@ -622,6 +630,14 @@ local EMOJI_REPLACEMENTS = {
     { plain = ":nerd:",  pattern = ":nerd:",  file = "emoji_nerd.png" },
     { plain = ":eyeroll:", pattern = ":eyeroll:", file = "emoji_eyeroll.png" },
     { plain = ":thinking:", pattern = ":thinking:", file = "emoji_thinking.png" },
+    { plain = ":cat:",      pattern = ":cat:",      file = "emoji_cat.png" },
+    { plain = ":cat_laugh:",pattern = ":cat_laugh:",file = "emoji_cat_laugh.png" },
+    { plain = ":cat_heart:",pattern = ":cat_heart:",file = "emoji_cat_heart.png" },
+    { plain = ":cat_cry:",  pattern = ":cat_cry:",  file = "emoji_cat_cry.png" },
+    { plain = ":party:",    pattern = ":party:",    file = "emoji_party.png" },
+    { plain = ":confetti:", pattern = ":confetti:", file = "emoji_confetti.png" },
+    { plain = ":trophy:",   pattern = ":trophy:",   file = "emoji_trophy.png" },
+    { plain = ":clap:",     pattern = ":clap:",     file = "emoji_clap.png" },
 }
 
 local function FilterAddEmojis(self, event, msg, ...)
