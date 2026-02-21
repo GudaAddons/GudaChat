@@ -65,4 +65,4 @@ Access settings with `/gc` or the header gear icon. Three tabs of options:
 
 ## Part of the Guda Suite
 
-Works alongside [GudaBags](LINK_GUDABAGS) and [GudaDamage](LINK_GUDADAMAGE) for a consistent, minimal UI experience.
+Works alongside [GudaBags](https://www.curseforge.com/wow/addons/gudabags) and [GudaDamage](https://www.curseforge.com/wow/addons/gudadamage) for a consistent, minimal UI experience.
