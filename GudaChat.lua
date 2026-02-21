@@ -3194,6 +3194,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             for i = 1, NUM_CHAT_WINDOWS do
                 StripChatChrome(i)
             end
+            ApplyChatMargins()
         end)
 
         -- Auto-select newly created chat windows
@@ -3266,6 +3267,11 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         CreateChatHeader(ChatFrame1)
         ApplyLockState()
         ApplyChatMargins()
+
+        -- Reapply clamp insets after Blizzard dock updates reset them
+        if FCF_DockUpdate then
+            hooksecurefunc("FCF_DockUpdate", ApplyChatMargins)
+        end
 
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r loaded — type |cffffd200/gc|r for settings")
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
