@@ -7,4 +7,13 @@
 
 ## Category: Guda
 
+Core\Constants.lua
+Core\Emojis.lua
+Core\EditBox.lua
+Core\Filters.lua
+Core\Chrome.lua
+UI\Scrollbar.lua
+UI\Header.lua
+UI\History.lua
+UI\Settings.lua
 GudaChat.lua
