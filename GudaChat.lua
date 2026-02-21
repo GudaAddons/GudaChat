@@ -39,7 +39,7 @@ local function ApplyChatMargins()
     local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
     local topPad = (pos == "top") and INPUT_BAR_MARGIN or 0
     local botPad = (pos == "bottom") and INPUT_BAR_MARGIN or 0
-    local topClamp = (pos == "top") and 25 or 0
+    local topClamp = (pos == "top") and 32 or 0
     local botClamp = (pos == "bottom") and INPUT_BAR_CLAMP or 0
 
     for i = 1, NUM_CHAT_WINDOWS do
