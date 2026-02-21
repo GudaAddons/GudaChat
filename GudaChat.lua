@@ -761,7 +761,9 @@ end
 ---------------------------------------------------------------------------
 
 local function CreateScrollbar(chatFrame)
-    local slider = CreateFrame("Slider", "GudaChatScrollbar", chatFrame, "BackdropTemplate")
+    if chatFrame.gudaScrollbar then return end
+    local slider = CreateFrame("Slider", nil, chatFrame, "BackdropTemplate")
+    chatFrame.gudaScrollbar = slider
     slider:SetWidth(6)
     slider:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", -2, -2)
     slider:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2, 2)
@@ -1575,6 +1577,12 @@ local HISTORY_FILTER_KEYS = {
     "Say", "Yell", "Guild", "Officer", "Whisper", "Party", "Raid", "Instance",
 }
 
+local CHANNEL_TO_CHATTYPE = {
+    Say = "SAY", Yell = "YELL", Guild = "GUILD", Officer = "OFFICER",
+    Whisper = "WHISPER", Party = "PARTY", Raid = "RAID",
+    Instance = "INSTANCE_CHAT",
+}
+
 -- Message capture for chat history
 local historyCaptureFrame = CreateFrame("Frame")
 local HISTORY_EVENTS = {
@@ -1600,11 +1608,26 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         bucket = GudaChatDB.history[label]
     end
 
+    local guid = select(10, ...)
+    local classFile
+    if guid and guid ~= "" then
+        local _, cls = GetPlayerInfoByGUID(guid)
+        classFile = cls
+    end
+
+    local senderName = sender and sender:match("^([^%-]+)")
+    local level = GetPlayerLevel(senderName)
+
+    local isOutgoing = channelKey == "WHISPER_INFORM" or channelKey == "BN_WHISPER_INFORM"
+
     tinsert(bucket, {
         time = time(),
         channel = label,
         sender = sender or "",
         message = msg or "",
+        class = classFile,
+        level = level,
+        outgoing = isOutgoing,
     })
 
     -- Trim oldest entries per channel
@@ -1613,6 +1636,90 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         tremove(bucket, 1)
     end
 end)
+
+local REPLAY_CHANNEL_FORMATS = {
+    Say = "says",
+    Yell = "yells",
+}
+
+local function ReplayHistory()
+    if not GudaChatDB or not GudaChatDB.historyEnabled then return end
+    local history = GudaChatDB.history
+    if not history then return end
+
+    local all = {}
+    for _, key in ipairs(HISTORY_FILTER_KEYS) do
+        local bucket = history[key]
+        if bucket then
+            for _, entry in ipairs(bucket) do
+                tinsert(all, entry)
+            end
+        end
+    end
+    if #all == 0 then return end
+
+    table.sort(all, function(a, b) return a.time < b.time end)
+    local start = math.max(1, #all - 9)
+
+    ChatFrame1:AddMessage("|cff555555--- previous session ---|r")
+
+    local tsFmt = GetCVar("showTimestamps")
+    if tsFmt == "none" then tsFmt = nil end
+
+    for i = start, #all do
+        local entry = all[i]
+        local chatType = CHANNEL_TO_CHATTYPE[entry.channel]
+        local info = chatType and ChatTypeInfo[chatType]
+        local r, g, b = 0.6, 0.6, 0.6
+        if info then r, g, b = info.r, info.g, info.b end
+
+        local senderName = entry.sender:match("^([^%-]+)") or entry.sender
+        local nameLink
+        if GudaChatDB.classColors and entry.class and RAID_CLASS_COLORS[entry.class] then
+            local cc = RAID_CLASS_COLORS[entry.class]
+            nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
+                cc.r*255, cc.g*255, cc.b*255, entry.sender, senderName)
+        else
+            nameLink = string.format("|Hplayer:%s|h[%s]|h", entry.sender, senderName)
+        end
+
+        -- Level indicator
+        local levelStr = ""
+        if entry.level then
+            local lr, lg, lb = GetLevelDifficultyColor(entry.level)
+            levelStr = string.format("|cff%02x%02x%02x[%d]|r ", lr*255, lg*255, lb*255, entry.level)
+        end
+
+        -- Timestamp
+        local timePrefix = ""
+        if tsFmt then
+            timePrefix = "|cff999999" .. date(tsFmt, entry.time) .. "|r"
+        end
+
+        -- Format like original WoW chat using CHAT_X_GET patterns
+        local body
+        if entry.channel == "Whisper" and entry.outgoing then
+            -- "To [PlayerName]: [70] message"
+            body = string.format("To %s: %s%s", nameLink, levelStr, entry.message)
+        elseif entry.channel == "Whisper" then
+            -- "[PlayerName] whispers: [70] message"
+            body = string.format("%s whispers: %s%s", nameLink, levelStr, entry.message)
+        else
+            local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
+            if verb then
+                -- "PlayerName says/yells: [70] message"
+                body = string.format("%s %s: %s%s", nameLink, verb, levelStr, entry.message)
+            else
+                -- "[Channel] PlayerName: [70] message"
+                body = string.format("[%s] %s: %s%s", entry.channel, nameLink, levelStr, entry.message)
+            end
+        end
+
+        body = timePrefix .. body
+
+        ChatFrame1:AddMessage(body, r, g, b)
+    end
+end
 
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
@@ -2942,31 +3049,64 @@ local function CreateHistoryFrame()
         return results
     end
 
-    -- Reverse lookup: display label -> ChatTypeInfo key
-    local CHANNEL_TO_CHATTYPE = {
-        Say = "SAY", Yell = "YELL", Guild = "GUILD", Officer = "OFFICER",
-        Whisper = "WHISPER", Party = "PARTY", Raid = "RAID",
-        Instance = "INSTANCE_CHAT",
-    }
-
     local function FormatColoredEntry(entry)
         local timeStr = date("%H:%M", entry.time)
         local senderName = entry.sender:match("^([^%-]+)") or entry.sender
-        local chanColor = "999999"
         local chatType = CHANNEL_TO_CHATTYPE[entry.channel]
         local info = chatType and ChatTypeInfo[chatType]
-        if info then
-            chanColor = string.format("%02x%02x%02x", info.r * 255, info.g * 255, info.b * 255)
+        local r, g, b = 0.6, 0.6, 0.6
+        if info then r, g, b = info.r, info.g, info.b end
+        local chanColor = string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
+
+        local nameLink
+        if GudaChatDB.classColors and entry.class and RAID_CLASS_COLORS[entry.class] then
+            local cc = RAID_CLASS_COLORS[entry.class]
+            nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
+                cc.r*255, cc.g*255, cc.b*255, entry.sender, senderName)
+        else
+            nameLink = string.format("|Hplayer:%s|h[%s]|h", entry.sender, senderName)
         end
-        return string.format(
-            "|cff808080%s|r |cff%s[%s]|r |cffcccccc%s:|r |cff%s%s|r",
-            timeStr, chanColor, entry.channel, senderName, chanColor, entry.message)
+
+        local levelStr = ""
+        if entry.level then
+            local lr, lg, lb = GetLevelDifficultyColor(entry.level)
+            levelStr = string.format("|cff%02x%02x%02x[%d]|r ", lr*255, lg*255, lb*255, entry.level)
+        end
+
+        local body
+        if entry.channel == "Whisper" and entry.outgoing then
+            body = string.format("To %s: %s%s", nameLink, levelStr, entry.message)
+        elseif entry.channel == "Whisper" then
+            body = string.format("%s whispers: %s%s", nameLink, levelStr, entry.message)
+        else
+            local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
+            if verb then
+                body = string.format("%s %s: %s%s", nameLink, verb, levelStr, entry.message)
+            else
+                body = string.format("|cff%s[%s]|r %s: %s%s", chanColor, entry.channel, nameLink, levelStr, entry.message)
+            end
+        end
+
+        return string.format("|cff808080%s|r |cff%s%s|r", timeStr, chanColor, body)
     end
 
     local function FormatPlainEntry(entry)
         local timeStr = date("%H:%M", entry.time)
         local senderName = entry.sender:match("^([^%-]+)") or entry.sender
-        return string.format("%s [%s] %s: %s", timeStr, entry.channel, senderName, entry.message)
+        local levelStr = entry.level and string.format("[%d] ", entry.level) or ""
+
+        if entry.channel == "Whisper" and entry.outgoing then
+            return string.format("%s To [%s]: %s%s", timeStr, senderName, levelStr, entry.message)
+        elseif entry.channel == "Whisper" then
+            return string.format("%s [%s] whispers: %s%s", timeStr, senderName, levelStr, entry.message)
+        else
+            local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
+            if verb then
+                return string.format("%s [%s] %s: %s%s", timeStr, senderName, verb, levelStr, entry.message)
+            else
+                return string.format("%s [%s] [%s]: %s%s", timeStr, entry.channel, senderName, levelStr, entry.message)
+            end
+        end
     end
 
     local lastEntries = {}
@@ -3192,7 +3332,11 @@ loader:SetScript("OnEvent", function(self, event, arg1)
 
         hooksecurefunc("FCF_OpenTemporaryWindow", function()
             for i = 1, NUM_CHAT_WINDOWS do
+                local cf = _G["ChatFrame" .. i]
                 StripChatChrome(i)
+                if cf and not cf.gudaScrollbar then
+                    CreateScrollbar(cf)
+                end
             end
             ApplyChatMargins()
         end)
@@ -3260,7 +3404,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         EnableCopyLinks()
         EnableEmojis()
         SetupLinkHook()
-        CreateScrollbar(ChatFrame1)
+        for i = 1, NUM_CHAT_WINDOWS do
+            local cf = _G["ChatFrame" .. i]
+            if cf then
+                CreateScrollbar(cf)
+            end
+        end
         if GudaChatDB.whisperTab then
             SetupWhisperFrame()
         end
@@ -3273,6 +3422,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             hooksecurefunc("FCF_DockUpdate", ApplyChatMargins)
         end
 
+        ReplayHistory()
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r loaded — type |cffffd200/gc|r for settings")
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     end
