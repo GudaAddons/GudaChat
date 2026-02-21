@@ -1925,7 +1925,7 @@ local function CreateChatHeader(parentFrame)
                     mbText:SetText(name)
 
                     local isActive = (GetSelectedChatFrameIndex() == i)
-                    mbText:SetTextColor(isActive and 1 or 0.6, isActive and 0.8 or 0.45, isActive and 0 or 0.0, isActive and 1 or 0.8)
+                    mbText:SetTextColor(isActive and 1 or 0.8, isActive and 0.8 or 0.8, isActive and 0 or 0.8, 1)
 
                     mb:SetScript("OnEnter", function()
                         mbText:SetTextColor(1, 0.8, 0, 1)
@@ -1933,7 +1933,7 @@ local function CreateChatHeader(parentFrame)
                     mb:SetScript("OnLeave", function()
                         local active = (GetSelectedChatFrameIndex() == i)
                         if not active then
-                            mbText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+                            mbText:SetTextColor(0.8, 0.8, 0.8, 1)
                         end
                     end)
 
@@ -2238,20 +2238,20 @@ local function CreateChatHeader(parentFrame)
         local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
         labelText:SetText(entry.label)
-        labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+        labelText:SetTextColor(0.8, 0.8, 0.8, 1)
 
         local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
         cmdText:SetText(entry.cmd)
-        cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
+        cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
 
         mb:SetScript("OnEnter", function()
             labelText:SetTextColor(1, 0.8, 0, 1)
             cmdText:SetTextColor(0.8, 0.6, 0, 1)
         end)
         mb:SetScript("OnLeave", function()
-            labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
-            cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
+            labelText:SetTextColor(0.8, 0.8, 0.8, 1)
+            cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
         end)
 
         local slash = entry.cmd
@@ -2292,11 +2292,11 @@ local function CreateChatHeader(parentFrame)
         local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
         labelText:SetText(entry.label)
-        labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+        labelText:SetTextColor(0.8, 0.8, 0.8, 1)
 
         local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
-        cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
+        cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
 
         if entry.hasArrow then
             cmdText:SetText(">")
@@ -2316,8 +2316,8 @@ local function CreateChatHeader(parentFrame)
             end
         end)
         mb:SetScript("OnLeave", function()
-            labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
-            cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
+            labelText:SetTextColor(0.8, 0.8, 0.8, 1)
+            cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
         end)
 
         local slash = entry.cmd
@@ -2370,6 +2370,7 @@ local function CreateChatHeader(parentFrame)
         if combatSubTabs then
             if cf == ChatFrame2 then
                 combatSubTabs:Show()
+                combatSubTabs:SetAlpha(header:GetAlpha())
             else
                 combatSubTabs:Hide()
                 -- Reset filter when leaving combat log
