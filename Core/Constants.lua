@@ -144,7 +144,9 @@ local function CreateCopyPopupFrame(globalName, width, height, multiLine)
         end)
         eb:SetScript("OnLeave", function(self) self:ClearFocus() end)
         eb:SetScript("OnCursorChanged", function(self, x, y, w, h)
-            scrollFrame:SetVerticalScroll(-y)
+            local scroll = -y
+            local maxScroll = max(0, self:GetHeight() - scrollFrame:GetHeight())
+            scrollFrame:SetVerticalScroll(min(max(0, scroll), maxScroll))
         end)
         scrollFrame:SetScrollChild(eb)
 
