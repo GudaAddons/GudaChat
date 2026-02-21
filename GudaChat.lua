@@ -282,6 +282,35 @@ local function EnableCopyLinks()
 end
 
 ---------------------------------------------------------------------------
+-- Lock / unlock chat frame movement
+---------------------------------------------------------------------------
+
+local function ApplyLockState()
+    local locked = GudaChatDB.locked
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf then
+            cf:SetMovable(not locked)
+            cf:SetClampedToScreen(true)
+            if locked then
+                cf:SetScript("OnDragStart", nil)
+            end
+        end
+    end
+    -- Also prevent Blizzard's FloatingChatFrame drag functions
+    if locked then
+        if not ns._origStartMoving then
+            ns._origStartMoving = FCF_StartDragging
+        end
+        FCF_StartDragging = function() end
+    else
+        if ns._origStartMoving then
+            FCF_StartDragging = ns._origStartMoving
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Chrome stripping
 ---------------------------------------------------------------------------
 
@@ -513,6 +542,37 @@ local function CreateChatHeader(parentFrame)
     header:EnableMouse(true)
 
     -------------------------------------------------------------------
+    -- Shift+drag to move chat (when not locked)
+    -------------------------------------------------------------------
+    header:RegisterForDrag("LeftButton")
+    header:SetScript("OnDragStart", function(self)
+        if GudaChatDB.locked then return end
+        if not IsShiftKeyDown() then return end
+        parentFrame:SetMovable(true)
+        parentFrame:SetUserPlaced(true)
+        parentFrame:StartMoving()
+        self.isDragging = true
+    end)
+    header:SetScript("OnDragStop", function(self)
+        if self.isDragging then
+            parentFrame:StopMovingOrSizing()
+            self.isDragging = false
+        end
+    end)
+
+    -- Tooltip hint for drag
+    header:SetScript("OnEnter", function(self)
+        if not GudaChatDB.locked then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText("Shift+Drag to move", 0.7, 0.7, 0.7)
+            GameTooltip:Show()
+        end
+    end)
+    header:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    -------------------------------------------------------------------
     -- Left side: Tab switcher icon + dropdown
     -------------------------------------------------------------------
     local tabBtn = CreateIconButton(header, ASSET_PATH .. "characters.png", ICON_SIZE, "Chat Tabs")
@@ -727,7 +787,7 @@ end
 
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(340, 348)
+    f:SetSize(340, 382)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -778,6 +838,11 @@ local function CreateSettingsFrame()
 
     -- Section: General
     AddControl(CreateSeparator(content, "General"))
+
+    AddControl(CreateCheckbox(content, "Lock chat position", GudaChatDB.locked, function(checked)
+        GudaChatDB.locked = checked
+        ApplyLockState()
+    end))
 
     AddControl(CreateCheckbox(content, "Disable message fading", not GudaChatDB.fading, function(checked)
         GudaChatDB.fading = not checked
@@ -860,6 +925,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.copyLinks == nil then
             GudaChatDB.copyLinks = true
         end
+        if GudaChatDB.locked == nil then
+            GudaChatDB.locked = false
+        end
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -912,6 +980,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         SetupLinkHook()
         CreateScrollbar(ChatFrame1)
         CreateChatHeader(ChatFrame1)
+        ApplyLockState()
 
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r loaded — type |cffffd200/gc|r for settings")
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
