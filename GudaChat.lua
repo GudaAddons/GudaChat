@@ -664,7 +664,12 @@ local function StripChatChrome(index)
     KillFrame(_G["ChatFrame" .. index .. "ScrollToBottomButton"])
     KillFrame(_G["ChatFrame" .. index .. "ButtonFrameMinimizeButton"])
     KillFrame(_G["ChatFrame" .. index .. "ButtonFrame"])
-    KillFrame(_G["ChatFrame" .. index .. "Tab"])
+    local tab = _G["ChatFrame" .. index .. "Tab"]
+    if tab then
+        tab:SetAlpha(0)
+        tab:SetSize(0.001, 0.001)
+        tab:EnableMouse(false)
+    end
 
     -- Remove Blizzard's built-in spacing (ApplyChatMargins sets proper clamp insets later)
     cf:SetClampRectInsets(0, 0, 0, 0)
@@ -682,9 +687,11 @@ local function StripChatChrome(index)
         cf:SetIndentedWordWrap(false)
     end
 
-    -- Hide the background/border textures that have built-in padding
+    -- Keep background frame functional but transparent by default (color picker controls it)
     local bg = _G["ChatFrame" .. index .. "Background"]
-    if bg then bg:Hide() end
+    if bg then
+        bg:SetAlpha(0)
+    end
     local resize = _G["ChatFrame" .. index .. "ResizeButton"]
     if resize then KillFrame(resize) end
 
@@ -707,10 +714,9 @@ local function RehideAllTabs()
     for i = 1, NUM_CHAT_WINDOWS do
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if tab then
-            tab:Hide()
             tab:SetAlpha(0)
             tab:SetSize(0.001, 0.001)
-            tab.Show = tab.Hide
+            tab:EnableMouse(false)
         end
     end
 end
@@ -862,6 +868,425 @@ local function CreateIconButton(parent, texturePath, size, tooltip)
     return btn
 end
 
+---------------------------------------------------------------------------
+-- Rename window popup
+---------------------------------------------------------------------------
+
+StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
+    text = "Enter new name for this chat window:",
+    button1 = ACCEPT,
+    button2 = CANCEL,
+    hasEditBox = true,
+    OnShow = function(self)
+        local id = ns._renamingIndex or 1
+        self.EditBox:SetText(GetChatTabName(id))
+        self.EditBox:HighlightText()
+        self.EditBox:SetFocus()
+    end,
+    OnAccept = function(self)
+        local name = self.EditBox:GetText()
+        local chatFrame = ns._renamingFrame
+        local id = ns._renamingIndex
+        if chatFrame and name and name ~= "" and id then
+            FCF_SetWindowName(chatFrame, name, true)
+            FCF_SelectDockFrame(chatFrame)
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        local name = parent.EditBox:GetText()
+        local chatFrame = ns._renamingFrame
+        local id = ns._renamingIndex
+        if chatFrame and name and name ~= "" and id then
+            FCF_SetWindowName(chatFrame, name, true)
+            FCF_SelectDockFrame(chatFrame)
+        end
+        parent:Hide()
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+
+---------------------------------------------------------------------------
+-- Custom chat context menu (replaces Blizzard's tab right-click menu)
+---------------------------------------------------------------------------
+
+local FONT_SIZES = { 12, 14, 16, 18, 20, 24, 27 }
+
+local contextMenu, fontSubMenu
+
+local function GetSelectedChatFrameIndex()
+    -- Try FCF_GetCurrentChatFrame first (most reliable)
+    local current = FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+    if current then
+        for i = 1, NUM_CHAT_WINDOWS do
+            if _G["ChatFrame" .. i] == current then return i end
+        end
+    end
+    -- Fallback: check SELECTED_DOCK_FRAME, then SELECTED_CHAT_FRAME
+    local selected = SELECTED_DOCK_FRAME or SELECTED_CHAT_FRAME
+    if selected then
+        for i = 1, NUM_CHAT_WINDOWS do
+            if _G["ChatFrame" .. i] == selected then return i end
+        end
+    end
+    return 1
+end
+
+local function CreateContextMenuItem(parent, label, onClick, isSeparator, hasArrow, isCheckbox)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetHeight(20)
+
+    if isSeparator then
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint("LEFT", btn, "LEFT", 8, 0)
+        text:SetText(label)
+        text:SetTextColor(0.9, 0.75, 0.3)
+        btn:EnableMouse(false)
+        btn.label = text
+        return btn
+    end
+
+    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    text:SetPoint("LEFT", btn, "LEFT", 8, 0)
+    text:SetText(label)
+    btn.label = text
+
+    if isCheckbox then
+        local check = btn:CreateTexture(nil, "ARTWORK")
+        check:SetSize(12, 12)
+        check:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
+        check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+        check:Hide()
+        btn.check = check
+    end
+
+    if hasArrow then
+        local arrow = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        arrow:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
+        arrow:SetText(">")
+        arrow:SetTextColor(0.7, 0.7, 0.7)
+    end
+
+    local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+    highlight:SetVertexColor(1, 1, 1, 0.1)
+
+    btn:SetScript("OnClick", function(self)
+        if onClick then onClick(self) end
+    end)
+
+    return btn
+end
+
+local function CreateFontSubMenu()
+    local f = CreateFrame("Frame", "GudaChatFontSubMenu", UIParent, "BackdropTemplate")
+    f:SetFrameStrata("TOOLTIP")
+    f:SetFrameLevel(210)
+    f:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    f:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    f:Hide()
+
+    local yOff = -4
+    for _, size in ipairs(FONT_SIZES) do
+        local btn = CreateContextMenuItem(f, size .. " pt", nil, false, false, true)
+        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, yOff)
+        btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, yOff)
+
+        btn:SetScript("OnClick", function()
+            local id = GetSelectedChatFrameIndex()
+            local cf = _G["ChatFrame" .. id]
+            if cf then
+                local tab = _G["ChatFrame" .. id .. "Tab"]
+                if FCF_SetChatWindowFontSize then
+                    FCF_SetChatWindowFontSize(nil, cf, size)
+                else
+                    local fontObj, _, flags = cf:GetFont()
+                    cf:SetFont(fontObj, size, flags)
+                end
+            end
+            if contextMenu then contextMenu:Hide() end
+            f:Hide()
+        end)
+
+        btn:SetScript("OnEnter", function(self)
+            -- Mark current size
+            local id = GetSelectedChatFrameIndex()
+            local cf = _G["ChatFrame" .. id]
+            if cf then
+                local _, curSize = cf:GetFont()
+                curSize = math.floor(curSize + 0.5)
+                for _, child in ipairs({f:GetChildren()}) do
+                    if child.check then
+                        child.check:Hide()
+                    end
+                end
+                if math.floor(size + 0.5) == curSize and self.check then
+                    self.check:Show()
+                end
+            end
+        end)
+
+        yOff = yOff - 20
+    end
+
+    f:SetSize(80, math.abs(yOff) + 4)
+    fontSubMenu = f
+    return f
+end
+
+local function ShowContextMenu(anchor)
+    if not contextMenu then
+        local f = CreateFrame("Frame", "GudaChatContextMenu", UIParent, "BackdropTemplate")
+        f:SetFrameStrata("TOOLTIP")
+        f:SetFrameLevel(205)
+        f:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
+        })
+        f:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+        f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+        f:Hide()
+        tinsert(UISpecialFrames, "GudaChatContextMenu")
+        f:SetScript("OnHide", function()
+            if fontSubMenu then fontSubMenu:Hide() end
+        end)
+        contextMenu = f
+    end
+
+    -- Clear old children
+    for _, child in ipairs({contextMenu:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    local id = GetSelectedChatFrameIndex()
+    local cf = _G["ChatFrame" .. id]
+    local yOff = -4
+    local maxW = 140
+
+    -- Rename Window
+    local renameBtn = CreateContextMenuItem(contextMenu, "Rename Window", function()
+        local chatFrame = _G["ChatFrame" .. id]
+        if chatFrame then
+            -- Store which frame to rename, then show Blizzard's rename popup
+            ns._renamingFrame = chatFrame
+            ns._renamingIndex = id
+            StaticPopup_Show("GUDACHAT_RENAME_WINDOW")
+        end
+        contextMenu:Hide()
+    end)
+    renameBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    renameBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    -- Create New Window (show name popup like Blizzard does)
+    local newWinBtn = CreateContextMenuItem(contextMenu, "Create New Window", function()
+        if FCF_NewChatWindow then
+            FCF_NewChatWindow()
+        elseif FCF_OpenNewWindow then
+            FCF_OpenNewWindow()
+        end
+        contextMenu:Hide()
+    end)
+    newWinBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    newWinBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    -- Remove Window (not for General / ChatFrame1)
+    if id ~= 1 then
+        local removeBtn = CreateContextMenuItem(contextMenu, "Remove Window", function()
+            local chatFrame = _G["ChatFrame" .. id]
+            if chatFrame and FCF_Close then
+                FCF_Close(chatFrame)
+                FCF_SelectDockFrame(ChatFrame1)
+            end
+            contextMenu:Hide()
+        end)
+        removeBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+        removeBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+        yOff = yOff - 20
+    end
+
+    -- Display separator
+    local displaySep = CreateContextMenuItem(contextMenu, "Display", nil, true)
+    displaySep:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    displaySep:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    -- Font Size (with submenu arrow)
+    local fontBtn = CreateContextMenuItem(contextMenu, "Font Size", nil, false, true)
+    fontBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    fontBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    local fsm = fontSubMenu or CreateFontSubMenu()
+
+    fontBtn:SetScript("OnEnter", function(self)
+        -- Show current font size checkmark
+        local curCf = _G["ChatFrame" .. GetSelectedChatFrameIndex()]
+        if curCf then
+            local _, curSize = curCf:GetFont()
+            curSize = math.floor(curSize + 0.5)
+            for _, child in ipairs({fsm:GetChildren()}) do
+                if child.check then
+                    local sizeStr = child.label and child.label:GetText()
+                    local sz = sizeStr and tonumber(sizeStr:match("(%d+)"))
+                    if sz == curSize then
+                        child.check:Show()
+                    else
+                        child.check:Hide()
+                    end
+                end
+            end
+        end
+        fsm:ClearAllPoints()
+        fsm:SetPoint("TOPLEFT", self, "TOPRIGHT", 2, 4)
+        fsm:Show()
+    end)
+    fontBtn:SetScript("OnLeave", function(self)
+        C_Timer.After(0.2, function()
+            if fsm and not fsm:IsMouseOver() and not self:IsMouseOver() then
+                fsm:Hide()
+            end
+        end)
+    end)
+
+    -- Background (color swatch — opens Blizzard color picker)
+    local bgBtn = CreateContextMenuItem(contextMenu, "Background")
+    bgBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    bgBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    -- Color swatch preview
+    local swatch = bgBtn:CreateTexture(nil, "ARTWORK")
+    swatch:SetSize(14, 14)
+    swatch:SetPoint("RIGHT", bgBtn, "RIGHT", -8, 0)
+    swatch:SetTexture("Interface\\Buttons\\WHITE8x8")
+
+    -- Set swatch to current background color
+    local curCf = _G["ChatFrame" .. id]
+    local r, g, b, a = 0, 0, 0, 0.5
+    if curCf then
+        r, g, b = FCF_GetCurrentChatFrameBackgroundColor and FCF_GetCurrentChatFrameBackgroundColor(curCf) or 0, 0, 0
+        a = curCf.oldAlpha or 0.25
+    end
+    swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
+
+    -- Border around swatch
+    local swatchBorder = bgBtn:CreateTexture(nil, "OVERLAY")
+    swatchBorder:SetSize(16, 16)
+    swatchBorder:SetPoint("CENTER", swatch, "CENTER", 0, 0)
+    swatchBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
+    swatchBorder:SetVertexColor(0.5, 0.5, 0.5, 0.8)
+    swatchBorder:SetDrawLayer("ARTWORK", -1)
+
+    bgBtn:SetScript("OnClick", function()
+        local chatFrame = _G["ChatFrame" .. GetSelectedChatFrameIndex()]
+        if not chatFrame then return end
+        contextMenu:Hide()
+
+        local cr, cg, cb = 0, 0, 0
+        if FCF_GetCurrentChatFrameBackgroundColor then
+            cr, cg, cb = FCF_GetCurrentChatFrameBackgroundColor(chatFrame)
+        end
+        local ca = chatFrame.oldAlpha or 0.25
+
+        local info = {}
+        info.r = cr
+        info.g = cg
+        info.b = cb
+        info.opacity = 1 - ca
+        info.hasOpacity = true
+        info.swatchFunc = function()
+            local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+            if FCF_SetWindowColor then
+                FCF_SetWindowColor(chatFrame, nr, ng, nb)
+            end
+        end
+        info.opacityFunc = function()
+            local newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or ColorPickerFrame:GetColorAlpha() or 0)
+            if FCF_SetWindowAlpha then
+                FCF_SetWindowAlpha(chatFrame, newAlpha)
+            end
+        end
+        info.cancelFunc = function(prev)
+            if FCF_SetWindowColor then
+                FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
+            end
+            if FCF_SetWindowAlpha then
+                FCF_SetWindowAlpha(chatFrame, 1 - prev.opacity)
+            end
+        end
+
+        if ColorPickerFrame.SetupColorPickerAndShow then
+            ColorPickerFrame:SetupColorPickerAndShow(info)
+        else
+            ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
+            ColorPickerFrame.hasOpacity = info.hasOpacity
+            ColorPickerFrame.opacity = info.opacity
+            ColorPickerFrame.func = info.swatchFunc
+            ColorPickerFrame.opacityFunc = info.opacityFunc
+            ColorPickerFrame.cancelFunc = info.cancelFunc
+            ColorPickerFrame.previousValues = { r = info.r, g = info.g, b = info.b, opacity = info.opacity }
+            ColorPickerFrame:Hide()
+            ColorPickerFrame:Show()
+        end
+    end)
+
+    bgBtn:SetScript("OnEnter", function()
+        if fsm then fsm:Hide() end
+    end)
+
+    -- Filters separator
+    local filterSep = CreateContextMenuItem(contextMenu, "Filters", nil, true)
+    filterSep:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    filterSep:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    -- Settings (opens Blizzard chat config or our settings)
+    local settBtn = CreateContextMenuItem(contextMenu, "Settings", function()
+        if ChatConfigFrame and ChatConfigFrame.Show then
+            ShowUIPanel(ChatConfigFrame)
+        end
+        contextMenu:Hide()
+    end)
+    settBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+    settBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+    yOff = yOff - 20
+
+    contextMenu:SetSize(maxW, math.abs(yOff) + 4)
+    contextMenu:ClearAllPoints()
+    contextMenu:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+    contextMenu:Show()
+end
+
+-- Close context menu + font submenu when clicking outside
+local contextCloser = CreateFrame("Frame")
+contextCloser:SetScript("OnUpdate", function()
+    if contextMenu and contextMenu:IsShown() then
+        local overMenu = contextMenu:IsMouseOver()
+        local overFont = fontSubMenu and fontSubMenu:IsShown() and fontSubMenu:IsMouseOver()
+        if not overMenu and not overFont and IsMouseButtonDown("LeftButton") then
+            contextMenu:Hide()
+            if fontSubMenu then fontSubMenu:Hide() end
+        end
+    end
+end)
+
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
@@ -931,9 +1356,12 @@ local function CreateChatHeader(parentFrame)
     local monitor = CreateFrame("Frame")
     monitor:SetScript("OnUpdate", function()
         local over = header:IsMouseOver() or parentFrame:IsMouseOver()
-        -- Also check if any dropdown is open
+        -- Also check if any dropdown is open (our custom or Blizzard's)
         local dropdownOpen = GudaChatTabDropdown and GudaChatTabDropdown:IsShown()
-        if over or dropdownOpen then
+        local blizzDropdownOpen = DropDownList1 and DropDownList1:IsShown()
+        local contextMenuOpen = contextMenu and contextMenu:IsShown()
+        local fontMenuOpen = fontSubMenu and fontSubMenu:IsShown()
+        if over or dropdownOpen or blizzDropdownOpen or contextMenuOpen or fontMenuOpen then
             ShowHeader()
         else
             HideHeader()
@@ -943,12 +1371,11 @@ local function CreateChatHeader(parentFrame)
     header:EnableMouse(true)
 
     -------------------------------------------------------------------
-    -- Shift+drag to move chat (when not locked)
+    -- Drag to move chat (when not locked)
     -------------------------------------------------------------------
     header:RegisterForDrag("LeftButton")
     header:SetScript("OnDragStart", function(self)
         if GudaChatDB.locked then return end
-        if not IsShiftKeyDown() then return end
         parentFrame:SetMovable(true)
         parentFrame:SetUserPlaced(true)
         parentFrame:StartMoving()
@@ -968,7 +1395,7 @@ local function CreateChatHeader(parentFrame)
     header:SetScript("OnEnter", function(self)
         if not GudaChatDB.locked then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText("Shift+Drag to move", 0.7, 0.7, 0.7)
+            GameTooltip:SetText("Drag to move", 0.7, 0.7, 0.7)
             GameTooltip:Show()
         end
     end)
@@ -1017,7 +1444,7 @@ local function CreateChatHeader(parentFrame)
             if cf and tab then
                 local name = GetChatTabName(i)
                 local isDocked = cf.isDocked or (i == 1)
-                if isDocked then
+                if isDocked and i ~= 2 then -- skip Combat Log (has its own button)
                     local mb = CreateFrame("Button", nil, dropdown)
                     mb:SetHeight(20)
                     mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
@@ -1027,14 +1454,14 @@ local function CreateChatHeader(parentFrame)
                     mbText:SetPoint("LEFT", mb, "LEFT", 6, 0)
                     mbText:SetText(name)
 
-                    local isActive = (SELECTED_CHAT_FRAME == cf) or (DEFAULT_CHAT_FRAME == cf and i == 1)
+                    local isActive = (GetSelectedChatFrameIndex() == i)
                     mbText:SetTextColor(isActive and 1 or 0.7, isActive and 1 or 0.7, isActive and 1 or 0.7, isActive and 1 or 0.8)
 
                     mb:SetScript("OnEnter", function()
                         mbText:SetTextColor(1, 1, 1, 1)
                     end)
                     mb:SetScript("OnLeave", function()
-                        local active = (SELECTED_CHAT_FRAME == cf) or (DEFAULT_CHAT_FRAME == cf and i == 1)
+                        local active = (GetSelectedChatFrameIndex() == i)
                         if not active then
                             mbText:SetTextColor(0.7, 0.7, 0.7, 0.8)
                         end
@@ -1105,12 +1532,45 @@ local function CreateChatHeader(parentFrame)
     tabLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
     tabLabel:SetText(GetChatTabName(1))
 
+    -- Right-click button over tab label for Blizzard context menu
+    local tabLabelBtn = CreateFrame("Button", nil, header)
+    tabLabelBtn:SetPoint("CENTER", tabLabel, "CENTER", 0, 0)
+    tabLabelBtn:SetHeight(HEADER_HEIGHT)
+    tabLabelBtn:RegisterForClicks("RightButtonUp")
+    tabLabelBtn:SetScript("OnClick", function(self, button)
+        if button ~= "RightButton" then return end
+        if contextMenu and contextMenu:IsShown() then
+            contextMenu:Hide()
+            if fontSubMenu then fontSubMenu:Hide() end
+        else
+            ShowContextMenu(self)
+        end
+    end)
+    tabLabelBtn:SetScript("OnEnter", function(self)
+        tabLabel:SetTextColor(0.9, 0.9, 0.9, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Right-click for options", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+        if chatHeader then chatHeader:SetAlpha(1) end
+    end)
+    tabLabelBtn:SetScript("OnLeave", function(self)
+        tabLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
+        GameTooltip:Hide()
+    end)
+
+    -- Size the button to match the label text width
+    local function UpdateTabLabelBtnWidth()
+        tabLabelBtn:SetWidth(math.max(tabLabel:GetStringWidth() + 16, 40))
+    end
+    UpdateTabLabelBtnWidth()
+
     -- Update label when tabs switch
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if not cf then return end
         for i = 1, NUM_CHAT_WINDOWS do
             if _G["ChatFrame" .. i] == cf then
                 tabLabel:SetText(GetChatTabName(i))
+                UpdateTabLabelBtnWidth()
                 break
             end
         end
@@ -1262,9 +1722,64 @@ local function CreateSlider(parent, label, minVal, maxVal, step, currentVal, onC
     return container
 end
 
+local TIMESTAMP_OPTIONS = {
+    { label = "None",        value = "none" },
+    { label = "03:27",       value = "%I:%M " },
+    { label = "03:27:32",    value = "%I:%M:%S " },
+    { label = "03:27 PM",    value = "%I:%M %p " },
+    { label = "03:27:32 PM", value = "%I:%M:%S %p " },
+    { label = "15:27",       value = "%H:%M " },
+    { label = "15:27:32",    value = "%H:%M:%S " },
+}
+
+local dropdownCounter = 0
+
+local function CreateDropdown(parent, label, options, currentValue, onChange)
+    dropdownCounter = dropdownCounter + 1
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetHeight(30)
+
+    local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    text:SetPoint("LEFT", container, "LEFT", 0, 0)
+    text:SetText(label)
+
+    local ddName = "GudaChatDropdown" .. dropdownCounter
+    local dd = CreateFrame("Frame", ddName, container, "UIDropDownMenuTemplate")
+    dd:SetPoint("RIGHT", container, "RIGHT", 16, -2)
+    UIDropDownMenu_SetWidth(dd, 120)
+
+    local function Initialize(self, level)
+        for _, opt in ipairs(options) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = opt.label
+            info.value = opt.value
+            info.func = function(self)
+                UIDropDownMenu_SetSelectedValue(dd, self.value)
+                UIDropDownMenu_SetText(dd, opt.label)
+                onChange(self.value)
+                CloseDropDownMenus()
+            end
+            info.checked = (opt.value == UIDropDownMenu_GetSelectedValue(dd))
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end
+
+    UIDropDownMenu_Initialize(dd, Initialize)
+    UIDropDownMenu_SetSelectedValue(dd, currentValue)
+    for _, opt in ipairs(options) do
+        if opt.value == currentValue then
+            UIDropDownMenu_SetText(dd, opt.label)
+            break
+        end
+    end
+
+    container.dropdown = dd
+    return container
+end
+
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(340, 382)
+    f:SetSize(340, 416)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -1337,6 +1852,11 @@ local function CreateSettingsFrame()
 
     AddControl(CreateCheckbox(content, "Copyable links", GudaChatDB.copyLinks, function(checked)
         GudaChatDB.copyLinks = checked
+    end))
+
+    local currentTimestamp = GetCVar("showTimestamps") or "none"
+    AddControl(CreateDropdown(content, "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
+        SetCVar("showTimestamps", value)
     end))
 
     AddControl(CreateCheckbox(content, "Emojis", GudaChatDB.emojis, function(checked)
@@ -1453,6 +1973,28 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                 StripChatChrome(i)
             end
         end)
+
+        -- Auto-select newly created chat windows
+        if FCF_OpenNewWindow then
+            hooksecurefunc("FCF_OpenNewWindow", function()
+                for i = NUM_CHAT_WINDOWS, 1, -1 do
+                    local cf = _G["ChatFrame" .. i]
+                    if cf and cf:IsShown() then
+                        FCF_SelectDockFrame(cf)
+                        break
+                    end
+                end
+            end)
+        end
+
+        -- Auto-select renamed window and refresh tab label
+        if FCF_SetWindowName then
+            hooksecurefunc("FCF_SetWindowName", function(chatFrame)
+                if chatFrame then
+                    FCF_SelectDockFrame(chatFrame)
+                end
+            end)
+        end
 
         -- Hook all functions that can show/restore tabs
         local tabHookTargets = {
