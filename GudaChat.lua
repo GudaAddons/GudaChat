@@ -1685,15 +1685,15 @@ local function CreateChatHeader(parentFrame)
                     mbText:SetText(name)
 
                     local isActive = (GetSelectedChatFrameIndex() == i)
-                    mbText:SetTextColor(isActive and 1 or 0.7, isActive and 1 or 0.7, isActive and 1 or 0.7, isActive and 1 or 0.8)
+                    mbText:SetTextColor(isActive and 1 or 0.6, isActive and 0.8 or 0.45, isActive and 0 or 0.0, isActive and 1 or 0.8)
 
                     mb:SetScript("OnEnter", function()
-                        mbText:SetTextColor(1, 1, 1, 1)
+                        mbText:SetTextColor(1, 0.8, 0, 1)
                     end)
                     mb:SetScript("OnLeave", function()
                         local active = (GetSelectedChatFrameIndex() == i)
                         if not active then
-                            mbText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+                            mbText:SetTextColor(0.6, 0.45, 0.0, 0.8)
                         end
                     end)
 
@@ -1813,7 +1813,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     local tabLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     tabLabel:SetPoint("CENTER", header, "CENTER", 0, 0)
-    tabLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
+    tabLabel:SetTextColor(0.6, 0.45, 0.0, 0.8)
     tabLabel:SetText(GetChatTabName(1))
 
     -- Right-click button over tab label for Blizzard context menu
@@ -1831,14 +1831,14 @@ local function CreateChatHeader(parentFrame)
         end
     end)
     tabLabelBtn:SetScript("OnEnter", function(self)
-        tabLabel:SetTextColor(0.9, 0.9, 0.9, 1)
+        tabLabel:SetTextColor(1, 0.8, 0, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Right-click for options", 0.7, 0.7, 0.7)
         GameTooltip:Show()
         if chatHeader then chatHeader:SetAlpha(1) end
     end)
     tabLabelBtn:SetScript("OnLeave", function(self)
-        tabLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
+        tabLabel:SetTextColor(0.6, 0.45, 0.0, 0.8)
         GameTooltip:Hide()
     end)
 
@@ -1987,20 +1987,20 @@ local function CreateChatHeader(parentFrame)
         local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
         labelText:SetText(entry.label)
-        labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+        labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
 
         local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
         cmdText:SetText(entry.cmd)
-        cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+        cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
 
         mb:SetScript("OnEnter", function()
-            labelText:SetTextColor(1, 1, 1, 1)
-            cmdText:SetTextColor(0.6, 0.6, 0.6, 1)
+            labelText:SetTextColor(1, 0.8, 0, 1)
+            cmdText:SetTextColor(0.8, 0.6, 0, 1)
         end)
         mb:SetScript("OnLeave", function()
-            labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
-            cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+            labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+            cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
         end)
 
         local slash = entry.cmd
@@ -2041,11 +2041,11 @@ local function CreateChatHeader(parentFrame)
         local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
         labelText:SetText(entry.label)
-        labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+        labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
 
         local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
-        cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+        cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
 
         if entry.hasArrow then
             cmdText:SetText(">")
@@ -2054,8 +2054,8 @@ local function CreateChatHeader(parentFrame)
         end
 
         mb:SetScript("OnEnter", function()
-            labelText:SetTextColor(1, 1, 1, 1)
-            cmdText:SetTextColor(0.6, 0.6, 0.6, 1)
+            labelText:SetTextColor(1, 0.8, 0, 1)
+            cmdText:SetTextColor(0.8, 0.6, 0, 1)
             if entry.hasArrow then
                 emoteSubMenu:ClearAllPoints()
                 emoteSubMenu:SetPoint("BOTTOMRIGHT", chatTypeDropdown, "BOTTOMLEFT", -2, 0)
@@ -2065,8 +2065,8 @@ local function CreateChatHeader(parentFrame)
             end
         end)
         mb:SetScript("OnLeave", function()
-            labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
-            cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+            labelText:SetTextColor(0.6, 0.45, 0.0, 0.8)
+            cmdText:SetTextColor(0.4, 0.3, 0.0, 0.8)
         end)
 
         local slash = entry.cmd
