@@ -616,6 +616,9 @@ local function CreateChatHeader(parentFrame)
         if self.isDragging then
             parentFrame:StopMovingOrSizing()
             self.isDragging = false
+            -- Save position to persist across reloads
+            local point, _, relPoint, x, y = parentFrame:GetPoint(1)
+            GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
         end
     end)
 
@@ -1033,6 +1036,15 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         tabWatcher:SetScript("OnEvent", function()
             C_Timer.After(0.1, RehideAllTabs)
         end)
+
+        -- Restore saved chat position
+        if GudaChatDB.position then
+            local p = GudaChatDB.position
+            ChatFrame1:SetMovable(true)
+            ChatFrame1:ClearAllPoints()
+            ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
+            ChatFrame1:SetUserPlaced(true)
+        end
 
         ChatFrame1:SetFading(GudaChatDB.fading)
         ApplyClassColors()
