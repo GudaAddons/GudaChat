@@ -218,12 +218,25 @@ local function StyleEditBox(chatFrame, index)
         eb.gudaBg = bg
     end
 
-    eb:SetTextInsets(8, 28, 0, 0)
-
     local header = _G["ChatFrame" .. index .. "EditBoxHeader"]
     if header then
         header:SetTextColor(0.6, 0.6, 0.6)
+        header:ClearAllPoints()
+        header:SetPoint("LEFT", eb, "LEFT", 4, 0)
     end
+
+    -- Override Blizzard's SetTextInsets to always use tight left inset
+    local origSetTextInsets = eb.SetTextInsets
+    eb.SetTextInsets = function(self, left, right, top, bottom)
+        local hdr = _G["ChatFrame" .. index .. "EditBoxHeader"]
+        if hdr and hdr:IsShown() then
+            left = hdr:GetStringWidth() + 8
+        else
+            left = 4
+        end
+        origSetTextInsets(self, left, 28, top or 0, bottom or 0)
+    end
+    eb:SetTextInsets(0, 28, 0, 0)
 
     -- Emoji picker button
     local emojiBtn = CreateFrame("Button", nil, eb)
@@ -311,6 +324,85 @@ local function ApplyClassColors()
         DisableClassColors()
     end
 end
+
+---------------------------------------------------------------------------
+-- Player level in chat
+---------------------------------------------------------------------------
+
+local levelCache = {}
+
+local function GetPlayerLevel(name)
+    if not name then return nil end
+    -- Check cache first
+    if levelCache[name] then return levelCache[name] end
+
+    -- Try unit IDs
+    local unitIDs = { "target", "focus", "mouseover" }
+    for i = 1, 4 do tinsert(unitIDs, "party" .. i) end
+    for i = 1, 40 do tinsert(unitIDs, "raid" .. i) end
+    for i = 1, 40 do tinsert(unitIDs, "nameplate" .. i) end
+
+    for _, unit in ipairs(unitIDs) do
+        if UnitExists(unit) then
+            local unitName = UnitName(unit)
+            if unitName == name then
+                local level = UnitLevel(unit)
+                if level and level > 0 then
+                    levelCache[name] = level
+                    return level
+                end
+            end
+        end
+    end
+
+    -- Try guild roster
+    if IsInGuild and IsInGuild() then
+        local numMembers = GetNumGuildMembers and GetNumGuildMembers() or 0
+        for i = 1, numMembers do
+            local gName, _, _, gLevel = GetGuildRosterInfo(i)
+            if gName then
+                local shortName = gName:match("^([^%-]+)")
+                if shortName == name and gLevel and gLevel > 0 then
+                    levelCache[shortName] = gLevel
+                    if shortName == name then return gLevel end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function FilterAddLevel(self, event, msg, sender, ...)
+    if not GudaChatDB or not GudaChatDB.showLevel then return false end
+
+    local name = sender and sender:match("^([^%-]+)")
+    local level = GetPlayerLevel(name)
+    if level then
+        -- Prepend level to the message in grey
+        msg = "|cff888888[" .. level .. "]|r " .. msg
+        return false, msg, sender, ...
+    end
+    return false
+end
+
+local LEVEL_CHANNELS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
+    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_CHANNEL",
+}
+
+local function EnableLevelDisplay()
+    for _, channel in ipairs(LEVEL_CHANNELS) do
+        ChatFrame_AddMessageEventFilter(channel, FilterAddLevel)
+    end
+end
+
+-- Clear cache periodically to stay fresh
+C_Timer.NewTicker(60, function() wipe(levelCache) end)
 
 ---------------------------------------------------------------------------
 -- Copyable links
@@ -1239,6 +1331,10 @@ local function CreateSettingsFrame()
         ApplyClassColors()
     end))
 
+    AddControl(CreateCheckbox(content, "Show player level", GudaChatDB.showLevel, function(checked)
+        GudaChatDB.showLevel = checked
+    end))
+
     AddControl(CreateCheckbox(content, "Copyable links", GudaChatDB.copyLinks, function(checked)
         GudaChatDB.copyLinks = checked
     end))
@@ -1329,6 +1425,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.locked == nil then
             GudaChatDB.locked = false
         end
+        if GudaChatDB.showLevel == nil then
+            GudaChatDB.showLevel = true
+        end
         if GudaChatDB.emojis == nil then
             GudaChatDB.emojis = true
         end
@@ -1392,6 +1491,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
 
         ChatFrame1:SetFading(GudaChatDB.fading)
         ApplyClassColors()
+        EnableLevelDisplay()
         EnableCopyLinks()
         EnableEmojis()
         SetupLinkHook()
