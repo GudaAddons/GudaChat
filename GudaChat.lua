@@ -1433,6 +1433,77 @@ local function CreateCombatSubTabs(header)
     return bar
 end
 
+---------------------------------------------------------------------------
+-- Whisper frame setup
+---------------------------------------------------------------------------
+
+local function EnforceWhisperGroups(cf)
+    ChatFrame_RemoveAllMessageGroups(cf)
+    ChatFrame_AddMessageGroup(cf, "WHISPER")
+    ChatFrame_AddMessageGroup(cf, "BN_WHISPER")
+end
+
+local function SetupWhisperFrame()
+    -- Check if we already have a saved whisper frame that's still valid
+    local idx = GudaChatDB.whisperFrameIndex
+    if idx then
+        local cf = _G["ChatFrame" .. idx]
+        local name = cf and GetChatWindowInfo(idx)
+        if cf and name == "Whispers" then
+            ns.whisperFrame = cf
+            ns.whisperFrameIndex = idx
+            EnforceWhisperGroups(cf)
+            return
+        end
+        -- Saved index is stale
+        GudaChatDB.whisperFrameIndex = nil
+    end
+
+    -- Find an existing frame named "Whispers"
+    for i = 3, NUM_CHAT_WINDOWS do
+        local name = GetChatWindowInfo(i)
+        if name == "Whispers" then
+            local cf = _G["ChatFrame" .. i]
+            ns.whisperFrame = cf
+            ns.whisperFrameIndex = i
+            GudaChatDB.whisperFrameIndex = i
+            EnforceWhisperGroups(cf)
+            return
+        end
+    end
+
+    -- Create a new whisper window
+    if FCF_OpenNewWindow then
+        FCF_OpenNewWindow("Whispers")
+        for i = NUM_CHAT_WINDOWS, 1, -1 do
+            local cf = _G["ChatFrame" .. i]
+            if cf then
+                EnforceWhisperGroups(cf)
+                StripChatChrome(i)
+                ns.whisperFrame = cf
+                ns.whisperFrameIndex = i
+                GudaChatDB.whisperFrameIndex = i
+                -- Dock it and switch back to General
+                FCF_DockFrame(cf)
+                FCF_SelectDockFrame(ChatFrame1)
+                break
+            end
+        end
+    end
+end
+
+-- Listen for incoming whispers to trigger blink notification
+local whisperListener = CreateFrame("Frame")
+whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
+whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
+whisperListener:SetScript("OnEvent", function()
+    if not GudaChatDB or not GudaChatDB.whisperTab then return end
+    -- Only blink if whisper frame is not currently shown
+    if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
+        ns.StartWhisperBlink()
+    end
+end)
+
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
@@ -1600,7 +1671,7 @@ local function CreateChatHeader(parentFrame)
             if cf and tab then
                 local name = GetChatTabName(i)
                 local isDocked = cf.isDocked or (i == 1)
-                if isDocked and i ~= 2 then -- skip Combat Log (has its own button)
+                if isDocked and i ~= 2 and i ~= (ns.whisperFrameIndex or -1) then -- skip Combat Log & Whispers (have their own buttons)
                     local mb = CreateFrame("Button", nil, dropdown)
                     mb:SetHeight(20)
                     mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
@@ -1639,7 +1710,7 @@ local function CreateChatHeader(parentFrame)
 
         dropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
         dropdown:ClearAllPoints()
-        dropdown:SetPoint("TOPLEFT", tabBtn, "BOTTOMLEFT", -4, -2)
+        dropdown:SetPoint("BOTTOMLEFT", tabBtn, "TOPLEFT", -4, 2)
     end
 
     tabBtn:SetScript("OnClick", function()
@@ -1681,6 +1752,60 @@ local function CreateChatHeader(parentFrame)
     combatBtn:HookScript("OnClick", function() CloseDropdown() end)
 
     -------------------------------------------------------------------
+    -- Left side: Whisper icon
+    -------------------------------------------------------------------
+    local whisperBtn = CreateIconButton(header, ASSET_PATH .. "characters.png", ICON_SIZE, "Whispers")
+    whisperBtn:SetPoint("LEFT", combatBtn, "RIGHT", 6, 0)
+    if not GudaChatDB.whisperTab then whisperBtn:Hide() end
+    ns.whisperBtn = whisperBtn
+
+    -- Blink animation for incoming whispers
+    local blinkGroup = whisperBtn:CreateAnimationGroup()
+    blinkGroup:SetLooping("REPEAT")
+    local blinkFadeOut = blinkGroup:CreateAnimation("Alpha")
+    blinkFadeOut:SetFromAlpha(1)
+    blinkFadeOut:SetToAlpha(0.2)
+    blinkFadeOut:SetDuration(0.5)
+    blinkFadeOut:SetOrder(1)
+    local blinkFadeIn = blinkGroup:CreateAnimation("Alpha")
+    blinkFadeIn:SetFromAlpha(0.2)
+    blinkFadeIn:SetToAlpha(1)
+    blinkFadeIn:SetDuration(0.5)
+    blinkFadeIn:SetOrder(2)
+
+    local function StartWhisperBlink()
+        if not blinkGroup:IsPlaying() then
+            whisperBtn.icon:SetVertexColor(1, 0.8, 0, 1)
+            blinkGroup:Play()
+        end
+        -- Force header visible
+        ShowHeader()
+    end
+
+    local function StopWhisperBlink()
+        if blinkGroup:IsPlaying() then
+            blinkGroup:Stop()
+            whisperBtn.icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
+            whisperBtn:SetAlpha(1)
+        end
+    end
+
+    ns.StartWhisperBlink = StartWhisperBlink
+    ns.StopWhisperBlink = StopWhisperBlink
+
+    whisperBtn:SetScript("OnClick", function()
+        if ns.whisperFrame then
+            if ns.whisperFrame:IsShown() then
+                FCF_SelectDockFrame(ChatFrame1)
+            else
+                FCF_SelectDockFrame(ns.whisperFrame)
+                StopWhisperBlink()
+            end
+        end
+    end)
+    whisperBtn:HookScript("OnClick", function() CloseDropdown() end)
+
+    -------------------------------------------------------------------
     -- Center: Current tab name
     -------------------------------------------------------------------
     local tabLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1720,7 +1845,41 @@ local function CreateChatHeader(parentFrame)
     end
     UpdateTabLabelBtnWidth()
 
-    -- Update label when tabs switch
+    -- Highlight active icon based on selected frame
+    local ICON_ACTIVE = {1, 1, 1, 1}
+    local ICON_INACTIVE = {0.7, 0.7, 0.7, 0.9}
+
+    local function UpdateIconHighlights(cf)
+        local isCombat = (cf == ChatFrame2)
+        local isWhisper = (ns.whisperFrame and cf == ns.whisperFrame)
+        local isGeneral = (not isCombat and not isWhisper)
+
+        combatBtn.icon:SetVertexColor(unpack(isCombat and ICON_ACTIVE or ICON_INACTIVE))
+        -- Only update whisper icon color if not blinking
+        if whisperBtn:IsShown() and not (ns.StartWhisperBlink and blinkGroup:IsPlaying()) then
+            whisperBtn.icon:SetVertexColor(unpack(isWhisper and ICON_ACTIVE or ICON_INACTIVE))
+        end
+        tabBtn.icon:SetVertexColor(unpack(isGeneral and ICON_ACTIVE or ICON_INACTIVE))
+    end
+
+    -- Override OnLeave to respect active state
+    tabBtn:HookScript("OnLeave", function()
+        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+        local isActive = sel and sel ~= ChatFrame2 and sel ~= ns.whisperFrame
+        if isActive then tabBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+    end)
+    combatBtn:HookScript("OnLeave", function()
+        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+        if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+    end)
+    whisperBtn:HookScript("OnLeave", function()
+        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+        if ns.whisperFrame and sel == ns.whisperFrame and not blinkGroup:IsPlaying() then
+            whisperBtn.icon:SetVertexColor(unpack(ICON_ACTIVE))
+        end
+    end)
+
+    -- Update label and icon highlights when tabs switch
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if not cf then return end
         for i = 1, NUM_CHAT_WINDOWS do
@@ -1730,6 +1889,7 @@ local function CreateChatHeader(parentFrame)
                 break
             end
         end
+        UpdateIconHighlights(cf)
     end)
 
     -------------------------------------------------------------------
@@ -1741,6 +1901,108 @@ local function CreateChatHeader(parentFrame)
     settingsBtn:SetScript("OnClick", function()
         ns.ToggleSettings()
         CloseDropdown()
+    end)
+
+    -------------------------------------------------------------------
+    -- Right side: Chat Channels icon
+    -------------------------------------------------------------------
+    local channelsBtn = CreateIconButton(header, ASSET_PATH .. "voice.png", ICON_SIZE, "Chat Channels")
+    channelsBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
+
+    channelsBtn:SetScript("OnClick", function()
+        ToggleChannelFrame()
+        CloseDropdown()
+    end)
+
+    -------------------------------------------------------------------
+    -- Right side: Chat Type (emote) icon
+    -------------------------------------------------------------------
+    local chatTypeBtn = CreateIconButton(header, ASSET_PATH .. "chat.png", ICON_SIZE, "Chat Type")
+    chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
+
+    local chatTypeDropdown = CreateFrame("Frame", "GudaChatTypeDropdown", chatTypeBtn, "BackdropTemplate")
+    chatTypeDropdown:SetFrameStrata("TOOLTIP")
+    chatTypeDropdown:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    chatTypeDropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    chatTypeDropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    chatTypeDropdown:Hide()
+
+    local chatTypeEntries = {
+        { label = "Say",          cmd = "/s" },
+        { label = "Party Chat",   cmd = "/p" },
+        { label = "Raid",         cmd = "/raid" },
+        { label = "Battleground", cmd = "/bg" },
+        { label = "Guild Chat",   cmd = "/g" },
+        { label = "Yell",         cmd = "/y" },
+        { label = "Whisper",      cmd = "/w" },
+        { label = "Emote",        cmd = "/e" },
+        { label = "Reply",        cmd = "/r" },
+    }
+
+    local ctYOff = -4
+    local ctMaxW = 60
+
+    for _, entry in ipairs(chatTypeEntries) do
+        local mb = CreateFrame("Button", nil, chatTypeDropdown)
+        mb:SetHeight(20)
+        mb:SetPoint("TOPLEFT", chatTypeDropdown, "TOPLEFT", 4, ctYOff)
+        mb:SetPoint("TOPRIGHT", chatTypeDropdown, "TOPRIGHT", -4, ctYOff)
+
+        local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
+        labelText:SetText(entry.label)
+        labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+
+        local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
+        cmdText:SetText(entry.cmd)
+        cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+
+        mb:SetScript("OnEnter", function()
+            labelText:SetTextColor(1, 1, 1, 1)
+            cmdText:SetTextColor(0.6, 0.6, 0.6, 1)
+        end)
+        mb:SetScript("OnLeave", function()
+            labelText:SetTextColor(0.7, 0.7, 0.7, 0.8)
+            cmdText:SetTextColor(0.4, 0.4, 0.4, 0.8)
+        end)
+
+        local slash = entry.cmd
+        mb:SetScript("OnClick", function()
+            ChatFrame_OpenChat(slash .. " ", ChatFrame1)
+            chatTypeDropdown:Hide()
+        end)
+
+        local tw = labelText:GetStringWidth() + cmdText:GetStringWidth() + 32
+        if tw > ctMaxW then ctMaxW = tw end
+        ctYOff = ctYOff - 20
+    end
+
+    chatTypeDropdown:SetSize(ctMaxW + 8, math.abs(ctYOff) + 4)
+
+    chatTypeBtn:SetScript("OnClick", function(self)
+        if chatTypeDropdown:IsShown() then
+            chatTypeDropdown:Hide()
+        else
+            chatTypeDropdown:ClearAllPoints()
+            chatTypeDropdown:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 4, 2)
+            chatTypeDropdown:Show()
+        end
+        CloseDropdown()
+    end)
+
+    local ctCloser = CreateFrame("Frame", nil, chatTypeDropdown)
+    ctCloser:SetScript("OnUpdate", function()
+        if chatTypeDropdown:IsShown() and not chatTypeDropdown:IsMouseOver() and not chatTypeBtn:IsMouseOver() then
+            if IsMouseButtonDown("LeftButton") then
+                chatTypeDropdown:Hide()
+            end
+        end
     end)
 
     -------------------------------------------------------------------
@@ -2036,6 +2298,19 @@ local function CreateSettingsFrame()
         GudaChatDB.copyLinks = checked
     end))
 
+    AddControl(CreateCheckbox(content, "Whisper tab", GudaChatDB.whisperTab, function(checked)
+        GudaChatDB.whisperTab = checked
+        if checked then
+            SetupWhisperFrame()
+            if ns.whisperBtn then ns.whisperBtn:Show() end
+        else
+            if ns.whisperFrame and ns.whisperFrame:IsShown() then
+                FCF_SelectDockFrame(ChatFrame1)
+            end
+            if ns.whisperBtn then ns.whisperBtn:Hide() end
+        end
+    end))
+
     local currentTimestamp = GetCVar("showTimestamps") or "none"
     AddControl(CreateDropdown(content, "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
         SetCVar("showTimestamps", value)
@@ -2136,6 +2411,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.emojiSize == nil then
             GudaChatDB.emojiSize = DEFAULT_EMOJI_SIZE
         end
+        if GudaChatDB.whisperTab == nil then
+            GudaChatDB.whisperTab = false
+        end
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -2220,6 +2498,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         EnableEmojis()
         SetupLinkHook()
         CreateScrollbar(ChatFrame1)
+        if GudaChatDB.whisperTab then
+            SetupWhisperFrame()
+        end
         CreateChatHeader(ChatFrame1)
         ApplyLockState()
         ApplyChatMargins()
