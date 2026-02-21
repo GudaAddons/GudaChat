@@ -373,14 +373,36 @@ local function GetPlayerLevel(name)
     return nil
 end
 
+local function GetLevelDifficultyColor(level)
+    if GetQuestDifficultyColor then
+        local c = GetQuestDifficultyColor(level)
+        if c then return c.r, c.g, c.b end
+    end
+    -- Fallback: manual difficulty color based on player level difference
+    local playerLevel = UnitLevel("player") or 60
+    local diff = level - playerLevel
+    if diff >= 5 then
+        return 1.0, 0.1, 0.1       -- red
+    elseif diff >= 3 then
+        return 1.0, 0.5, 0.25      -- orange
+    elseif diff >= -2 then
+        return 1.0, 1.0, 0.0       -- yellow
+    elseif diff >= -(playerLevel / 5 + 2) then
+        return 0.25, 0.75, 0.25    -- green
+    else
+        return 0.5, 0.5, 0.5       -- grey
+    end
+end
+
 local function FilterAddLevel(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.showLevel then return false end
 
     local name = sender and sender:match("^([^%-]+)")
     local level = GetPlayerLevel(name)
     if level then
-        -- Prepend level to the message in grey
-        msg = "|cff888888[" .. level .. "]|r " .. msg
+        local r, g, b = GetLevelDifficultyColor(level)
+        local hex = string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
+        msg = hex .. "[" .. level .. "]|r " .. msg
         return false, msg, sender, ...
     end
     return false
