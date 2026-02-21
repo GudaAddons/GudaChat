@@ -13,6 +13,155 @@ local function KillFrame(frame)
 end
 
 ---------------------------------------------------------------------------
+-- Shared constants
+---------------------------------------------------------------------------
+
+local ASSET_PATH = "Interface\\AddOns\\GudaChat\\Assets\\"
+
+local COLOR_DARK_BG       = { 0.08, 0.08, 0.08, 0.95 }
+local COLOR_DARK_BORDER   = { 0.3,  0.3,  0.3,  0.6  }
+local COLOR_GOLDEN_A      = { 0.8,  0.6,  0.0,  0.8  }
+local COLOR_COPY_BG       = { 0.1,  0.1,  0.1,  0.95 }
+local COLOR_HEADER_BG     = { 0.05, 0.05, 0.05, 0.85 }
+local COLOR_HEADER_BORDER = { 0.25, 0.25, 0.25, 0.5  }
+
+local BACKDROP_DARK = {
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+    insets = { left = 1, right = 1, top = 1, bottom = 1 },
+}
+
+local BACKDROP_FLAT = {
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    insets = { left = 0, right = 0, top = 0, bottom = 0 },
+}
+
+---------------------------------------------------------------------------
+-- Shared helpers
+---------------------------------------------------------------------------
+
+local function ApplyDarkBackdrop(frame, bgColor, borderColor)
+    frame:SetBackdrop(BACKDROP_DARK)
+    frame:SetBackdropColor(unpack(bgColor or COLOR_DARK_BG))
+    frame:SetBackdropBorderColor(unpack(borderColor or COLOR_DARK_BORDER))
+end
+
+local function ForEachChatWindow(fn)
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf then fn(cf, i) end
+    end
+end
+
+local function CreateCloseButton(parent)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(12, 12)
+    btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, -4)
+    btn:SetNormalTexture(ASSET_PATH .. "close.png")
+    btn:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
+    btn:SetScript("OnEnter", function(self)
+        self:GetNormalTexture():SetVertexColor(1, 1, 1)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
+    end)
+    btn:SetScript("OnClick", function() parent:Hide() end)
+    return btn
+end
+
+local function CreateDragRegion(parent)
+    local drag = CreateFrame("Frame", nil, parent)
+    drag:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    drag:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -28, 0)
+    drag:SetHeight(24)
+    drag:EnableMouse(true)
+    drag:RegisterForDrag("LeftButton")
+    drag:SetScript("OnDragStart", function()
+        parent:StartMoving()
+        parent:SetUserPlaced(false)
+    end)
+    drag:SetScript("OnDragStop", function()
+        parent:StopMovingOrSizing()
+        parent:SetUserPlaced(false)
+    end)
+    return drag
+end
+
+local function CreateCopyPopupFrame(globalName, width, height, multiLine)
+    local f = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
+    f:SetSize(width, height)
+    f:SetPoint("CENTER")
+    f:SetFrameStrata("TOOLTIP")
+    ApplyDarkBackdrop(f, COLOR_COPY_BG, COLOR_GOLDEN_A)
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        self:SetUserPlaced(false)
+    end)
+    tinsert(UISpecialFrames, globalName)
+
+    CreateCloseButton(f)
+
+    local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -6)
+    label:SetText(multiLine and "Ctrl+C to copy. Escape to close." or "Ctrl+C to copy, Escape to close")
+    label:SetTextColor(0.6, 0.6, 0.6)
+
+    if multiLine then
+        local scrollFrame = CreateFrame("ScrollFrame", globalName .. "Scroll", f, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -22)
+        scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 8)
+
+        local eb = CreateFrame("EditBox", nil, scrollFrame)
+        eb:SetFontObject(GameFontHighlight)
+        eb:SetMultiLine(true)
+        eb:SetAutoFocus(false)
+        eb:SetTextColor(0.9, 0.9, 0.9)
+        eb:SetMaxLetters(0)
+        eb:SetScript("OnEscapePressed", function() f:Hide() end)
+        eb:SetScript("OnEnter", function(self)
+            scrollFrame:UpdateScrollChildRect()
+            self:SetFocus()
+        end)
+        eb:SetScript("OnLeave", function(self) self:ClearFocus() end)
+        eb:SetScript("OnCursorChanged", function(self, x, y, w, h)
+            scrollFrame:SetVerticalScroll(-y)
+        end)
+        scrollFrame:SetScrollChild(eb)
+
+        f.editBox = eb
+        f.scrollFrame = scrollFrame
+    else
+        local eb = CreateFrame("EditBox", nil, f, "BackdropTemplate")
+        eb:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -20)
+        eb:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 6)
+        eb:SetFontObject(ChatFontNormal)
+        eb:SetAutoFocus(true)
+        eb:SetScript("OnEscapePressed", function() f:Hide() end)
+        eb:SetScript("OnEditFocusLost", function() f:Hide() end)
+        f.editBox = eb
+    end
+
+    f:Hide()
+    return f
+end
+
+-- Shared channel event list for message filters
+local CHAT_MSG_CHANNELS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+    "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
+    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
+    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_CHANNEL",
+}
+
+---------------------------------------------------------------------------
 -- Edit box positioning
 ---------------------------------------------------------------------------
 
@@ -42,61 +191,59 @@ local function ApplyChatMargins()
     local topClamp = (pos == "top") and 32 or 4
     local botClamp = (pos == "bottom") and INPUT_BAR_CLAMP or 4
 
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf then
-            if cf.SetTextInsets then
-                cf:SetTextInsets(0, 0, topPad, botPad)
-            end
-            cf:SetClampRectInsets(-4, 4, topClamp, -botClamp)
-            cf:SetClampedToScreen(true)
+    ForEachChatWindow(function(cf)
+        if cf.SetTextInsets then
+            cf:SetTextInsets(0, 0, topPad, botPad)
         end
-    end
+        cf:SetClampRectInsets(-4, 4, topClamp, -botClamp)
+        cf:SetClampedToScreen(true)
+    end)
 end
 
 ---------------------------------------------------------------------------
 -- Emoji Picker
 ---------------------------------------------------------------------------
 
-local EMOJI_PICKER_ITEMS = {
-    { plain = ":)",    file = "emoji_smile.png" },
-    { plain = ":(",    file = "emoji_sad.png" },
-    { plain = ":D",    file = "emoji_grin.png" },
-    { plain = ":P",    file = "emoji_tongue.png" },
-    { plain = ";)",    file = "emoji_wink.png" },
-    { plain = ":O",    file = "emoji_surprised.png" },
-    { plain = "xD",    file = "emoji_laugh.png" },
-    { plain = ":'(",   file = "emoji_cry.png" },
-    { plain = ">:(",   file = "emoji_angry.png" },
-    { plain = "B)",    file = "emoji_cool.png" },
-    { plain = "<3",    file = "emoji_heart.png" },
-    { plain = ":+1:",  file = "emoji_thumbsup.png" },
-    { plain = ":-1:",  file = "emoji_thumbsdown.png" },
-    { plain = ":fire:",    file = "emoji_fire.png" },
-    { plain = ":skull:",   file = "emoji_skull.png" },
-    { plain = ":poop:",    file = "emoji_poop.png" },
-    { plain = ":clown:",   file = "emoji_clown.png" },
-    { plain = ":nerd:",    file = "emoji_nerd.png" },
-    { plain = ":eyeroll:", file = "emoji_eyeroll.png" },
-    { plain = ":thinking:",file = "emoji_thinking.png" },
-    { plain = "zzz",       file = "emoji_zzz.png" },
-    { plain = ":star:",    file = "emoji_star.png" },
-    { plain = ":moon:",    file = "emoji_moon.png" },
-    { plain = ":check:",   file = "emoji_check.png" },
-    { plain = ":x:",       file = "emoji_x.png" },
-    { plain = ":diamond:", file = "emoji_diamond.png" },
-    { plain = ":circle:",  file = "emoji_circle.png" },
-    { plain = ":triangle:",file = "emoji_triangle.png" },
-    { plain = ":square:",  file = "emoji_square.png" },
-    { plain = ":cross:",   file = "emoji_cross.png" },
-    { plain = ":cat:",     file = "emoji_cat.png" },
-    { plain = ":cat_laugh:", file = "emoji_cat_laugh.png" },
-    { plain = ":cat_heart:", file = "emoji_cat_heart.png" },
-    { plain = ":cat_cry:", file = "emoji_cat_cry.png" },
-    { plain = ":party:",   file = "emoji_party.png" },
-    { plain = ":confetti:",file = "emoji_confetti.png" },
-    { plain = ":trophy:",  file = "emoji_trophy.png" },
-    { plain = ":clap:",    file = "emoji_clap.png" },
+local EMOJI_DATA = {
+    { plain = ":)",    pattern = ":%)",    file = "emoji_smile.png" },
+    { plain = ":(",    pattern = ":%(",    file = "emoji_sad.png" },
+    { plain = ":D",    pattern = ":D",     file = "emoji_grin.png" },
+    { plain = ":P",    pattern = ":P",     file = "emoji_tongue.png" },
+    { plain = ";)",    pattern = ";%)",    file = "emoji_wink.png" },
+    { plain = ":O",    pattern = ":O",     file = "emoji_surprised.png" },
+    { plain = "xD",    pattern = "xD",     file = "emoji_laugh.png" },
+    { plain = "XD",    pattern = "XD",     file = "emoji_laugh.png", pickerHidden = true },
+    { plain = ":'(",   pattern = ":'%(",   file = "emoji_cry.png" },
+    { plain = ">:(",   pattern = ">:%(",   file = "emoji_angry.png" },
+    { plain = "B)",    pattern = "B%)",    file = "emoji_cool.png" },
+    { plain = "<3",    pattern = "<3",     file = "emoji_heart.png" },
+    { plain = ":+1:",  pattern = ":%+1:",  file = "emoji_thumbsup.png" },
+    { plain = ":-1:",  pattern = ":%-1:",  file = "emoji_thumbsdown.png" },
+    { plain = ":fire:",    pattern = ":fire:",    file = "emoji_fire.png" },
+    { plain = ":skull:",   pattern = ":skull:",   file = "emoji_skull.png" },
+    { plain = ":poop:",    pattern = ":poop:",    file = "emoji_poop.png" },
+    { plain = ":clown:",   pattern = ":clown:",   file = "emoji_clown.png" },
+    { plain = ":nerd:",    pattern = ":nerd:",    file = "emoji_nerd.png" },
+    { plain = ":eyeroll:", pattern = ":eyeroll:", file = "emoji_eyeroll.png" },
+    { plain = ":thinking:",pattern = ":thinking:",file = "emoji_thinking.png" },
+    { plain = "zzz",       pattern = "zzz",       file = "emoji_zzz.png" },
+    { plain = ":star:",    pattern = ":star:",    file = "emoji_star.png" },
+    { plain = ":moon:",    pattern = ":moon:",    file = "emoji_moon.png" },
+    { plain = ":check:",   pattern = ":check:",   file = "emoji_check.png" },
+    { plain = ":x:",       pattern = ":x:",       file = "emoji_x.png" },
+    { plain = ":diamond:", pattern = ":diamond:", file = "emoji_diamond.png" },
+    { plain = ":circle:",  pattern = ":circle:",  file = "emoji_circle.png" },
+    { plain = ":triangle:",pattern = ":triangle:",file = "emoji_triangle.png" },
+    { plain = ":square:",  pattern = ":square:",  file = "emoji_square.png" },
+    { plain = ":cross:",   pattern = ":cross:",   file = "emoji_cross.png" },
+    { plain = ":cat:",     pattern = ":cat:",     file = "emoji_cat.png" },
+    { plain = ":cat_laugh:",pattern = ":cat_laugh:",file = "emoji_cat_laugh.png" },
+    { plain = ":cat_heart:",pattern = ":cat_heart:",file = "emoji_cat_heart.png" },
+    { plain = ":cat_cry:", pattern = ":cat_cry:", file = "emoji_cat_cry.png" },
+    { plain = ":party:",   pattern = ":party:",   file = "emoji_party.png" },
+    { plain = ":confetti:",pattern = ":confetti:",file = "emoji_confetti.png" },
+    { plain = ":trophy:",  pattern = ":trophy:",  file = "emoji_trophy.png" },
+    { plain = ":clap:",    pattern = ":clap:",    file = "emoji_clap.png" },
 }
 
 local emojiPickerFrame
@@ -106,7 +253,15 @@ local function CreateEmojiPicker()
     local PADDING = 4
     local MARGIN = 8
 
-    local rows = math.ceil(#EMOJI_PICKER_ITEMS / COLS)
+    -- Filter to visible picker entries
+    local pickerItems = {}
+    for _, entry in ipairs(EMOJI_DATA) do
+        if not entry.pickerHidden then
+            tinsert(pickerItems, entry)
+        end
+    end
+
+    local rows = math.ceil(#pickerItems / COLS)
     local width = MARGIN * 2 + COLS * BTN_SIZE + (COLS - 1) * PADDING
     local height = MARGIN * 2 + rows * BTN_SIZE + (rows - 1) * PADDING
 
@@ -116,16 +271,9 @@ local function CreateEmojiPicker()
     f:SetFrameLevel(200)
     f:SetClampedToScreen(true)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    f:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+    ApplyDarkBackdrop(f, COLOR_DARK_BG, { 0.3, 0.3, 0.3, 0.8 })
 
-    for i, entry in ipairs(EMOJI_PICKER_ITEMS) do
+    for i, entry in ipairs(pickerItems) do
         local col = (i - 1) % COLS
         local row = math.floor((i - 1) / COLS)
 
@@ -136,7 +284,7 @@ local function CreateEmojiPicker()
         local tex = btn:CreateTexture(nil, "ARTWORK")
         tex:SetPoint("CENTER")
         tex:SetSize(BTN_SIZE - 4, BTN_SIZE - 4)
-        tex:SetTexture("Interface\\AddOns\\GudaChat\\Assets\\" .. entry.file)
+        tex:SetTexture(ASSET_PATH .. entry.file)
 
         local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
         highlight:SetAllPoints()
@@ -215,14 +363,7 @@ local function StyleEditBox(chatFrame, index)
         local bg = CreateFrame("Frame", nil, eb, "BackdropTemplate")
         bg:SetAllPoints(eb)
         bg:SetFrameLevel(eb:GetFrameLevel() - 1)
-        bg:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        bg:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-        bg:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+        ApplyDarkBackdrop(bg, COLOR_HEADER_BG, COLOR_DARK_BORDER)
         eb.gudaBg = bg
     end
 
@@ -253,7 +394,7 @@ local function StyleEditBox(chatFrame, index)
 
     local emojiIcon = emojiBtn:CreateTexture(nil, "ARTWORK")
     emojiIcon:SetAllPoints()
-    emojiIcon:SetTexture("Interface\\AddOns\\GudaChat\\Assets\\emoji_smile.png")
+    emojiIcon:SetTexture(ASSET_PATH .. "emoji_smile.png")
     emojiIcon:SetAlpha(0.5)
 
     emojiBtn:SetScript("OnEnter", function() emojiIcon:SetAlpha(1) end)
@@ -275,12 +416,12 @@ local function StyleEditBox(chatFrame, index)
 
     eb:HookScript("OnEditFocusGained", function(self)
         if self.gudaBg then
-            self.gudaBg:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
+            self.gudaBg:SetBackdropBorderColor(unpack(COLOR_GOLDEN_A))
         end
     end)
     eb:HookScript("OnEditFocusLost", function(self)
         if self.gudaBg then
-            self.gudaBg:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+            self.gudaBg:SetBackdropBorderColor(unpack(COLOR_DARK_BORDER))
         end
         if emojiPickerFrame and emojiPickerFrame:IsShown() then
             emojiPickerFrame:Hide()
@@ -292,48 +433,25 @@ end
 -- Class colors
 ---------------------------------------------------------------------------
 
-local function EnableClassColors()
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf then
-            for _, group in ipairs({
-                "SAY", "YELL", "GUILD", "OFFICER", "GUILD_ACHIEVEMENT",
-                "ACHIEVEMENT", "WHISPER", "BN_WHISPER", "PARTY", "PARTY_LEADER",
-                "RAID", "RAID_LEADER", "RAID_WARNING",
-                "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER",
-                "CHANNEL1", "CHANNEL2", "CHANNEL3", "CHANNEL4", "CHANNEL5",
-                "CHANNEL6", "CHANNEL7", "CHANNEL8", "CHANNEL9", "CHANNEL10",
-            }) do
-                SetChatColorNameByClass(group, true)
-            end
-        end
-    end
-end
+local CLASS_COLOR_GROUPS = {
+    "SAY", "YELL", "GUILD", "OFFICER", "GUILD_ACHIEVEMENT",
+    "ACHIEVEMENT", "WHISPER", "BN_WHISPER", "PARTY", "PARTY_LEADER",
+    "RAID", "RAID_LEADER", "RAID_WARNING",
+    "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER",
+    "CHANNEL1", "CHANNEL2", "CHANNEL3", "CHANNEL4", "CHANNEL5",
+    "CHANNEL6", "CHANNEL7", "CHANNEL8", "CHANNEL9", "CHANNEL10",
+}
 
-local function DisableClassColors()
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf then
-            for _, group in ipairs({
-                "SAY", "YELL", "GUILD", "OFFICER", "GUILD_ACHIEVEMENT",
-                "ACHIEVEMENT", "WHISPER", "BN_WHISPER", "PARTY", "PARTY_LEADER",
-                "RAID", "RAID_LEADER", "RAID_WARNING",
-                "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER",
-                "CHANNEL1", "CHANNEL2", "CHANNEL3", "CHANNEL4", "CHANNEL5",
-                "CHANNEL6", "CHANNEL7", "CHANNEL8", "CHANNEL9", "CHANNEL10",
-            }) do
-                SetChatColorNameByClass(group, false)
-            end
+local function SetClassColors(enabled)
+    ForEachChatWindow(function()
+        for _, group in ipairs(CLASS_COLOR_GROUPS) do
+            SetChatColorNameByClass(group, enabled)
         end
-    end
+    end)
 end
 
 local function ApplyClassColors()
-    if GudaChatDB.classColors then
-        EnableClassColors()
-    else
-        DisableClassColors()
-    end
+    SetClassColors(GudaChatDB.classColors)
 end
 
 ---------------------------------------------------------------------------
@@ -446,59 +564,7 @@ local copyFrame
 
 local function ShowCopyPopup(text)
     if not copyFrame then
-        local f = CreateFrame("Frame", "GudaChatCopyPopup", UIParent, "BackdropTemplate")
-        f:SetSize(320, 50)
-        f:SetPoint("CENTER")
-        f:SetFrameStrata("TOOLTIP")
-        f:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-        f:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
-        f:EnableMouse(true)
-        f:SetMovable(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", f.StartMoving)
-        f:SetScript("OnDragStop", function(self)
-            self:StopMovingOrSizing()
-            self:SetUserPlaced(false)
-        end)
-
-        tinsert(UISpecialFrames, "GudaChatCopyPopup")
-
-        local closeBtn = CreateFrame("Button", nil, f)
-        closeBtn:SetSize(12, 12)
-        closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-        closeBtn:SetNormalTexture("Interface\\AddOns\\GudaChat\\Assets\\close.png")
-        closeBtn:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
-        closeBtn:SetScript("OnEnter", function(self)
-            self:GetNormalTexture():SetVertexColor(1, 1, 1)
-        end)
-        closeBtn:SetScript("OnLeave", function(self)
-            self:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
-        end)
-        closeBtn:SetScript("OnClick", function() f:Hide() end)
-
-        -- Label
-        local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -6)
-        label:SetText("Ctrl+C to copy, Escape to close")
-        label:SetTextColor(0.6, 0.6, 0.6)
-
-        -- Edit box for selecting/copying
-        local eb = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-        eb:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -20)
-        eb:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 6)
-        eb:SetFontObject(ChatFontNormal)
-        eb:SetAutoFocus(true)
-        eb:SetScript("OnEscapePressed", function() f:Hide() end)
-        eb:SetScript("OnEditFocusLost", function() f:Hide() end)
-        f.editBox = eb
-
-        copyFrame = f
+        copyFrame = CreateCopyPopupFrame("GudaChatCopyPopup", 320, 50, false)
     end
 
     copyFrame.editBox:SetText(text)
@@ -553,17 +619,14 @@ local function SetupLinkHook()
     local origSetHyperlink = ItemRefTooltip.SetHyperlink
 
     -- Hook OnHyperlinkClick on each chat frame
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf then
-            cf:HookScript("OnHyperlinkClick", function(self, link, text, button)
-                local url = link:match("^gudachat:url:(.+)$")
-                if url then
-                    ShowCopyPopup(url)
-                end
-            end)
-        end
-    end
+    ForEachChatWindow(function(cf)
+        cf:HookScript("OnHyperlinkClick", function(self, link, text, button)
+            local url = link:match("^gudachat:url:(.+)$")
+            if url then
+                ShowCopyPopup(url)
+            end
+        end)
+    end)
 
     -- Prevent the default tooltip from erroring on our custom link type
     ItemRefTooltip.SetHyperlink = function(self, link, ...)
@@ -573,22 +636,9 @@ local function SetupLinkHook()
 end
 
 local function EnableCopyLinks()
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_OFFICER", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_PARTY", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_PARTY_LEADER", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_RAID", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_RAID_LEADER", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_RAID_WARNING", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_INSTANCE_CHAT", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_INSTANCE_CHAT_LEADER", FilterAddURLLinks)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", FilterAddURLLinks)
+    for _, channel in ipairs(CHAT_MSG_CHANNELS) do
+        ChatFrame_AddMessageEventFilter(channel, FilterAddURLLinks)
+    end
     ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", FilterAddURLLinks)
 end
 
@@ -596,58 +646,16 @@ end
 -- Emoji text replacement
 ---------------------------------------------------------------------------
 
-local EMOJI_PATH = "Interface\\AddOns\\GudaChat\\Assets\\"
 local DEFAULT_EMOJI_SIZE = 12
-local EMOJI_REPLACEMENTS = {
-    { plain = ":)",   pattern = ":%)",    file = "emoji_smile.png" },
-    { plain = ":(",   pattern = ":%(",    file = "emoji_sad.png" },
-    { plain = ":D",   pattern = ":D",     file = "emoji_grin.png" },
-    { plain = ":P",   pattern = ":P",     file = "emoji_tongue.png" },
-    { plain = ";)",   pattern = ";%)",    file = "emoji_wink.png" },
-    { plain = ":O",   pattern = ":O",     file = "emoji_surprised.png" },
-    { plain = "<3",   pattern = "<3",     file = "emoji_heart.png" },
-    { plain = ":star:",    pattern = ":star:",    file = "emoji_star.png" },
-    { plain = ":skull:",   pattern = ":skull:",   file = "emoji_skull.png" },
-    { plain = ":check:",   pattern = ":check:",   file = "emoji_check.png" },
-    { plain = ":x:",       pattern = ":x:",       file = "emoji_x.png" },
-    { plain = ":moon:",    pattern = ":moon:",    file = "emoji_moon.png" },
-    { plain = ":diamond:", pattern = ":diamond:", file = "emoji_diamond.png" },
-    { plain = ":circle:",  pattern = ":circle:",  file = "emoji_circle.png" },
-    { plain = ":triangle:",pattern = ":triangle:",file = "emoji_triangle.png" },
-    { plain = ":square:",  pattern = ":square:",  file = "emoji_square.png" },
-    { plain = ":cross:",   pattern = ":cross:",   file = "emoji_cross.png" },
-    { plain = "xD",   pattern = "xD",    file = "emoji_laugh.png" },
-    { plain = "XD",   pattern = "XD",    file = "emoji_laugh.png" },
-    { plain = ":'(",  pattern = ":'%(",  file = "emoji_cry.png" },
-    { plain = "zzz",  pattern = "zzz",   file = "emoji_zzz.png" },
-    { plain = ":+1:",  pattern = ":%+1:",  file = "emoji_thumbsup.png" },
-    { plain = ":-1:",  pattern = ":%-1:",  file = "emoji_thumbsdown.png" },
-    { plain = ">:(",  pattern = ">:%(",   file = "emoji_angry.png" },
-    { plain = "B)",   pattern = "B%)",    file = "emoji_cool.png" },
-    { plain = ":fire:",  pattern = ":fire:",  file = "emoji_fire.png" },
-    { plain = ":poop:",  pattern = ":poop:",  file = "emoji_poop.png" },
-    { plain = ":clown:", pattern = ":clown:", file = "emoji_clown.png" },
-    { plain = ":nerd:",  pattern = ":nerd:",  file = "emoji_nerd.png" },
-    { plain = ":eyeroll:", pattern = ":eyeroll:", file = "emoji_eyeroll.png" },
-    { plain = ":thinking:", pattern = ":thinking:", file = "emoji_thinking.png" },
-    { plain = ":cat:",      pattern = ":cat:",      file = "emoji_cat.png" },
-    { plain = ":cat_laugh:",pattern = ":cat_laugh:",file = "emoji_cat_laugh.png" },
-    { plain = ":cat_heart:",pattern = ":cat_heart:",file = "emoji_cat_heart.png" },
-    { plain = ":cat_cry:",  pattern = ":cat_cry:",  file = "emoji_cat_cry.png" },
-    { plain = ":party:",    pattern = ":party:",    file = "emoji_party.png" },
-    { plain = ":confetti:", pattern = ":confetti:", file = "emoji_confetti.png" },
-    { plain = ":trophy:",   pattern = ":trophy:",   file = "emoji_trophy.png" },
-    { plain = ":clap:",     pattern = ":clap:",     file = "emoji_clap.png" },
-}
 
 local function FilterAddEmojis(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.emojis then return false end
 
     local size = GudaChatDB.emojiSize or DEFAULT_EMOJI_SIZE
     local changed = false
-    for _, entry in ipairs(EMOJI_REPLACEMENTS) do
+    for _, entry in ipairs(EMOJI_DATA) do
         if msg:find(entry.plain, 1, true) then
-            local tex = "|T" .. EMOJI_PATH .. entry.file .. ":" .. size .. "|t"
+            local tex = "|T" .. ASSET_PATH .. entry.file .. ":" .. size .. "|t"
             msg = msg:gsub(entry.pattern, tex)
             changed = true
         end
@@ -659,18 +667,8 @@ local function FilterAddEmojis(self, event, msg, ...)
     return false
 end
 
-local EMOJI_CHANNELS = {
-    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
-    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
-    "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM",
-    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
-    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
-    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
-    "CHAT_MSG_CHANNEL",
-}
-
 local function EnableEmojis()
-    for _, channel in ipairs(EMOJI_CHANNELS) do
+    for _, channel in ipairs(CHAT_MSG_CHANNELS) do
         ChatFrame_AddMessageEventFilter(channel, FilterAddEmojis)
     end
 end
@@ -681,16 +679,13 @@ end
 
 local function ApplyLockState()
     local locked = GudaChatDB.locked
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf then
-            cf:SetMovable(not locked)
-            cf:SetClampedToScreen(true)
-            if locked then
-                cf:SetScript("OnDragStart", nil)
-            end
+    ForEachChatWindow(function(cf)
+        cf:SetMovable(not locked)
+        cf:SetClampedToScreen(true)
+        if locked then
+            cf:SetScript("OnDragStart", nil)
         end
-    end
+    end)
     -- Also prevent Blizzard's FloatingChatFrame drag functions
     if locked then
         if not ns._origStartMoving then
@@ -765,14 +760,14 @@ if FCF_UpdateButtonSide then
 end
 
 local function RehideAllTabs()
-    for i = 1, NUM_CHAT_WINDOWS do
+    ForEachChatWindow(function(_, i)
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if tab then
             tab:SetAlpha(0)
             tab:SetSize(0.001, 0.001)
             tab:EnableMouse(false)
         end
-    end
+    end)
 end
 
 ---------------------------------------------------------------------------
@@ -792,10 +787,7 @@ local function CreateScrollbar(chatFrame)
     slider:SetValueStep(1)
     slider:SetObeyStepOnDrag(true)
 
-    slider:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    })
+    slider:SetBackdrop(BACKDROP_FLAT)
     slider:SetBackdropColor(0, 0, 0, 0.3)
 
     local thumb = slider:CreateTexture(nil, "OVERLAY")
@@ -887,7 +879,7 @@ local function CreateScrollbar(chatFrame)
     local sdIcon = scrollDown:CreateTexture(nil, "ARTWORK")
     sdIcon:SetPoint("CENTER")
     sdIcon:SetSize(12, 12)
-    sdIcon:SetTexture("Interface\\AddOns\\GudaChat\\Assets\\down.png")
+    sdIcon:SetTexture(ASSET_PATH .. "down.png")
     sdIcon:SetVertexColor(0.8, 0.6, 0, 0.9)
 
     scrollDown:SetScript("OnEnter", function()
@@ -922,29 +914,26 @@ end
 
 local function FadeInScrollbar()
     if GudaChatDB and GudaChatDB.hideScrollbar then return end
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf and cf.gudaScrollbar and cf:IsVisible() then
+    ForEachChatWindow(function(cf)
+        if cf.gudaScrollbar and cf:IsVisible() then
             cf.gudaScrollbar.FadeIn()
         end
-    end
+    end)
 end
 
 local function FadeOutScrollbar()
     if GudaChatDB and GudaChatDB.hideScrollbar then return end
-    for i = 1, NUM_CHAT_WINDOWS do
-        local cf = _G["ChatFrame" .. i]
-        if cf and cf.gudaScrollbar and cf:IsVisible() then
+    ForEachChatWindow(function(cf)
+        if cf.gudaScrollbar and cf:IsVisible() then
             cf.gudaScrollbar.FadeOut()
         end
-    end
+    end)
 end
 
 ---------------------------------------------------------------------------
 -- Chat header bar (hover-reveal, icon buttons)
 ---------------------------------------------------------------------------
 
-local ASSET_PATH = "Interface\\AddOns\\GudaChat\\Assets\\"
 local ICON_SIZE = 16
 local HEADER_HEIGHT = 22
 local chatHeader
@@ -1107,14 +1096,7 @@ local function CreateFontSubMenu()
     local f = CreateFrame("Frame", "GudaChatFontSubMenu", UIParent, "BackdropTemplate")
     f:SetFrameStrata("TOOLTIP")
     f:SetFrameLevel(210)
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    f:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    ApplyDarkBackdrop(f)
     f:Hide()
 
     local yOff = -4
@@ -1170,14 +1152,7 @@ local function ShowContextMenu(anchor)
         local f = CreateFrame("Frame", "GudaChatContextMenu", UIParent, "BackdropTemplate")
         f:SetFrameStrata("TOOLTIP")
         f:SetFrameLevel(205)
-        f:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        f:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-        f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+        ApplyDarkBackdrop(f)
         f:Hide()
         tinsert(UISpecialFrames, "GudaChatContextMenu")
         f:SetScript("OnHide", function()
@@ -1457,14 +1432,7 @@ local function CreateCombatSubTabs(header)
     bar:SetFrameStrata("MEDIUM")
     bar:SetFrameLevel(101)
 
-    bar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    bar:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    bar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+    ApplyDarkBackdrop(bar, COLOR_DARK_BG, { 0.3, 0.3, 0.3, 0.8 })
     bar:EnableMouse(true)
     bar:SetAlpha(0)
     bar:Hide()
@@ -1772,14 +1740,7 @@ local function CreateChatHeader(parentFrame)
     header:SetFrameLevel(100)
     header:SetAlpha(0)
 
-    header:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    header:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
-    header:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.5)
+    ApplyDarkBackdrop(header, COLOR_HEADER_BG, COLOR_HEADER_BORDER)
 
     -- Hover detection zone (covers header + chat frame area)
     local hoverZone = CreateFrame("Frame", nil, UIParent)
@@ -1901,14 +1862,7 @@ local function CreateChatHeader(parentFrame)
     -- Tab dropdown
     local dropdown = CreateFrame("Frame", "GudaChatTabDropdown", tabBtn, "BackdropTemplate")
     dropdown:SetFrameStrata("TOOLTIP")
-    dropdown:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    dropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    dropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    ApplyDarkBackdrop(dropdown)
     dropdown:Hide()
 
     local menuButtons = {}
@@ -2144,13 +2098,12 @@ local function CreateChatHeader(parentFrame)
     -- Update label and icon highlights when tabs switch
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if not cf then return end
-        for i = 1, NUM_CHAT_WINDOWS do
-            if _G["ChatFrame" .. i] == cf then
+        ForEachChatWindow(function(frame, i)
+            if frame == cf then
                 tabLabel:SetText(GetChatTabName(i))
                 UpdateTabLabelBtnWidth()
-                break
             end
-        end
+        end)
         UpdateIconHighlights(cf)
     end)
 
@@ -2200,28 +2153,14 @@ local function CreateChatHeader(parentFrame)
 
     local chatTypeDropdown = CreateFrame("Frame", "GudaChatTypeDropdown", chatTypeBtn, "BackdropTemplate")
     chatTypeDropdown:SetFrameStrata("TOOLTIP")
-    chatTypeDropdown:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    chatTypeDropdown:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    chatTypeDropdown:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    ApplyDarkBackdrop(chatTypeDropdown)
     chatTypeDropdown:Hide()
 
     -- Emote submenu
     local emoteSubMenu = CreateFrame("Frame", "GudaChatEmoteSubMenu", chatTypeDropdown, "BackdropTemplate")
     emoteSubMenu:SetFrameStrata("TOOLTIP")
     emoteSubMenu:SetFrameLevel(chatTypeDropdown:GetFrameLevel() + 1)
-    emoteSubMenu:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    emoteSubMenu:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    emoteSubMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    ApplyDarkBackdrop(emoteSubMenu)
     emoteSubMenu:Hide()
 
     local emoteList = {
@@ -2637,21 +2576,7 @@ local function CreateSettingsFrame()
 
     f:SetTitle("GudaChat Settings")
 
-    -- Drag region
-    local drag = CreateFrame("Frame", nil, f)
-    drag:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    drag:SetPoint("TOPRIGHT", f, "TOPRIGHT", -28, 0)
-    drag:SetHeight(24)
-    drag:EnableMouse(true)
-    drag:RegisterForDrag("LeftButton")
-    drag:SetScript("OnDragStart", function()
-        f:StartMoving()
-        f:SetUserPlaced(false)
-    end)
-    drag:SetScript("OnDragStop", function()
-        f:StopMovingOrSizing()
-        f:SetUserPlaced(false)
-    end)
+    CreateDragRegion(f)
 
     -------------------------------------------------------------------
     -- Tabs (Blizzard style)
@@ -2741,9 +2666,8 @@ local function CreateSettingsFrame()
 
         Add(CreateCheckbox(tabPanels[1], "Hide scrollbar", GudaChatDB.hideScrollbar, function(checked)
             GudaChatDB.hideScrollbar = checked
-            for i = 1, NUM_CHAT_WINDOWS do
-                local cf = _G["ChatFrame" .. i]
-                if cf and cf.gudaScrollbar then
+            ForEachChatWindow(function(cf)
+                if cf.gudaScrollbar then
                     if checked then
                         cf.gudaScrollbar:Hide()
                     else
@@ -2751,7 +2675,7 @@ local function CreateSettingsFrame()
                         cf.gudaScrollbar:SetAlpha(0)
                     end
                 end
-            end
+            end)
         end))
 
         local currentTimestamp = GetCVar("showTimestamps") or "none"
@@ -2764,9 +2688,9 @@ local function CreateSettingsFrame()
         Add(CreateCheckbox(tabPanels[1], "Show input bar on top", GudaChatDB.inputPosition == "top", function(checked)
             local wasTop = GudaChatDB.inputPosition == "top"
             GudaChatDB.inputPosition = checked and "top" or "bottom"
-            for i = 1, NUM_CHAT_WINDOWS do
-                PositionEditBox(_G["ChatFrame" .. i], i, GudaChatDB.inputPosition)
-            end
+            ForEachChatWindow(function(cf, i)
+                PositionEditBox(cf, i, GudaChatDB.inputPosition)
+            end)
             -- Nudge chat frame to make room for input bar
             local point, rel, relPoint, x, y = ChatFrame1:GetPoint(1)
             if point and rel then
@@ -2822,12 +2746,12 @@ local function CreateSettingsFrame()
 
         Add(CreateCheckbox(tabPanels[2], "Enable emojis", GudaChatDB.emojis, function(checked)
             GudaChatDB.emojis = checked
-            for i = 1, NUM_CHAT_WINDOWS do
+            ForEachChatWindow(function(_, i)
                 local eb = _G["ChatFrame" .. i .. "EditBox"]
                 if eb and eb.emojiBtn then
                     if checked then eb.emojiBtn:Show() else eb.emojiBtn:Hide() end
                 end
-            end
+            end)
             if not checked and emojiPickerFrame then emojiPickerFrame:Hide() end
         end))
 
@@ -2917,21 +2841,7 @@ local function CreateHistoryFrame()
 
     f:SetTitle("GudaChat History")
 
-    -- Drag region
-    local drag = CreateFrame("Frame", nil, f)
-    drag:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    drag:SetPoint("TOPRIGHT", f, "TOPRIGHT", -28, 0)
-    drag:SetHeight(24)
-    drag:EnableMouse(true)
-    drag:RegisterForDrag("LeftButton")
-    drag:SetScript("OnDragStart", function()
-        f:StartMoving()
-        f:SetUserPlaced(false)
-    end)
-    drag:SetScript("OnDragStop", function()
-        f:StopMovingOrSizing()
-        f:SetUserPlaced(false)
-    end)
+    CreateDragRegion(f)
 
     -- Content area (below channel tabs)
     local content = CreateFrame("Frame", nil, f)
@@ -3008,14 +2918,7 @@ local function CreateHistoryFrame()
     searchBox:SetHeight(22)
     searchBox:SetFontObject(GameFontHighlight)
     searchBox:SetAutoFocus(false)
-    searchBox:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    searchBox:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    searchBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+    ApplyDarkBackdrop(searchBox, COLOR_HEADER_BG, COLOR_DARK_BORDER)
     searchBox:SetTextInsets(20, 20, 0, 0)
 
     local searchIcon = searchBox:CreateTexture(nil, "OVERLAY")
@@ -3043,12 +2946,12 @@ local function CreateHistoryFrame()
     placeholder:SetText("Search...")
     searchBox:SetScript("OnEditFocusGained", function(self)
         placeholder:Hide()
-        self:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
+        self:SetBackdropBorderColor(unpack(COLOR_GOLDEN_A))
         searchIcon:SetVertexColor(1, 1, 1)
     end)
     searchBox:SetScript("OnEditFocusLost", function(self)
         if self:GetText() == "" then placeholder:Show() end
-        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+        self:SetBackdropBorderColor(unpack(COLOR_DARK_BORDER))
         searchIcon:SetVertexColor(0.6, 0.6, 0.6)
     end)
     searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -3105,10 +3008,7 @@ local function CreateHistoryFrame()
     histSlider:SetValue(0)
     histSlider:SetValueStep(1)
     histSlider:SetObeyStepOnDrag(true)
-    histSlider:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    })
+    histSlider:SetBackdrop(BACKDROP_FLAT)
     histSlider:SetBackdropColor(0, 0, 0, 0.3)
 
     local histThumb = histSlider:CreateTexture(nil, "OVERLAY")
@@ -3283,75 +3183,8 @@ local function CreateHistoryFrame()
         end
         local plainText = table.concat(lines, "\n")
 
-        -- Reuse the existing copy popup pattern
         if not f.copyFrame then
-            local cf = CreateFrame("Frame", "GudaChatHistoryCopyPopup", UIParent, "BackdropTemplate")
-            cf:SetSize(480, 300)
-            cf:SetPoint("CENTER")
-            cf:SetFrameStrata("TOOLTIP")
-            cf:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
-                insets = { left = 1, right = 1, top = 1, bottom = 1 },
-            })
-            cf:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-            cf:SetBackdropBorderColor(0.8, 0.6, 0.0, 0.8)
-            cf:EnableMouse(true)
-            cf:SetMovable(true)
-            cf:RegisterForDrag("LeftButton")
-            cf:SetScript("OnDragStart", cf.StartMoving)
-            cf:SetScript("OnDragStop", function(self)
-                self:StopMovingOrSizing()
-                self:SetUserPlaced(false)
-            end)
-            tinsert(UISpecialFrames, "GudaChatHistoryCopyPopup")
-
-            local closeBtn = CreateFrame("Button", nil, cf)
-            closeBtn:SetSize(12, 12)
-            closeBtn:SetPoint("TOPRIGHT", cf, "TOPRIGHT", -4, -4)
-            closeBtn:SetNormalTexture(ASSET_PATH .. "close.png")
-            closeBtn:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
-            closeBtn:SetScript("OnEnter", function(self)
-                self:GetNormalTexture():SetVertexColor(1, 1, 1)
-            end)
-            closeBtn:SetScript("OnLeave", function(self)
-                self:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
-            end)
-            closeBtn:SetScript("OnClick", function() cf:Hide() end)
-
-            local label = cf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -6)
-            label:SetText("Ctrl+C to copy. Escape to close.")
-            label:SetTextColor(0.6, 0.6, 0.6)
-
-            local scrollFrame = CreateFrame("ScrollFrame", "GudaChatHistoryCopyScroll", cf, "UIPanelScrollFrameTemplate")
-            scrollFrame:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -22)
-            scrollFrame:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", -28, 8)
-
-            local eb = CreateFrame("EditBox", nil, scrollFrame)
-            eb:SetFontObject(GameFontHighlight)
-            eb:SetMultiLine(true)
-            eb:SetAutoFocus(false)
-            eb:SetTextColor(0.9, 0.9, 0.9)
-            eb:SetMaxLetters(0)
-            eb:SetScript("OnEscapePressed", function() cf:Hide() end)
-            eb:SetScript("OnEnter", function(self)
-                scrollFrame:UpdateScrollChildRect()
-                self:SetFocus()
-            end)
-            eb:SetScript("OnLeave", function(self)
-                self:ClearFocus()
-            end)
-            eb:SetScript("OnCursorChanged", function(self, x, y, w, h)
-                scrollFrame:SetVerticalScroll(-y)
-            end)
-
-            scrollFrame:SetScrollChild(eb)
-
-            cf.editBox = eb
-            cf.scrollFrame = scrollFrame
-            f.copyFrame = cf
+            f.copyFrame = CreateCopyPopupFrame("GudaChatHistoryCopyPopup", 480, 300, true)
         end
 
         local eb = f.copyFrame.editBox
@@ -3479,9 +3312,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
-        for i = 1, NUM_CHAT_WINDOWS do
-            StripChatChrome(i)
-        end
+        ForEachChatWindow(function(_, i) StripChatChrome(i) end)
 
         if GeneralDockManagerOverflowButton then
             KillFrame(GeneralDockManagerOverflowButton)
@@ -3491,13 +3322,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
 
         hooksecurefunc("FCF_OpenTemporaryWindow", function()
-            for i = 1, NUM_CHAT_WINDOWS do
-                local cf = _G["ChatFrame" .. i]
+            ForEachChatWindow(function(cf, i)
                 StripChatChrome(i)
-                if cf and not cf.gudaScrollbar then
+                if not cf.gudaScrollbar then
                     CreateScrollbar(cf)
                 end
-            end
+            end)
             ApplyChatMargins()
         end)
 
@@ -3564,15 +3394,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         EnableCopyLinks()
         EnableEmojis()
         SetupLinkHook()
-        for i = 1, NUM_CHAT_WINDOWS do
-            local cf = _G["ChatFrame" .. i]
-            if cf then
-                CreateScrollbar(cf)
-                if GudaChatDB.hideScrollbar and cf.gudaScrollbar then
-                    cf.gudaScrollbar:Hide()
-                end
+        ForEachChatWindow(function(cf)
+            CreateScrollbar(cf)
+            if GudaChatDB.hideScrollbar and cf.gudaScrollbar then
+                cf.gudaScrollbar:Hide()
             end
-        end
+        end)
         if GudaChatDB.whisperTab then
             SetupWhisperFrame()
         end
