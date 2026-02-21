@@ -2,7 +2,7 @@
 ## Title: GudaChat
 ## Notes: Custom chat addon
 ## Author: Vati
-## Version: 0.0.1
+## Version: 1.0.0
 ## SavedVariables: GudaChatDB
 
 ## Category: Guda
