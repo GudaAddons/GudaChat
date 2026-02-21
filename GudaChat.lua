@@ -33,7 +33,7 @@ end
 
 -- Add margin to chat messages on the side where the input bar sits,
 -- and reserve screen-edge space so the input bar doesn't go off-screen.
-local INPUT_BAR_CLAMP = 36 -- 28px bar + 4px gap + 4px breathing room
+local INPUT_BAR_CLAMP = 34 -- 28px bar + 4px gap + 4px breathing room
 
 local function ApplyChatMargins()
     local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
@@ -525,8 +525,8 @@ end
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
-    header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -2, 0)
-    header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 2, 0)
+    header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -3, 0)
+    header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 3, 0)
     header:SetFrameStrata("MEDIUM")
     header:SetFrameLevel(100)
     header:SetAlpha(0)
