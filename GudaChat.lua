@@ -839,6 +839,50 @@ local function CreateScrollbar(chatFrame)
         sbFadeOut:Play()
     end
 
+    -- Scroll to bottom button
+    local scrollDown = CreateFrame("Button", nil, chatFrame)
+    scrollDown:SetSize(20, 20)
+    scrollDown:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2, 2)
+    scrollDown:SetFrameStrata("DIALOG")
+
+    local sdBg = scrollDown:CreateTexture(nil, "BACKGROUND")
+    sdBg:SetAllPoints()
+    sdBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    sdBg:SetVertexColor(0.08, 0.08, 0.08, 0.8)
+
+    local sdIcon = scrollDown:CreateTexture(nil, "ARTWORK")
+    sdIcon:SetPoint("CENTER")
+    sdIcon:SetSize(12, 12)
+    sdIcon:SetTexture("Interface\\AddOns\\GudaChat\\Assets\\down.png")
+    sdIcon:SetVertexColor(0.8, 0.6, 0, 0.9)
+
+    scrollDown:SetScript("OnEnter", function()
+        sdIcon:SetVertexColor(1, 0.8, 0, 1)
+        sdBg:SetVertexColor(0.12, 0.12, 0.12, 0.9)
+    end)
+    scrollDown:SetScript("OnLeave", function()
+        sdIcon:SetVertexColor(0.8, 0.6, 0, 0.9)
+        sdBg:SetVertexColor(0.08, 0.08, 0.08, 0.8)
+    end)
+
+    scrollDown:SetScript("OnClick", function()
+        chatFrame:ScrollToBottom()
+        SyncSlider()
+    end)
+
+    scrollDown:Hide()
+
+    -- Show/hide based on scroll position
+    local scrollDownMonitor = CreateFrame("Frame")
+    scrollDownMonitor:SetScript("OnUpdate", function(self, dt)
+        local offset = chatFrame:GetScrollOffset()
+        if offset > 0 then
+            scrollDown:Show()
+        else
+            scrollDown:Hide()
+        end
+    end)
+
     ns.scrollbar = slider
     return slider
 end
@@ -1909,7 +1953,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: Chat Channels icon
     -------------------------------------------------------------------
-    local channelsBtn = CreateIconButton(header, ASSET_PATH .. "voice.png", ICON_SIZE, "Chat Channels")
+    local channelsBtn = CreateIconButton(header, ASSET_PATH .. "voice.png", ICON_SIZE - 1, "Chat Channels")
     channelsBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
 
     channelsBtn:SetScript("OnClick", function()
@@ -1920,7 +1964,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: Chat Type (emote) icon
     -------------------------------------------------------------------
-    local chatTypeBtn = CreateIconButton(header, ASSET_PATH .. "chat.png", ICON_SIZE, "Chat Type")
+    local chatTypeBtn = CreateIconButton(header, ASSET_PATH .. "chat.png", ICON_SIZE - 1, "Chat Type")
     chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
 
     local chatTypeDropdown = CreateFrame("Frame", "GudaChatTypeDropdown", chatTypeBtn, "BackdropTemplate")
@@ -2326,7 +2370,7 @@ end
 
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(340, 416)
+    f:SetSize(340, 540)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -2375,8 +2419,8 @@ local function CreateSettingsFrame()
         tinsert(controls, widget)
     end
 
-    -- Section: General
-    AddControl(CreateSeparator(content, "General"))
+    -- Section: Chat Window
+    AddControl(CreateSeparator(content, "Chat Window"))
 
     AddControl(CreateCheckbox(content, "Lock chat position", GudaChatDB.locked, function(checked)
         GudaChatDB.locked = checked
@@ -2387,6 +2431,9 @@ local function CreateSettingsFrame()
         GudaChatDB.fading = not checked
         ChatFrame1:SetFading(GudaChatDB.fading)
     end))
+
+    -- Section: Messages
+    AddControl(CreateSeparator(content, "Messages"))
 
     AddControl(CreateCheckbox(content, "Class colored names", GudaChatDB.classColors, function(checked)
         GudaChatDB.classColors = checked
@@ -2401,25 +2448,15 @@ local function CreateSettingsFrame()
         GudaChatDB.copyLinks = checked
     end))
 
-    AddControl(CreateCheckbox(content, "Whisper tab", GudaChatDB.whisperTab, function(checked)
-        GudaChatDB.whisperTab = checked
-        if checked then
-            SetupWhisperFrame()
-            if ns.whisperBtn then ns.whisperBtn:Show() end
-        else
-            if ns.whisperFrame and ns.whisperFrame:IsShown() then
-                FCF_SelectDockFrame(ChatFrame1)
-            end
-            if ns.whisperBtn then ns.whisperBtn:Hide() end
-        end
-    end))
-
     local currentTimestamp = GetCVar("showTimestamps") or "none"
     AddControl(CreateDropdown(content, "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
         SetCVar("showTimestamps", value)
     end))
 
-    AddControl(CreateCheckbox(content, "Emojis", GudaChatDB.emojis, function(checked)
+    -- Section: Emojis
+    AddControl(CreateSeparator(content, "Emojis"))
+
+    AddControl(CreateCheckbox(content, "Enable emojis", GudaChatDB.emojis, function(checked)
         GudaChatDB.emojis = checked
         for i = 1, NUM_CHAT_WINDOWS do
             local eb = _G["ChatFrame" .. i .. "EditBox"]
@@ -2432,6 +2469,22 @@ local function CreateSettingsFrame()
 
     AddControl(CreateSlider(content, "Emoji size", 10, 32, 1, GudaChatDB.emojiSize or DEFAULT_EMOJI_SIZE, function(value)
         GudaChatDB.emojiSize = value
+    end))
+
+    -- Section: Tabs
+    AddControl(CreateSeparator(content, "Tabs"))
+
+    AddControl(CreateCheckbox(content, "Whisper tab", GudaChatDB.whisperTab, function(checked)
+        GudaChatDB.whisperTab = checked
+        if checked then
+            SetupWhisperFrame()
+            if ns.whisperBtn then ns.whisperBtn:Show() end
+        else
+            if ns.whisperFrame and ns.whisperFrame:IsShown() then
+                FCF_SelectDockFrame(ChatFrame1)
+            end
+            if ns.whisperBtn then ns.whisperBtn:Hide() end
+        end
     end))
 
     -- Section: Input Bar
