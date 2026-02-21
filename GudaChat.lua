@@ -2746,9 +2746,21 @@ local function CreateSettingsFrame()
         Add(CreateSeparator(tabPanels[1], "Input Bar"))
 
         Add(CreateCheckbox(tabPanels[1], "Show input bar on top", GudaChatDB.inputPosition == "top", function(checked)
+            local wasTop = GudaChatDB.inputPosition == "top"
             GudaChatDB.inputPosition = checked and "top" or "bottom"
             for i = 1, NUM_CHAT_WINDOWS do
                 PositionEditBox(_G["ChatFrame" .. i], i, GudaChatDB.inputPosition)
+            end
+            -- Nudge chat frame to make room for input bar
+            local point, rel, relPoint, x, y = ChatFrame1:GetPoint(1)
+            if point and rel then
+                if wasTop and not checked then
+                    -- Switched to bottom: move chat up
+                    ChatFrame1:SetPoint(point, rel, relPoint, x, y + INPUT_BAR_CLAMP)
+                elseif not wasTop and checked then
+                    -- Switched to top: move chat down
+                    ChatFrame1:SetPoint(point, rel, relPoint, x, y - INPUT_BAR_CLAMP)
+                end
             end
             ApplyChatMargins()
         end))
