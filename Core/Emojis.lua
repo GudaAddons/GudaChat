@@ -137,21 +137,82 @@ end
 -- Emoji text replacement filter
 ---------------------------------------------------------------------------
 
+-- Split message into protected (hyperlinks, [bracketed]) and free segments
+local function SplitProtected(msg)
+    local parts = {}
+    local pos = 1
+    local len = #msg
+    while pos <= len do
+        -- WoW hyperlinks: |H...|h...|h or |T...|t or |c...|r
+        local hStart = msg:find("|[HcT]", pos)
+        -- Bracketed text: [...]
+        local bStart = msg:find("%[", pos)
+        local nextProtected = nil
+        local nextEnd = nil
+        if hStart and (not bStart or hStart <= bStart) then
+            -- Find the matching closing sequence
+            if msg:sub(hStart, hStart + 1) == "|H" then
+                -- |H...|h[...]|h — find second |h
+                local _, firstH = msg:find("|h", hStart + 2, true)
+                if firstH then
+                    local _, secondH = msg:find("|h", firstH + 1, true)
+                    nextEnd = secondH or len
+                else
+                    nextEnd = len
+                end
+            elseif msg:sub(hStart, hStart + 1) == "|T" then
+                local _, tEnd = msg:find("|t", hStart + 2, true)
+                nextEnd = tEnd or len
+            elseif msg:sub(hStart, hStart + 1) == "|c" then
+                local _, rEnd = msg:find("|r", hStart + 2, true)
+                nextEnd = rEnd or len
+            end
+            nextProtected = hStart
+        elseif bStart then
+            local bEnd = msg:find("%]", bStart + 1)
+            nextProtected = bStart
+            nextEnd = bEnd or len
+        end
+
+        if nextProtected and nextProtected >= pos then
+            -- Free text before the protected segment
+            if nextProtected > pos then
+                tinsert(parts, { text = msg:sub(pos, nextProtected - 1), free = true })
+            end
+            tinsert(parts, { text = msg:sub(nextProtected, nextEnd), free = false })
+            pos = nextEnd + 1
+        else
+            tinsert(parts, { text = msg:sub(pos), free = true })
+            break
+        end
+    end
+    return parts
+end
+
 local function FilterAddEmojis(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.emojis then return false end
 
     local size = GudaChatDB.emojiSize or ns.DEFAULT_EMOJI_SIZE
+    local parts = SplitProtected(msg)
     local changed = false
-    for _, entry in ipairs(EMOJI_DATA) do
-        if msg:find(entry.plain, 1, true) then
-            local tex = "|T" .. ns.ASSET_PATH .. entry.file .. ":" .. size .. "|t"
-            msg = msg:gsub(entry.pattern, tex)
-            changed = true
+    for _, part in ipairs(parts) do
+        if part.free then
+            for _, entry in ipairs(EMOJI_DATA) do
+                if part.text:find(entry.plain, 1, true) then
+                    local tex = "|T" .. ns.ASSET_PATH .. entry.file .. ":" .. size .. "|t"
+                    part.text = part.text:gsub(entry.pattern, tex)
+                    changed = true
+                end
+            end
         end
     end
 
     if changed then
-        return false, msg, ...
+        local result = ""
+        for _, part in ipairs(parts) do
+            result = result .. part.text
+        end
+        return false, result, ...
     end
     return false
 end
