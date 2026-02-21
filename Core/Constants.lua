@@ -180,3 +180,6 @@ ns.CHAT_MSG_CHANNELS = {
 }
 
 ns.DEFAULT_EMOJI_SIZE = 12
+
+-- Detect Retail client (build >= 110000)
+ns.IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 110000

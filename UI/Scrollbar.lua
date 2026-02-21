@@ -9,8 +9,9 @@ local function CreateScrollbar(chatFrame)
     local slider = CreateFrame("Slider", nil, chatFrame, "BackdropTemplate")
     chatFrame.gudaScrollbar = slider
     slider:SetWidth(6)
-    slider:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", -2, -2)
-    slider:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2, 2)
+    local scrollOffR = ns.IS_RETAIL and 12 or 0
+    slider:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", -2 + scrollOffR, -2)
+    slider:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2 + scrollOffR, 2)
     slider:SetOrientation("VERTICAL")
     slider:SetMinMaxValues(0, 1)
     slider:SetValue(0)
@@ -98,7 +99,7 @@ local function CreateScrollbar(chatFrame)
     -- Scroll to bottom button
     local scrollDown = CreateFrame("Button", nil, chatFrame)
     scrollDown:SetSize(20, 20)
-    scrollDown:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2, 2)
+    scrollDown:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2 + scrollOffR, 2)
     scrollDown:SetFrameStrata("DIALOG")
 
     local sdBg = scrollDown:CreateTexture(nil, "BACKGROUND")

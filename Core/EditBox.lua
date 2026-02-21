@@ -11,12 +11,13 @@ local function PositionEditBox(chatFrame, index, position)
     local eb = _G["ChatFrame" .. index .. "EditBox"]
     if not eb then return end
     eb:ClearAllPoints()
+    local extraR = ns.IS_RETAIL and 13 or 0
     if position == "top" then
         eb:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -4, 4)
-        eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 4, 4)
+        eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 4 + extraR, 4)
     else
         eb:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -4, -4)
-        eb:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 4, -4)
+        eb:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 4 + extraR, -4)
     end
 end
 ns.PositionEditBox = PositionEditBox

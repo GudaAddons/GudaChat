@@ -40,6 +40,34 @@ local function StripChatChrome(index)
     ns.KillFrame(_G["ChatFrame" .. index .. "ScrollToBottomButton"])
     ns.KillFrame(_G["ChatFrame" .. index .. "ButtonFrameMinimizeButton"])
     ns.KillFrame(_G["ChatFrame" .. index .. "ButtonFrame"])
+    -- Retail scrollbar and scroll-to-bottom elements
+    -- Use OnShow lock because ScrollingMessageFrame re-shows these internally
+    if cf.ScrollBar then
+        cf.ScrollBar:Hide()
+        cf.ScrollBar:UnregisterAllEvents()
+        cf.ScrollBar:SetScript("OnShow", cf.ScrollBar.Hide)
+    end
+    if cf.scrollBar then
+        cf.scrollBar:Hide()
+        cf.scrollBar:UnregisterAllEvents()
+        cf.scrollBar:SetScript("OnShow", cf.scrollBar.Hide)
+    end
+    if cf.ScrollToBottomButton then
+        cf.ScrollToBottomButton:Hide()
+        cf.ScrollToBottomButton:SetScript("OnShow", cf.ScrollToBottomButton.Hide)
+    end
+    if cf.scrollToBottomButton then
+        cf.scrollToBottomButton:Hide()
+        cf.scrollToBottomButton:SetScript("OnShow", cf.scrollToBottomButton.Hide)
+    end
+    ns.KillFrame(_G["ChatFrame" .. index .. "ScrollBar"])
+    ns.KillFrame(_G["ChatFrame" .. index .. "OverlayFrame"])
+    -- Retail: prevent Blizzard from re-showing scroll elements
+    if cf.UpdateScrollChildRect then cf.UpdateScrollChildRect = function() end end
+    if cf.SetScrollBarShown then cf.SetScrollBarShown = function() end end
+    -- Retail: kill the clickable overlay that extends the frame width
+    if cf.clickAnywhereButton then ns.KillFrame(cf.clickAnywhereButton) end
+    if cf.ResizeBar then ns.KillFrame(cf.ResizeBar) end
     local tab = _G["ChatFrame" .. index .. "Tab"]
     if tab then
         tab:SetAlpha(0)
