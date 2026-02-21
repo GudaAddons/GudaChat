@@ -274,6 +274,9 @@ local function StyleEditBox(chatFrame, index)
         if self.gudaBg then
             self.gudaBg:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
         end
+        if emojiPickerFrame and emojiPickerFrame:IsShown() then
+            emojiPickerFrame:Hide()
+        end
     end)
 end
 
