@@ -1505,16 +1505,21 @@ local function CreateChatHeader(parentFrame)
                     mbText:SetPoint("LEFT", mb, "LEFT", 6, 0)
                     mbText:SetText(name)
 
+                    local col = GetTabColor(name, i)
                     local isActive = (GetSelectedChatFrameIndex() == i)
-                    mbText:SetTextColor(isActive and 1 or 0.8, isActive and 0.8 or 0.8, isActive and 0 or 0.8, 1)
+                    if isActive then
+                        mbText:SetTextColor(col[1], col[2], col[3], 1)
+                    else
+                        mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                    end
 
                     mb:SetScript("OnEnter", function()
-                        mbText:SetTextColor(1, 0.8, 0, 1)
+                        mbText:SetTextColor(col[1], col[2], col[3], 1)
                     end)
                     mb:SetScript("OnLeave", function()
                         local active = (GetSelectedChatFrameIndex() == i)
                         if not active then
-                            mbText:SetTextColor(0.8, 0.8, 0.8, 1)
+                            mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                         end
                     end)
 
