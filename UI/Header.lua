@@ -285,12 +285,7 @@ local function ShowContextMenu(anchor, overrideIndex)
                     end
                     FCF_Close(chatFrame)
                 end
-                -- Also ensure the Whispers window keeps receiving whispers
-                if ns.whisperFrame then
-                    ChatFrame_AddMessageGroup(ns.whisperFrame, "WHISPER")
-                    ChatFrame_AddMessageGroup(ns.whisperFrame, "BN_WHISPER")
-                end
-                -- Ensure General also receives whispers
+                -- Ensure General receives whispers again
                 ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
                 ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
             else
@@ -1236,10 +1231,19 @@ end
 -- Whisper frame setup
 ---------------------------------------------------------------------------
 
-local function EnforceWhisperGroups(cf)
-    ChatFrame_RemoveAllMessageGroups(cf)
+local function EnforceWhisperGroups(cf, idx)
+    -- Add whisper message groups so Blizzard routes whispers to this frame
     ChatFrame_AddMessageGroup(cf, "WHISPER")
     ChatFrame_AddMessageGroup(cf, "BN_WHISPER")
+    ChatFrame_AddMessageGroup(cf, "WHISPER_INFORM")
+    ChatFrame_AddMessageGroup(cf, "BN_WHISPER_INFORM")
+    -- Server-side registration so config persists across reloads
+    if idx and AddChatWindowMessages then
+        AddChatWindowMessages(idx, "WHISPER")
+        AddChatWindowMessages(idx, "BN_WHISPER")
+        AddChatWindowMessages(idx, "WHISPER_INFORM")
+        AddChatWindowMessages(idx, "BN_WHISPER_INFORM")
+    end
 end
 
 local function SetupWhisperFrame()
@@ -1247,15 +1251,30 @@ local function SetupWhisperFrame()
         ns.whisperFrame = cf
         ns.whisperFrameIndex = idx
         GudaChatDB.whisperFrameIndex = idx
-        EnforceWhisperGroups(cf)
+        EnforceWhisperGroups(cf, idx)
+        -- Ensure the frame is docked so FCF_SelectDockFrame can show it
+        if not cf.isDocked then
+            FCF_DockFrame(cf)
+        end
         -- Sync with ChatFrame1 so it shares the same area
         cf:ClearAllPoints()
         cf:SetPoint(ChatFrame1:GetPoint(1))
         cf:SetSize(ChatFrame1:GetSize())
-        if GudaChatDB.chatFont then
-            local _, size, flags = cf:GetFont()
-            cf:SetFont(GudaChatDB.chatFont, size, flags)
+        -- Always ensure font is set — AddMessage silently fails without one
+        local font, size, flags = cf:GetFont()
+        if not font then
+            font, size, flags = ChatFrame1:GetFont()
         end
+        if GudaChatDB.chatFont then
+            font = GudaChatDB.chatFont
+        end
+        if font then
+            cf:SetFont(font, size or 14, flags or "")
+        end
+        cf:SetMaxLines(500)
+        cf:SetFading(GudaChatDB.fading or false)
+        cf:SetJustifyH("LEFT")
+        FCF_SelectDockFrame(ChatFrame1)
     end
 
     local idx = GudaChatDB.whisperFrameIndex
@@ -1294,13 +1313,55 @@ local function SetupWhisperFrame()
 end
 ns.SetupWhisperFrame = SetupWhisperFrame
 
--- Listen for incoming whispers to trigger blink notification
+-- Listen for whispers: blink + forward to whisper frame
 local whisperListener = CreateFrame("Frame")
-whisperListener:SetScript("OnEvent", function()
+whisperListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.whisperTab then return end
-    if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
+    if not ns.whisperFrame then return end
+
+    -- Capture varargs before any closures
+    local guid = select(10, ...)
+
+    -- Blink if whisper frame is not visible
+    if not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
         ns.StartWhisperBlink()
     end
+
+    -- Forward whisper to the whisper frame
+    local isOutgoing = (event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM")
+    local chatType = isOutgoing and "WHISPER_INFORM" or "WHISPER"
+    local info = ChatTypeInfo[chatType]
+    local r, g, b = 1, 0.5, 1
+    if info then r, g, b = info.r, info.g, info.b end
+
+    local senderName = sender and sender:match("^([^%-]+)") or sender or ""
+
+    local nameLink
+    if GudaChatDB.classColors and guid and guid ~= "" then
+        local _, classFile = GetPlayerInfoByGUID(guid)
+        if classFile and RAID_CLASS_COLORS[classFile] then
+            local cc = RAID_CLASS_COLORS[classFile]
+            nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
+                cc.r*255, cc.g*255, cc.b*255, sender, senderName)
+        end
+    end
+    if not nameLink then
+        nameLink = string.format("|Hplayer:%s|h[%s]|h", sender or "", senderName)
+    end
+
+    local body
+    if isOutgoing then
+        body = string.format("To %s: %s", nameLink, msg or "")
+    else
+        body = string.format("%s whispers: %s", nameLink, msg or "")
+    end
+
+    local tsFmt = GetCVar("showTimestamps")
+    if tsFmt and tsFmt ~= "none" then
+        body = date(tsFmt) .. body
+    end
+
+    ns.whisperFrame:AddMessage(body, r, g, b)
 end)
 
 ---------------------------------------------------------------------------
@@ -1926,7 +1987,9 @@ local function CreateChatHeader(parentFrame)
         combatFilterFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     end
     whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
+    whisperListener:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
     whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
+    whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
 
     -------------------------------------------------------------------
     -- Chat window subtab bar
