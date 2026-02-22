@@ -541,20 +541,69 @@ local function CreateHistoryFrame()
         msgFrame:ScrollToBottom()
     end
 
-    -- Copy window
+    -- Copy window (colored editbox like Elephant)
+    local function CreateColoredCopyFrame()
+        local cf = CreateFrame("Frame", "GudaChatHistoryCopyPopup", UIParent, "BackdropTemplate")
+        cf:SetSize(500, 350)
+        cf:SetPoint("CENTER")
+        cf:SetFrameStrata("TOOLTIP")
+        ns.ApplyDarkBackdrop(cf, ns.COLOR_COPY_BG, ns.COLOR_GOLDEN_A)
+        cf:EnableMouse(true)
+        cf:SetMovable(true)
+        cf:RegisterForDrag("LeftButton")
+        cf:SetScript("OnDragStart", cf.StartMoving)
+        cf:SetScript("OnDragStop", function(self)
+            self:StopMovingOrSizing()
+            self:SetUserPlaced(false)
+        end)
+        tinsert(UISpecialFrames, "GudaChatHistoryCopyPopup")
+        ns.CreateCloseButton(cf)
+
+        local label = cf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -6)
+        label:SetText("Ctrl+C to copy. Escape to close.")
+        label:SetTextColor(0.6, 0.6, 0.6)
+
+        local scrollFrame = CreateFrame("ScrollFrame", "GudaChatHistoryCopyScroll", cf, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -22)
+        scrollFrame:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", -28, 8)
+
+        local eb = CreateFrame("EditBox", nil, scrollFrame)
+        eb:SetFontObject(ChatFontNormal)
+        if GudaChatDB.chatFont then
+            local _, sz, fl = eb:GetFont()
+            eb:SetFont(GudaChatDB.chatFont, GudaChatDB.historyFontSize or sz, fl)
+        elseif GudaChatDB.historyFontSize then
+            local fo, _, fl = eb:GetFont()
+            eb:SetFont(fo, GudaChatDB.historyFontSize, fl)
+        end
+        eb:SetMultiLine(true)
+        eb:SetAutoFocus(false)
+        eb:SetMaxLetters(0)
+        eb:SetWidth(scrollFrame:GetWidth() or 440)
+        eb:SetScript("OnEscapePressed", function() cf:Hide() end)
+        eb:SetScript("OnCursorChanged", function(self, x, y, w, h)
+            local scroll = -y
+            local maxScroll = max(0, self:GetHeight() - scrollFrame:GetHeight())
+            scrollFrame:SetVerticalScroll(min(max(0, scroll), maxScroll))
+        end)
+        scrollFrame:SetScrollChild(eb)
+
+        cf.editBox = eb
+        cf.scrollFrame = scrollFrame
+        cf:Hide()
+        return cf
+    end
+
     copyBtn:SetScript("OnClick", function()
         if f.copyFrame and f.copyFrame:IsShown() then
             f.copyFrame:Hide()
             return
         end
         if #lastEntries == 0 then return end
-        local lines = {}
-        for _, entry in ipairs(lastEntries) do
-            tinsert(lines, FormatPlainEntry(entry))
-        end
 
         if not f.copyFrame then
-            f.copyFrame = ns.CreateCopyPopupFrame("GudaChatHistoryCopyPopup", 480, 300, true)
+            f.copyFrame = CreateColoredCopyFrame()
         end
 
         local eb = f.copyFrame.editBox
@@ -563,7 +612,7 @@ local function CreateHistoryFrame()
         eb:SetMaxLetters(0)
         for i = #lastEntries, 1, -1 do
             eb:SetCursorPosition(0)
-            eb:Insert(FormatPlainEntry(lastEntries[i]) .. "\n")
+            eb:Insert(FormatColoredEntry(lastEntries[i]) .. "\n")
         end
         eb:SetText(eb:GetText():gsub("^[\n ]+", ""))
         f.copyFrame.scrollFrame:UpdateScrollChildRect()
