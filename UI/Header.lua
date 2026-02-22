@@ -1683,6 +1683,9 @@ local function CreateChatHeader(parentFrame)
         if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
     end)
 
+    -- Set initial highlight (General is selected by default on load)
+    UpdateIconHighlights(ChatFrame1)
+
     -- Update label and icon highlights when tabs switch
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if not cf then return end
