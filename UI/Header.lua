@@ -233,7 +233,7 @@ local function CreateFontSubMenu()
     return f
 end
 
-local function ShowContextMenu(anchor)
+local function ShowContextMenu(anchor, overrideIndex)
     if not contextMenu then
         local f = CreateFrame("Frame", "GudaChatContextMenu", UIParent, "BackdropTemplate")
         f:SetFrameStrata("TOOLTIP")
@@ -252,7 +252,7 @@ local function ShowContextMenu(anchor)
         child:SetParent(nil)
     end
 
-    local id = GetSelectedChatFrameIndex()
+    local id = overrideIndex or GetSelectedChatFrameIndex()
     local cf = _G["ChatFrame" .. id]
     local yOff = -4
     local maxW = 140
@@ -285,15 +285,65 @@ local function ShowContextMenu(anchor)
     if id ~= 1 then
         local removeBtn = CreateContextMenuItem(contextMenu, "Remove Window", function()
             local chatFrame = _G["ChatFrame" .. id]
-            if chatFrame and FCF_Close then
+            if chatFrame then
+                -- Move message groups back to General (client + server)
+                if GetChatWindowMessages then
+                    local msgs = { GetChatWindowMessages(id) }
+                    for _, msgGroup in ipairs(msgs) do
+                        ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
+                        if AddChatWindowMessages then
+                            AddChatWindowMessages(1, msgGroup)
+                        end
+                    end
+                end
+                -- Move channels back to General (server-side for persistence)
+                if GetChatWindowChannels then
+                    local channels = { GetChatWindowChannels(id) }
+                    for i = 1, #channels, 2 do
+                        local chName = channels[i]
+                        if type(chName) == "string" then
+                            if AddChatWindowChannel then
+                                AddChatWindowChannel(1, chName)
+                            end
+                            -- Client-side: add to ChatFrame1's channel lists for immediate display
+                            if ChatFrame1.channelList then
+                                tinsert(ChatFrame1.channelList, chName)
+                            end
+                            if ChatFrame1.zoneChannelList then
+                                tinsert(ChatFrame1.zoneChannelList, chName)
+                            end
+                        end
+                    end
+                end
+                -- Use Blizzard's FCF_Close which undocks, hides, and cleans up
                 FCF_Close(chatFrame)
-                FCF_SelectDockFrame(ChatFrame1)
             end
             contextMenu:Hide()
+            FCF_SelectDockFrame(ChatFrame1)
         end)
         removeBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
         removeBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
         yOff = yOff - 20
+
+        -- "Leave Channel" — detect by matching tab name to a joined channel
+        local tabName = GetChatTabName(id)
+        if tabName and GetChannelName then
+            local chNum = GetChannelName(tabName)
+            if chNum and chNum > 0 then
+                local leaveBtn = CreateContextMenuItem(contextMenu, "Leave " .. tabName, function()
+                    LeaveChannelByName(tabName)
+                    local chatFrame = _G["ChatFrame" .. id]
+                    if chatFrame then
+                        FCF_Close(chatFrame)
+                    end
+                    contextMenu:Hide()
+                    FCF_SelectDockFrame(ChatFrame1)
+                end)
+                leaveBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+                leaveBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+                yOff = yOff - 20
+            end
+        end
     end
 
     local displaySep = CreateContextMenuItem(contextMenu, "Display", nil, true)
@@ -626,6 +676,7 @@ end
 
 local overflowDropdown  -- persistent overflow menu frame
 
+
 -- Drag state for tab reordering
 local dragState = {
     dragging = false,
@@ -688,7 +739,8 @@ local function RefreshChatSubTabs(header)
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if cf and tab then
             local isDocked = cf.isDocked or (i == 1)
-            if isDocked and i ~= 2 then
+            local shown = (i == 1) or tab:IsShown()
+            if isDocked and shown and i ~= 2 then
                 local name = GetChatTabName(i)
                 local col = GetTabColor(name, i)
                 tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
@@ -893,8 +945,7 @@ local function RefreshChatSubTabs(header)
                 return
             end
             if button == "RightButton" and not def.isTemp then
-                FCF_SelectDockFrame(def.cf)
-                ShowContextMenu(self)
+                ShowContextMenu(self, def.frameIndex)
             else
                 FCF_SelectDockFrame(def.cf)
             end
