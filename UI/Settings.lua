@@ -411,13 +411,12 @@ local function CreateSettingsFrame()
             GudaChatDB.whisperTab = checked
             if checked then
                 ns.SetupWhisperFrame()
-                if ns.whisperBtn then ns.whisperBtn:Show() end
             else
                 if ns.whisperFrame and ns.whisperFrame:IsShown() then
                     FCF_SelectDockFrame(ChatFrame1)
                 end
-                if ns.whisperBtn then ns.whisperBtn:Hide() end
             end
+            if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         end))
     end
 

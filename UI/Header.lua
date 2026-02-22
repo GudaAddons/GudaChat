@@ -775,9 +775,14 @@ local function RefreshChatSubTabs(header)
             local isDocked = cf.isDocked or (i == 1)
             local shown = (i == 1) or tab:IsShown()
             if isDocked and shown and i ~= 2 then
-                local name = GetChatTabName(i)
-                local col = GetTabColor(name, i)
-                tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
+                -- Hide whisper tab from tab bar when setting is disabled
+                if not GudaChatDB.whisperTab and ns.whisperFrame and cf == ns.whisperFrame then
+                    -- skip
+                else
+                    local name = GetChatTabName(i)
+                    local col = GetTabColor(name, i)
+                    tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
+                end
             end
         end
     end
@@ -1313,55 +1318,13 @@ local function SetupWhisperFrame()
 end
 ns.SetupWhisperFrame = SetupWhisperFrame
 
--- Listen for whispers: blink + forward to whisper frame
+-- Listen for incoming whispers to trigger blink notification
 local whisperListener = CreateFrame("Frame")
-whisperListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
+whisperListener:SetScript("OnEvent", function()
     if not GudaChatDB or not GudaChatDB.whisperTab then return end
-    if not ns.whisperFrame then return end
-
-    -- Capture varargs before any closures
-    local guid = select(10, ...)
-
-    -- Blink if whisper frame is not visible
-    if not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
+    if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
         ns.StartWhisperBlink()
     end
-
-    -- Forward whisper to the whisper frame
-    local isOutgoing = (event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM")
-    local chatType = isOutgoing and "WHISPER_INFORM" or "WHISPER"
-    local info = ChatTypeInfo[chatType]
-    local r, g, b = 1, 0.5, 1
-    if info then r, g, b = info.r, info.g, info.b end
-
-    local senderName = sender and sender:match("^([^%-]+)") or sender or ""
-
-    local nameLink
-    if GudaChatDB.classColors and guid and guid ~= "" then
-        local _, classFile = GetPlayerInfoByGUID(guid)
-        if classFile and RAID_CLASS_COLORS[classFile] then
-            local cc = RAID_CLASS_COLORS[classFile]
-            nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
-                cc.r*255, cc.g*255, cc.b*255, sender, senderName)
-        end
-    end
-    if not nameLink then
-        nameLink = string.format("|Hplayer:%s|h[%s]|h", sender or "", senderName)
-    end
-
-    local body
-    if isOutgoing then
-        body = string.format("To %s: %s", nameLink, msg or "")
-    else
-        body = string.format("%s whispers: %s", nameLink, msg or "")
-    end
-
-    local tsFmt = GetCVar("showTimestamps")
-    if tsFmt and tsFmt ~= "none" then
-        body = date(tsFmt) .. body
-    end
-
-    ns.whisperFrame:AddMessage(body, r, g, b)
 end)
 
 ---------------------------------------------------------------------------
@@ -1593,57 +1556,20 @@ local function CreateChatHeader(parentFrame)
     combatBtn:HookScript("OnClick", function() CloseDropdown() end)
 
     -------------------------------------------------------------------
-    -- Left side: Whisper icon
+    -- Left side: History icon
     -------------------------------------------------------------------
-    local whisperBtn = CreateIconButton(header, ns.ASSET_PATH .. "characters.png", ICON_SIZE, "Whispers")
-    whisperBtn:SetPoint("LEFT", combatBtn, "RIGHT", 6, 0)
-    if not GudaChatDB.whisperTab then whisperBtn:Hide() end
-    ns.whisperBtn = whisperBtn
+    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, "History")
+    historyBtn:SetPoint("LEFT", combatBtn, "RIGHT", 6, 0)
+    ns.historyBtn = historyBtn
 
-    -- Blink animation for incoming whispers
-    local blinkGroup = whisperBtn:CreateAnimationGroup()
-    blinkGroup:SetLooping("REPEAT")
-    local blinkFadeOut = blinkGroup:CreateAnimation("Alpha")
-    blinkFadeOut:SetFromAlpha(1)
-    blinkFadeOut:SetToAlpha(0.2)
-    blinkFadeOut:SetDuration(0.5)
-    blinkFadeOut:SetOrder(1)
-    local blinkFadeIn = blinkGroup:CreateAnimation("Alpha")
-    blinkFadeIn:SetFromAlpha(0.2)
-    blinkFadeIn:SetToAlpha(1)
-    blinkFadeIn:SetDuration(0.5)
-    blinkFadeIn:SetOrder(2)
-
-    local function StartWhisperBlink()
-        if not blinkGroup:IsPlaying() then
-            whisperBtn.icon:SetVertexColor(1, 0.8, 0, 1)
-            blinkGroup:Play()
-        end
-        ShowHeader()
-    end
-
-    local function StopWhisperBlink()
-        if blinkGroup:IsPlaying() then
-            blinkGroup:Stop()
-            whisperBtn.icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
-            whisperBtn:SetAlpha(1)
-        end
-    end
-
-    ns.StartWhisperBlink = StartWhisperBlink
-    ns.StopWhisperBlink = StopWhisperBlink
-
-    whisperBtn:SetScript("OnClick", function()
-        if ns.whisperFrame then
-            if ns.whisperFrame:IsShown() then
-                FCF_SelectDockFrame(ChatFrame1)
-            else
-                FCF_SelectDockFrame(ns.whisperFrame)
-                StopWhisperBlink()
-            end
-        end
+    historyBtn:SetScript("OnClick", function()
+        ns.ToggleHistory()
+        CloseDropdown()
     end)
-    whisperBtn:HookScript("OnClick", function() CloseDropdown() end)
+
+    if GudaChatDB and not GudaChatDB.historyEnabled then
+        historyBtn:Hide()
+    end
 
     -------------------------------------------------------------------
     -- Center: Current tab name
@@ -1715,23 +1641,12 @@ local function CreateChatHeader(parentFrame)
 
     local function UpdateIconHighlights(cf)
         local isCombat = (cf == ChatFrame2)
-        local isWhisper = (ns.whisperFrame and cf == ns.whisperFrame)
-
         combatBtn.icon:SetVertexColor(unpack(isCombat and ICON_ACTIVE or ICON_INACTIVE))
-        if whisperBtn:IsShown() and not (ns.StartWhisperBlink and blinkGroup:IsPlaying()) then
-            whisperBtn.icon:SetVertexColor(unpack(isWhisper and ICON_ACTIVE or ICON_INACTIVE))
-        end
     end
 
     combatBtn:HookScript("OnLeave", function()
         local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
         if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
-    end)
-    whisperBtn:HookScript("OnLeave", function()
-        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
-        if ns.whisperFrame and sel == ns.whisperFrame and not blinkGroup:IsPlaying() then
-            whisperBtn.icon:SetVertexColor(unpack(ICON_ACTIVE))
-        end
     end)
 
     -- Update label and icon highlights when tabs switch
@@ -1789,18 +1704,6 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     local chatTypeBtn = CreateIconButton(header, ns.ASSET_PATH .. "chat.png", ICON_SIZE - 1, "Chat Type")
     chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
-
-    -------------------------------------------------------------------
-    -- Right side: History icon
-    -------------------------------------------------------------------
-    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, "History")
-    historyBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -6, 0)
-    ns.historyBtn = historyBtn
-
-    historyBtn:SetScript("OnClick", function()
-        ns.ToggleHistory()
-        CloseDropdown()
-    end)
 
     if GudaChatDB and not GudaChatDB.historyEnabled then
         historyBtn:Hide()
@@ -1987,9 +1890,7 @@ local function CreateChatHeader(parentFrame)
         combatFilterFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     end
     whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
-    whisperListener:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
     whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
-    whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
 
     -------------------------------------------------------------------
     -- Chat window subtab bar
