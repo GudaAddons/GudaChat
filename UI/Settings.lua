@@ -254,6 +254,10 @@ local function CreateSettingsFrame()
 
     tinsert(UISpecialFrames, "GudaChatSettingsPopup")
 
+    -- Close on entering combat
+    f:RegisterEvent("PLAYER_REGEN_DISABLED")
+    f:SetScript("OnEvent", function(self) self:Hide() end)
+
     ButtonFrameTemplate_HidePortrait(f)
     ButtonFrameTemplate_HideButtonBar(f)
     if f.Inset then f.Inset:Hide() end
