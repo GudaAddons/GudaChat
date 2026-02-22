@@ -639,7 +639,7 @@ local function RefreshChatSubTabs(header)
 
     -- 2) Measure which tabs fit; reserve space for overflow button
     local barWidth = chatSubTabs:GetWidth() or 300
-    local overflowBtnWidth = 20  -- width of "..." button
+    local overflowBtnWidth = 16  -- width of overflow icon button
     local xOff = 6
     local fitCount = #allTabs  -- assume all fit
 
@@ -675,6 +675,10 @@ local function RefreshChatSubTabs(header)
     end
 
     -- 3) Create visible tab buttons
+    local function IsSelectedFrame(cf)
+        return cf and cf:IsShown()
+    end
+
     local function CreateTabBtn(def, parent)
         local btn = CreateFrame("Button", nil, parent)
         btn:SetHeight(16)
@@ -685,7 +689,7 @@ local function RefreshChatSubTabs(header)
         btn.text = text
 
         local col = def.col
-        if def.frameIndex == selectedIndex then
+        if IsSelectedFrame(def.cf) then
             text:SetTextColor(col[1], col[2], col[3], 1)
         else
             text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
@@ -706,7 +710,7 @@ local function RefreshChatSubTabs(header)
             if chatHeader then chatHeader:SetAlpha(1) end
         end)
         btn:SetScript("OnLeave", function(self)
-            if def.frameIndex == GetSelectedChatFrameIndex() then
+            if IsSelectedFrame(def.cf) then
                 self.text:SetTextColor(col[1], col[2], col[3], 1)
             else
                 self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
@@ -725,25 +729,24 @@ local function RefreshChatSubTabs(header)
         tinsert(chatSubTabButtons, btn)
     end
 
-    -- 4) Create overflow "..." button if there are hidden tabs
+    -- 4) Create overflow button if there are hidden tabs
     if fitCount < #allTabs then
         local moreBtn = CreateFrame("Button", nil, chatSubTabs)
-        moreBtn:SetHeight(16)
-        moreBtn:SetWidth(overflowBtnWidth)
+        moreBtn:SetSize(12, 12)
         moreBtn:SetPoint("RIGHT", chatSubTabs, "RIGHT", -6, 0)
 
-        local moreText = moreBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        moreText:SetPoint("LEFT", moreBtn, "LEFT", 0, 0)
-        moreText:SetText("...")
-        moreText:SetTextColor(0.6, 0.6, 0.6, 1)
-        moreBtn.text = moreText
+        local moreIcon = moreBtn:CreateTexture(nil, "OVERLAY")
+        moreIcon:SetAllPoints()
+        moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
+        moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
+        moreBtn.icon = moreIcon
 
         moreBtn:SetScript("OnEnter", function(self)
-            self.text:SetTextColor(1, 1, 1, 1)
+            self.icon:SetVertexColor(1, 1, 1, 1)
             if chatHeader then chatHeader:SetAlpha(1) end
         end)
         moreBtn:SetScript("OnLeave", function(self)
-            self.text:SetTextColor(0.6, 0.6, 0.6, 1)
+            self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
         end)
 
         moreBtn:SetScript("OnClick", function(self)
