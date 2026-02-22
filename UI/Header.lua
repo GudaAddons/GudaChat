@@ -573,21 +573,55 @@ end
 local chatSubTabs
 local chatSubTabButtons = {}
 
--- Tab name -> active color mapping
-local TAB_COLORS = {
-    ["Guild"]    = { 0.25, 1.0,  0.25 },
-    ["Trade"]    = { 1.0,  0.75, 0.26 },
-    ["Party"]    = { 0.67, 0.67, 1.0  },
-    ["Raid"]     = { 1.0,  0.5,  0.0  },
-    ["Whispers"] = { 1.0,  0.5,  1.0  },
-    ["LFG"]      = { 1.0,  0.75, 0.26 },
+-- Map common tab names to Blizzard ChatTypeInfo keys
+local TAB_NAME_TO_CHATTYPE = {
+    ["Guild"]    = "GUILD",
+    ["Party"]    = "PARTY",
+    ["Raid"]     = "RAID",
+    ["Whispers"] = "WHISPER",
+    ["Officer"]  = "OFFICER",
+    ["Say"]      = "SAY",
+    ["Yell"]     = "YELL",
 }
 local TAB_COLOR_DEFAULT = { 0.8, 0.6, 0.0 }
 local TAB_COLOR_GENERAL = { 1.0, 1.0, 0.0 }
 
-local function GetTabColor(name)
+local function GetTabColor(name, frameIndex)
     if name == "General" then return TAB_COLOR_GENERAL end
-    return TAB_COLORS[name] or TAB_COLOR_DEFAULT
+
+    -- Direct name → ChatTypeInfo lookup (Guild, Party, Raid, etc.)
+    local chatType = TAB_NAME_TO_CHATTYPE[name]
+    if chatType and ChatTypeInfo[chatType] then
+        local info = ChatTypeInfo[chatType]
+        return { info.r, info.g, info.b }
+    end
+
+    -- Channel-based windows (Trade, LFG, custom channels, etc.)
+    -- GetChatWindowChannels returns channel names; resolve number via GetChannelName
+    if frameIndex and GetChatWindowChannels and GetChannelName then
+        local channels = { GetChatWindowChannels(frameIndex) }
+        for i = 1, #channels do
+            local chName = channels[i]
+            if type(chName) == "string" then
+                local chNum = GetChannelName(chName)
+                if chNum and chNum > 0 then
+                    local info = ChatTypeInfo["CHANNEL" .. chNum]
+                    if info then return { info.r, info.g, info.b } end
+                end
+            end
+        end
+    end
+
+    -- Windows with message groups — use the first group's color
+    if frameIndex and GetChatWindowMessages then
+        local msgs = { GetChatWindowMessages(frameIndex) }
+        if #msgs > 0 and ChatTypeInfo[msgs[1]] then
+            local info = ChatTypeInfo[msgs[1]]
+            return { info.r, info.g, info.b }
+        end
+    end
+
+    return TAB_COLOR_DEFAULT
 end
 
 local overflowDropdown  -- persistent overflow menu frame
@@ -656,7 +690,7 @@ local function RefreshChatSubTabs(header)
             local isDocked = cf.isDocked or (i == 1)
             if isDocked and i ~= 2 then
                 local name = GetChatTabName(i)
-                local col = GetTabColor(name)
+                local col = GetTabColor(name, i)
                 tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
             end
         end
@@ -669,7 +703,8 @@ local function RefreshChatSubTabs(header)
                 local idx = cf:GetID()
                 local tab = _G[frameName .. "Tab"]
                 local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ("Chat " .. idx)
-                local col = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and TAB_COLORS["Whispers"] or GetTabColor(name)
+                local whisperInfo = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and ChatTypeInfo["WHISPER"]
+                local col = whisperInfo and { whisperInfo.r, whisperInfo.g, whisperInfo.b } or GetTabColor(name, idx)
                 tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
             end
         end
