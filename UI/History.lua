@@ -336,6 +336,14 @@ local function CreateHistoryFrame()
     msgFrame:SetPoint("TOPLEFT", searchBox, "BOTTOMLEFT", 0, -4)
     msgFrame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
     msgFrame:SetFontObject(GameFontNormal)
+    do
+        local fontPath = GudaChatDB.chatFont
+        local fontSize = GudaChatDB.historyFontSize
+        if fontPath or fontSize then
+            local curFont, curSize, curFlags = msgFrame:GetFont()
+            msgFrame:SetFont(fontPath or curFont, fontSize or curSize, curFlags)
+        end
+    end
     msgFrame:SetJustifyH("LEFT")
     msgFrame:SetFading(false)
     msgFrame:SetMaxLines(2000)
@@ -453,8 +461,15 @@ local function CreateHistoryFrame()
         return results
     end
 
+    local function GetTimestampFormat()
+        local fmt = GetCVar("showTimestamps")
+        if not fmt or fmt == "none" then return nil end
+        return fmt
+    end
+
     local function FormatColoredEntry(entry)
-        local timeStr = date("%H:%M", entry.time)
+        local tsFmt = GetTimestampFormat()
+        local timeStr = tsFmt and date(tsFmt, entry.time) or date("%H:%M ", entry.time)
         local senderName = entry.sender:match("^([^%-]+)") or entry.sender
         local chatType = CHANNEL_TO_CHATTYPE[entry.channel]
         local info = chatType and ChatTypeInfo[chatType]
@@ -472,7 +487,7 @@ local function CreateHistoryFrame()
         end
 
         local levelStr = ""
-        if entry.level then
+        if GudaChatDB.showLevel and entry.level then
             local lr, lg, lb = ns.GetLevelDifficultyColor(entry.level)
             levelStr = string.format("|cff%02x%02x%02x[%d]|r ", lr*255, lg*255, lb*255, entry.level)
         end
@@ -495,9 +510,10 @@ local function CreateHistoryFrame()
     end
 
     local function FormatPlainEntry(entry)
-        local timeStr = date("%H:%M", entry.time)
+        local tsFmt = GetTimestampFormat()
+        local timeStr = tsFmt and date(tsFmt, entry.time) or date("%H:%M ", entry.time)
         local senderName = entry.sender:match("^([^%-]+)") or entry.sender
-        local levelStr = entry.level and string.format("[%d] ", entry.level) or ""
+        local levelStr = (GudaChatDB.showLevel and entry.level) and string.format("[%d] ", entry.level) or ""
 
         if entry.channel == "Whisper" and entry.outgoing then
             return string.format("%s To [%s]: %s%s", timeStr, senderName, levelStr, entry.message)

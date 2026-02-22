@@ -128,6 +128,30 @@ local function CreateSlider(parent, label, minVal, maxVal, step, currentVal, onC
     return container
 end
 
+---------------------------------------------------------------------------
+-- Font options
+---------------------------------------------------------------------------
+
+local FONT_OPTIONS = {
+    { label = "Default (Friz Quadrata)", value = "Fonts\\FRIZQT__.TTF" },
+    { label = "Arial Narrow",           value = "Fonts\\ARIALN.TTF" },
+    { label = "Morpheus",               value = "Fonts\\MORPHEUS.TTF" },
+    { label = "Skurri",                 value = "Fonts\\SKURRI.TTF" },
+}
+
+local function ApplyChatFont(fontPath)
+    ns.ForEachChatWindow(function(cf)
+        local _, size, flags = cf:GetFont()
+        cf:SetFont(fontPath, size, flags)
+    end)
+    local histMsgFrame = _G["GudaChatHistoryMsgFrame"]
+    if histMsgFrame then
+        local _, size, flags = histMsgFrame:GetFont()
+        histMsgFrame:SetFont(fontPath, size, flags)
+    end
+end
+ns.ApplyChatFont = ApplyChatFont
+
 local TIMESTAMP_OPTIONS = {
     { label = "None",          value = "none" },
     { label = "03:27",         value = "%I:%M " },
@@ -323,6 +347,12 @@ local function CreateSettingsFrame()
             ChatFrame1:SetFading(GudaChatDB.fading)
         end))
 
+        local currentFont = GudaChatDB.chatFont or "Fonts\\FRIZQT__.TTF"
+        Add(CreateDropdown(tabPanels[1], "Font", FONT_OPTIONS, currentFont, function(value)
+            GudaChatDB.chatFont = value
+            ApplyChatFont(value)
+        end))
+
         Add(CreateCheckbox(tabPanels[1], "Hide scrollbar", GudaChatDB.hideScrollbar, function(checked)
             GudaChatDB.hideScrollbar = checked
             ns.ForEachChatWindow(function(cf)
@@ -352,11 +382,13 @@ local function CreateSettingsFrame()
             end)
             local point, rel, relPoint, x, y = ChatFrame1:GetPoint(1)
             if point and rel then
+                ns.cf1PositionLocked = false
                 if wasTop and not checked then
                     ChatFrame1:SetPoint(point, rel, relPoint, x, y + ns.INPUT_BAR_CLAMP)
                 elseif not wasTop and checked then
                     ChatFrame1:SetPoint(point, rel, relPoint, x, y - ns.INPUT_BAR_CLAMP)
                 end
+                ns.cf1PositionLocked = true
             end
             ns.ApplyChatMargins()
         end))
@@ -440,6 +472,15 @@ local function CreateSettingsFrame()
 
         Add(CreateSlider(tabPanels[3], "Max messages", 100, 2000, 100, GudaChatDB.historyMax or 500, function(value)
             GudaChatDB.historyMax = value
+        end))
+
+        Add(CreateSlider(tabPanels[3], "Font size", 8, 24, 1, GudaChatDB.historyFontSize or 14, function(value)
+            GudaChatDB.historyFontSize = value
+            local histMsgFrame = _G["GudaChatHistoryMsgFrame"]
+            if histMsgFrame then
+                local fontPath, _, flags = histMsgFrame:GetFont()
+                histMsgFrame:SetFont(fontPath, value, flags)
+            end
         end))
 
         local clearBtn = CreateFrame("Button", nil, tabPanels[3], "UIPanelButtonTemplate")

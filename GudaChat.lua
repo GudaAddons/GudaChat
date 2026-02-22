@@ -42,7 +42,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             GudaChatDB.locked = false
         end
         if GudaChatDB.showLevel == nil then
-            GudaChatDB.showLevel = true
+            GudaChatDB.showLevel = false
         end
         if GudaChatDB.emojis == nil then
             GudaChatDB.emojis = true
@@ -53,6 +53,8 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.whisperTab == nil then
             GudaChatDB.whisperTab = false
         end
+        -- chatFont: nil means default (Fonts\FRIZQT__.TTF)
+
         -- History: per-channel buckets
         if type(GudaChatDB.history) ~= "table" or GudaChatDB.history[1] ~= nil then
             -- Reset if old flat-array format or missing
@@ -132,16 +134,46 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             C_Timer.After(0.1, ns.RehideAllTabs)
         end)
 
+        -- Remove ChatFrame1 from Blizzard's managed frame layout so
+        -- UIParent_ManageFramePositions stops repositioning it
+        if UIPARENT_MANAGED_FRAME_POSITIONS then
+            UIPARENT_MANAGED_FRAME_POSITIONS["ChatFrame1"] = nil
+        end
+
+        -- Block Blizzard's UIParentPanelManager from repositioning ChatFrame1.
+        -- We keep the original methods for our own use via ns.CF1_SetPoint / ns.CF1_ClearAllPoints,
+        -- and replace the frame methods with versions that ignore external callers.
+        local origSetPoint = ChatFrame1.SetPoint
+        local origClearAllPoints = ChatFrame1.ClearAllPoints
+        ns.CF1_SetPoint = origSetPoint
+        ns.CF1_ClearAllPoints = origClearAllPoints
+        ns.cf1PositionLocked = false
+
+        ChatFrame1.SetPoint = function(self, ...)
+            if ns.cf1PositionLocked then return end
+            origSetPoint(self, ...)
+        end
+        ChatFrame1.ClearAllPoints = function(self, ...)
+            if ns.cf1PositionLocked then return end
+            origClearAllPoints(self, ...)
+        end
+
         -- Restore saved chat position
         if GudaChatDB.position then
             local p = GudaChatDB.position
             ChatFrame1:SetMovable(true)
             ChatFrame1:ClearAllPoints()
             ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
-            ChatFrame1:SetUserPlaced(true)
+            ChatFrame1:SetUserPlaced(false)
         end
 
+        -- Lock position after initial setup so UIParentPanelManager can't move it
+        ns.cf1PositionLocked = true
+
         ChatFrame1:SetFading(GudaChatDB.fading)
+        if GudaChatDB.chatFont then
+            ns.ApplyChatFont(GudaChatDB.chatFont)
+        end
         ns.ApplyClassColors()
         ns.EnableLevelDisplay()
         ns.EnableCopyLinks()

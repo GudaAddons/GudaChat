@@ -704,20 +704,35 @@ local function CreateChatHeader(parentFrame)
     -- Drag to move chat (when not locked)
     -------------------------------------------------------------------
     header:RegisterForDrag("LeftButton")
+
+    local function FinishDrag(self)
+        if not self.isDragging then return end
+        parentFrame:StopMovingOrSizing()
+        parentFrame:SetUserPlaced(false)
+        self.isDragging = false
+        self:SetScript("OnUpdate", nil)
+        local point, _, relPoint, x, y = parentFrame:GetPoint(1)
+        GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
+        -- Re-lock position against UIParentPanelManager
+        ns.cf1PositionLocked = true
+    end
+
     header:SetScript("OnDragStart", function(self)
         if GudaChatDB.locked then return end
+        -- Unlock so StartMoving can reposition the frame
+        ns.cf1PositionLocked = false
         parentFrame:SetMovable(true)
-        parentFrame:SetUserPlaced(true)
         parentFrame:StartMoving()
         self.isDragging = true
+        -- Catch interrupted drags (e.g. targeting a unit mid-drag)
+        self:SetScript("OnUpdate", function(self)
+            if not IsMouseButtonDown("LeftButton") then
+                FinishDrag(self)
+            end
+        end)
     end)
     header:SetScript("OnDragStop", function(self)
-        if self.isDragging then
-            parentFrame:StopMovingOrSizing()
-            self.isDragging = false
-            local point, _, relPoint, x, y = parentFrame:GetPoint(1)
-            GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
-        end
+        FinishDrag(self)
     end)
 
     header:SetScript("OnEnter", function(self)
@@ -1008,7 +1023,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: History icon
     -------------------------------------------------------------------
-    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE - 1, "History")
+    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 1, "History")
     historyBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -6, 0)
     ns.historyBtn = historyBtn
 
