@@ -157,6 +157,8 @@ local function StripChatChrome(index)
                 GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
             end
             cf:SetUserPlaced(false)
+            -- Sync all docked frames to new size/position
+            ns.SyncDockedFrames()
         end)
 
         cf.gudaResizeHandle = handle

@@ -1433,6 +1433,8 @@ local function CreateChatHeader(parentFrame)
         GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
         -- Re-lock position against UIParentPanelManager
         ns.cf1PositionLocked = true
+        -- Sync all docked frames to new position
+        ns.SyncDockedFrames()
     end
 
     header:SetScript("OnDragStart", function(self)

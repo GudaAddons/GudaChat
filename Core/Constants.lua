@@ -67,6 +67,33 @@ local function ForEachChatWindow(fn)
 end
 ns.ForEachChatWindow = ForEachChatWindow
 
+-- Sync all docked chat frames (permanent + temporary) to ChatFrame1's position/size
+local function SyncDockedFrames()
+    local point, _, relPoint, x, y = ChatFrame1:GetPoint(1)
+    local w, h = ChatFrame1:GetSize()
+    if not point then return end
+    for i = 2, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf and cf.isDocked then
+            cf:ClearAllPoints()
+            cf:SetPoint(point, UIParent, relPoint, x, y)
+            cf:SetSize(w, h)
+        end
+    end
+    -- Also sync temporary frames
+    if CHAT_FRAMES then
+        for _, name in ipairs(CHAT_FRAMES) do
+            local cf = _G[name]
+            if cf and cf.isTemporary and cf.isDocked then
+                cf:ClearAllPoints()
+                cf:SetPoint(point, UIParent, relPoint, x, y)
+                cf:SetSize(w, h)
+            end
+        end
+    end
+end
+ns.SyncDockedFrames = SyncDockedFrames
+
 local function CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(12, 12)
