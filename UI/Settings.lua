@@ -395,6 +395,19 @@ local function CreateSettingsFrame()
 
         Add(CreateSeparator(tabPanels[1], "Tabs"))
 
+        Add(CreateCheckbox(tabPanels[1], "Show tab bar", GudaChatDB.showTabBar, function(checked)
+            GudaChatDB.showTabBar = checked
+            if ns.chatSubTabs then
+                if checked then
+                    ns.RefreshChatSubTabs(ns.chatHeader)
+                    ns.chatSubTabs:Show()
+                    ns.chatSubTabs:SetAlpha(0)
+                else
+                    ns.chatSubTabs:Hide()
+                end
+            end
+        end))
+
         Add(CreateCheckbox(tabPanels[1], "Whisper tab", GudaChatDB.whisperTab, function(checked)
             GudaChatDB.whisperTab = checked
             if checked then

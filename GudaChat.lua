@@ -54,7 +54,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             GudaChatDB.whisperTab = false
         end
         -- chatFont: nil means default (Fonts\FRIZQT__.TTF)
-
+        if GudaChatDB.showTabBar == nil then
+            GudaChatDB.showTabBar = true
+        end
         -- History: per-channel buckets
         if type(GudaChatDB.history) ~= "table" or GudaChatDB.history[1] ~= nil then
             -- Reset if old flat-array format or missing

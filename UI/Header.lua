@@ -17,6 +17,13 @@ local function GetChatTabName(index)
     return "Chat " .. index
 end
 
+local function SetTooltipFontSize(size)
+    if GameTooltipTextLeft1 then
+        local font, _, flags = GameTooltipTextLeft1:GetFont()
+        if font then GameTooltipTextLeft1:SetFont(font, size, flags) end
+    end
+end
+
 -- Small icon button helper
 local function CreateIconButton(parent, texturePath, size, tooltip)
     local btn = CreateFrame("Button", nil, parent)
@@ -33,6 +40,7 @@ local function CreateIconButton(parent, texturePath, size, tooltip)
         if tooltip then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(tooltip, 1, 1, 1)
+            SetTooltipFontSize(12)
             GameTooltip:Show()
         end
         if chatHeader then chatHeader:SetAlpha(1) end
@@ -475,12 +483,12 @@ local combatSubTabs
 local function CreateCombatSubTabs(header)
     local bar = CreateFrame("Frame", "GudaChatCombatSubTabs", UIParent, "BackdropTemplate")
     bar:SetHeight(20)
-    bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -1)
-    bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -1)
+    bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 1)
+    bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 1)
     bar:SetFrameStrata("MEDIUM")
     bar:SetFrameLevel(101)
 
-    ns.ApplyDarkBackdrop(bar, ns.COLOR_DARK_BG, { 0.3, 0.3, 0.3, 0.8 })
+    ns.ApplyDarkBackdrop(bar, { 0.05, 0.05, 0.05, 0.75 }, { 0.25, 0.25, 0.25, 0.5 })
     bar:EnableMouse(true)
     bar:SetAlpha(0)
     bar:Hide()
@@ -542,6 +550,144 @@ local function CreateCombatSubTabs(header)
     end
 
     combatSubTabs = bar
+    return bar
+end
+
+---------------------------------------------------------------------------
+-- Chat window subtab bar (below header, like combat subtabs)
+---------------------------------------------------------------------------
+
+local chatSubTabs
+local chatSubTabButtons = {}
+
+local function RefreshChatSubTabs(header)
+    if not chatSubTabs then return end
+    if not GudaChatDB.showTabBar then
+        chatSubTabs:Hide()
+        return
+    end
+
+    for _, btn in ipairs(chatSubTabButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(chatSubTabButtons)
+
+    local xOff = 6
+    local selectedIndex = GetSelectedChatFrameIndex()
+
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        local tab = _G["ChatFrame" .. i .. "Tab"]
+        if cf and tab then
+            local isDocked = cf.isDocked or (i == 1)
+            if isDocked and i ~= 2 and i ~= (ns.whisperFrameIndex or -1) then
+                local name = GetChatTabName(i)
+                local btn = CreateFrame("Button", nil, chatSubTabs)
+                btn:SetHeight(16)
+
+                local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+                text:SetText(name)
+                btn.text = text
+
+                btn:SetWidth(text:GetStringWidth() + 8)
+                btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
+                xOff = xOff + btn:GetWidth() + 8
+
+                if i == selectedIndex then
+                    text:SetTextColor(1, 1, 1, 1)
+                else
+                    text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                end
+
+                local frameIndex = i
+                btn:SetScript("OnClick", function()
+                    FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
+                end)
+
+                btn:SetScript("OnEnter", function(self)
+                    self.text:SetTextColor(0.9, 0.9, 0.9, 1)
+                    if chatHeader then chatHeader:SetAlpha(1) end
+                end)
+                btn:SetScript("OnLeave", function(self)
+                    if frameIndex == GetSelectedChatFrameIndex() then
+                        self.text:SetTextColor(1, 1, 1, 1)
+                    else
+                        self.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                    end
+                end)
+
+                tinsert(chatSubTabButtons, btn)
+            end
+        end
+    end
+end
+ns.RefreshChatSubTabs = RefreshChatSubTabs
+
+local function CreateChatSubTabs(header)
+    local bar = CreateFrame("Frame", "GudaChatSubTabs", UIParent, "BackdropTemplate")
+    bar:SetHeight(20)
+    bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 1)
+    bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 1)
+    bar:SetFrameStrata("MEDIUM")
+    bar:SetFrameLevel(101)
+
+    ns.ApplyDarkBackdrop(bar, { 0.05, 0.05, 0.05, 0.75 }, { 0.25, 0.25, 0.25, 0.5 })
+    bar:EnableMouse(true)
+    bar:SetAlpha(0)
+
+    -- Independent hover fade for the tab bar
+    local tabBarHovering = false
+    local tabBarFadeIn, tabBarFadeOut
+
+    local function ShowTabBar()
+        if tabBarHovering then return end
+        tabBarHovering = true
+        if tabBarFadeOut then tabBarFadeOut:Stop() end
+        tabBarFadeIn = bar:CreateAnimationGroup()
+        local anim = tabBarFadeIn:CreateAnimation("Alpha")
+        anim:SetFromAlpha(bar:GetAlpha())
+        anim:SetToAlpha(1)
+        anim:SetDuration(0.15)
+        tabBarFadeIn:SetScript("OnFinished", function() bar:SetAlpha(1) end)
+        tabBarFadeIn:Play()
+    end
+
+    local function HideTabBar()
+        if not tabBarHovering then return end
+        tabBarHovering = false
+        C_Timer.After(0.3, function()
+            if tabBarHovering then return end
+            if bar:IsMouseOver() or (ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()) then
+                tabBarHovering = true
+                return
+            end
+            if tabBarFadeIn then tabBarFadeIn:Stop() end
+            tabBarFadeOut = bar:CreateAnimationGroup()
+            local anim = tabBarFadeOut:CreateAnimation("Alpha")
+            anim:SetFromAlpha(bar:GetAlpha())
+            anim:SetToAlpha(0)
+            anim:SetDuration(0.25)
+            tabBarFadeOut:SetScript("OnFinished", function() bar:SetAlpha(0) end)
+            tabBarFadeOut:Play()
+        end)
+    end
+
+    local tabBarMonitor = CreateFrame("Frame")
+    tabBarMonitor:SetScript("OnUpdate", function()
+        if not bar:IsShown() then return end
+        local overBar = bar:IsMouseOver()
+        local overLabel = ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()
+        if overBar or overLabel then
+            ShowTabBar()
+        else
+            HideTabBar()
+        end
+    end)
+
+    chatSubTabs = bar
+    ns.chatSubTabs = bar
     return bar
 end
 
@@ -739,6 +885,7 @@ local function CreateChatHeader(parentFrame)
         if not GudaChatDB.locked then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText("Drag to move", 0.7, 0.7, 0.7)
+            SetTooltipFontSize(12)
             GameTooltip:Show()
         end
     end)
@@ -747,12 +894,9 @@ local function CreateChatHeader(parentFrame)
     end)
 
     -------------------------------------------------------------------
-    -- Left side: Tab switcher icon + dropdown
+    -- Tab switcher dropdown (shown on tab label click)
     -------------------------------------------------------------------
-    local tabBtn = CreateIconButton(header, ns.ASSET_PATH .. "logo.png", ICON_SIZE, "Chat Tabs")
-    tabBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
-
-    local dropdown = CreateFrame("Frame", "GudaChatTabDropdown", tabBtn, "BackdropTemplate")
+    local dropdown = CreateFrame("Frame", "GudaChatTabDropdown", header, "BackdropTemplate")
     dropdown:SetFrameStrata("TOOLTIP")
     ns.ApplyDarkBackdrop(dropdown)
     dropdown:Hide()
@@ -817,33 +961,15 @@ local function CreateChatHeader(parentFrame)
         end
 
         dropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
-        dropdown:ClearAllPoints()
-        dropdown:SetPoint("BOTTOMLEFT", tabBtn, "TOPLEFT", -4, 2)
     end
 
-    tabBtn:SetScript("OnClick", function()
-        if dropdown:IsShown() then
-            CloseDropdown()
-        else
-            RefreshDropdown()
-            dropdown:Show()
-        end
-    end)
-
     local closer = CreateFrame("Frame", nil, dropdown)
-    closer:SetScript("OnUpdate", function()
-        if dropdown:IsShown() and not dropdown:IsMouseOver() and not tabBtn:IsMouseOver() then
-            if IsMouseButtonDown("LeftButton") then
-                CloseDropdown()
-            end
-        end
-    end)
 
     -------------------------------------------------------------------
     -- Left side: Combat log icon
     -------------------------------------------------------------------
     local combatBtn = CreateIconButton(header, ns.ASSET_PATH .. "combat.png", ICON_SIZE, "Combat Log")
-    combatBtn:SetPoint("LEFT", tabBtn, "RIGHT", 6, 0)
+    combatBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
 
     combatBtn:SetScript("OnClick", function()
         if ChatFrame2 then
@@ -919,22 +1045,39 @@ local function CreateChatHeader(parentFrame)
     tabLabel:SetText(GetChatTabName(1))
 
     local tabLabelBtn = CreateFrame("Button", nil, header)
+    ns._tabLabelBtn = tabLabelBtn
     tabLabelBtn:SetPoint("CENTER", tabLabel, "CENTER", 0, 0)
     tabLabelBtn:SetHeight(HEADER_HEIGHT)
-    tabLabelBtn:RegisterForClicks("RightButtonUp")
+    tabLabelBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     tabLabelBtn:SetScript("OnClick", function(self, button)
-        if button ~= "RightButton" then return end
-        if contextMenu and contextMenu:IsShown() then
-            contextMenu:Hide()
-            if fontSubMenu then fontSubMenu:Hide() end
+        if button == "RightButton" then
+            CloseDropdown()
+            if contextMenu and contextMenu:IsShown() then
+                contextMenu:Hide()
+                if fontSubMenu then fontSubMenu:Hide() end
+            else
+                ShowContextMenu(self)
+            end
         else
-            ShowContextMenu(self)
+            if contextMenu and contextMenu:IsShown() then
+                contextMenu:Hide()
+                if fontSubMenu then fontSubMenu:Hide() end
+            end
+            if dropdown:IsShown() then
+                CloseDropdown()
+            else
+                RefreshDropdown()
+                dropdown:ClearAllPoints()
+                dropdown:SetPoint("BOTTOM", self, "TOP", 0, 2)
+                dropdown:Show()
+            end
         end
     end)
     tabLabelBtn:SetScript("OnEnter", function(self)
         tabLabel:SetTextColor(1, 0.8, 0, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Right-click for options", 0.7, 0.7, 0.7)
+        GameTooltip:SetText("Click to switch tabs, right-click for options", 0.7, 0.7, 0.7)
+        SetTooltipFontSize(12)
         GameTooltip:Show()
         if chatHeader then chatHeader:SetAlpha(1) end
     end)
@@ -948,6 +1091,15 @@ local function CreateChatHeader(parentFrame)
     end
     UpdateTabLabelBtnWidth()
 
+    -- Set up closer for tab dropdown (needs tabLabelBtn reference)
+    closer:SetScript("OnUpdate", function()
+        if dropdown:IsShown() and not dropdown:IsMouseOver() and not tabLabelBtn:IsMouseOver() then
+            if IsMouseButtonDown("LeftButton") then
+                CloseDropdown()
+            end
+        end
+    end)
+
     -- Highlight active icon based on selected frame
     local ICON_ACTIVE = {1, 1, 1, 1}
     local ICON_INACTIVE = {0.7, 0.7, 0.7, 0.9}
@@ -955,20 +1107,13 @@ local function CreateChatHeader(parentFrame)
     local function UpdateIconHighlights(cf)
         local isCombat = (cf == ChatFrame2)
         local isWhisper = (ns.whisperFrame and cf == ns.whisperFrame)
-        local isGeneral = (not isCombat and not isWhisper)
 
         combatBtn.icon:SetVertexColor(unpack(isCombat and ICON_ACTIVE or ICON_INACTIVE))
         if whisperBtn:IsShown() and not (ns.StartWhisperBlink and blinkGroup:IsPlaying()) then
             whisperBtn.icon:SetVertexColor(unpack(isWhisper and ICON_ACTIVE or ICON_INACTIVE))
         end
-        tabBtn.icon:SetVertexColor(unpack(isGeneral and ICON_ACTIVE or ICON_INACTIVE))
     end
 
-    tabBtn:HookScript("OnLeave", function()
-        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
-        local isActive = sel and sel ~= ChatFrame2 and sel ~= ns.whisperFrame
-        if isActive then tabBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
-    end)
     combatBtn:HookScript("OnLeave", function()
         local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
         if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
@@ -1219,6 +1364,16 @@ local function CreateChatHeader(parentFrame)
     whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
     whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
 
+    -------------------------------------------------------------------
+    -- Chat window subtab bar
+    -------------------------------------------------------------------
+    CreateChatSubTabs(header)
+    if GudaChatDB.showTabBar then
+        RefreshChatSubTabs(header)
+        chatSubTabs:Show()
+        chatSubTabs:SetAlpha(0)
+    end
+
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if combatSubTabs then
             if cf == ChatFrame2 then
@@ -1230,7 +1385,29 @@ local function CreateChatHeader(parentFrame)
                 shouldShowCombatMessage = true
             end
         end
+        if chatSubTabs and GudaChatDB.showTabBar then
+            local isCombat = (cf == ChatFrame2)
+            local isWhisper = (ns.whisperFrame and cf == ns.whisperFrame)
+            if isCombat or isWhisper then
+                chatSubTabs:Hide()
+            else
+                RefreshChatSubTabs(header)
+                chatSubTabs:Show()
+            end
+        end
     end)
+
+    -- Refresh chat subtabs when windows are created/removed/docked
+    local chatSubTabHooks = { "FCF_OpenNewWindow", "FCF_Close", "FCF_DockFrame", "FCF_UnDockFrame", "FCF_SetWindowName" }
+    for _, funcName in ipairs(chatSubTabHooks) do
+        if _G[funcName] then
+            hooksecurefunc(funcName, function()
+                if chatSubTabs and GudaChatDB.showTabBar then
+                    RefreshChatSubTabs(header)
+                end
+            end)
+        end
+    end
 
     chatHeader = header
     ns.chatHeader = header
