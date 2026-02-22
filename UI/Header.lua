@@ -652,17 +652,25 @@ local function RefreshChatSubTabs(header)
     end
     tempFont:Hide()
 
+    -- Find which tab is selected
+    local selectedTabIdx
+    for idx, def in ipairs(allTabs) do
+        if def.cf and def.cf:IsShown() then
+            selectedTabIdx = idx
+            break
+        end
+    end
+
     -- Find how many fit
     local totalW = 6
     local allFit = true
-    -- First check if all tabs fit without overflow button
     for idx = 1, #allTabs do
         totalW = totalW + widths[idx] + 8
     end
     if totalW > barWidth then
-        -- Not all fit — recalculate with reserved space for "..." at the right
+        -- Not all fit — recalculate with reserved space for overflow icon
         allFit = false
-        local maxUsable = barWidth - overflowBtnWidth - 12  -- reserve right side for "..."
+        local maxUsable = barWidth - overflowBtnWidth - 12
         totalW = 6
         fitCount = 0
         for idx = 1, #allTabs do
@@ -671,6 +679,22 @@ local function RefreshChatSubTabs(header)
                 break
             end
             fitCount = idx
+        end
+        -- If selected tab is in overflow, swap it with the last visible tab
+        if selectedTabIdx and selectedTabIdx > fitCount and fitCount > 0 then
+            local swapIdx = fitCount
+            allTabs[swapIdx], allTabs[selectedTabIdx] = allTabs[selectedTabIdx], allTabs[swapIdx]
+            widths[swapIdx], widths[selectedTabIdx] = widths[selectedTabIdx], widths[swapIdx]
+            -- Recalculate fitCount since widths changed
+            totalW = 6
+            fitCount = 0
+            for idx = 1, #allTabs do
+                totalW = totalW + widths[idx] + 8
+                if totalW > maxUsable then
+                    break
+                end
+                fitCount = idx
+            end
         end
     end
 
