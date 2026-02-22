@@ -929,7 +929,7 @@ local function CreateChatHeader(parentFrame)
             if cf and tab then
                 local name = GetChatTabName(i)
                 local isDocked = cf.isDocked or (i == 1)
-                if isDocked and i ~= 2 and i ~= (ns.whisperFrameIndex or -1) then
+                if isDocked and i ~= 2 then
                     local mb = CreateFrame("Button", nil, dropdown)
                     mb:SetHeight(20)
                     mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
@@ -1393,8 +1393,7 @@ local function CreateChatHeader(parentFrame)
         end
         if chatSubTabs and GudaChatDB.showTabBar then
             local isCombat = (cf == ChatFrame2)
-            local isWhisper = (ns.whisperFrame and cf == ns.whisperFrame)
-            if isCombat or isWhisper then
+            if isCombat then
                 chatSubTabs:Hide()
             else
                 RefreshChatSubTabs(header)
