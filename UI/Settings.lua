@@ -285,10 +285,8 @@ local function CreateSettingsFrame()
         end
         tab:SetText(label)
         tab:SetID(i)
-        tab:SetScript("OnShow", function(self)
-            PanelTemplates_TabResize(self, 8, nil, 36)
-            PanelTemplates_DeselectTab(self)
-        end)
+        PanelTemplates_TabResize(tab, 8, nil, 36)
+        PanelTemplates_DeselectTab(tab)
         tabs[i] = tab
     end
 
@@ -308,6 +306,7 @@ local function CreateSettingsFrame()
             if i == id then panel:Show() else panel:Hide() end
         end
     end
+    f.SelectTab = SelectSettingsTab
 
     for i, tab in ipairs(tabs) do
         tab:SetScript("OnClick", function() SelectSettingsTab(i) end)
@@ -509,7 +508,9 @@ local function CreateSettingsFrame()
         Add(clearContainer)
     end
 
-    SelectSettingsTab(1)
+    f:SetScript("OnShow", function()
+        SelectSettingsTab(1)
+    end)
 
     f:Hide()
     return f
@@ -523,7 +524,6 @@ local function ToggleSettings()
         settingsFrame:Hide()
     else
         settingsFrame:Show()
-        PanelTemplates_SetTab(settingsFrame, 1)
     end
 end
 ns.ToggleSettings = ToggleSettings
