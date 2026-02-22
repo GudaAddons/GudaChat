@@ -101,8 +101,8 @@ local function StripChatChrome(index)
     local resize = _G["ChatFrame" .. index .. "ResizeButton"]
     if resize then ns.KillFrame(resize) end
 
-    -- Custom resize handle (bottom-right corner)
-    if not cf.gudaResizeHandle then
+    -- Custom resize handle (ChatFrame1 only)
+    if index == 1 and not cf.gudaResizeHandle then
         cf:SetResizable(true)
         if cf.SetResizeBounds then
             cf:SetResizeBounds(200, 100)
