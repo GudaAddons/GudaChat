@@ -110,11 +110,24 @@ local function GetSelectedChatFrameIndex()
         for i = 1, NUM_CHAT_WINDOWS do
             if _G["ChatFrame" .. i] == current then return i end
         end
+        -- Check temporary frames (index > NUM_CHAT_WINDOWS)
+        if CHAT_FRAMES then
+            for _, name in ipairs(CHAT_FRAMES) do
+                local cf = _G[name]
+                if cf == current then return cf:GetID() end
+            end
+        end
     end
     local selected = SELECTED_DOCK_FRAME or SELECTED_CHAT_FRAME
     if selected then
         for i = 1, NUM_CHAT_WINDOWS do
             if _G["ChatFrame" .. i] == selected then return i end
+        end
+        if CHAT_FRAMES then
+            for _, name in ipairs(CHAT_FRAMES) do
+                local cf = _G[name]
+                if cf == selected then return cf:GetID() end
+            end
         end
     end
     return 1
@@ -560,6 +573,23 @@ end
 local chatSubTabs
 local chatSubTabButtons = {}
 
+-- Tab name -> active color mapping
+local TAB_COLORS = {
+    ["Guild"]    = { 0.25, 1.0,  0.25 },
+    ["Trade"]    = { 1.0,  0.75, 0.26 },
+    ["Party"]    = { 0.67, 0.67, 1.0  },
+    ["Raid"]     = { 1.0,  0.5,  0.0  },
+    ["Whispers"] = { 1.0,  0.5,  1.0  },
+    ["LFG"]      = { 1.0,  0.75, 0.26 },
+}
+local TAB_COLOR_DEFAULT = { 0.8, 0.6, 0.0 }
+local TAB_COLOR_GENERAL = { 1.0, 1.0, 0.0 }
+
+local function GetTabColor(name)
+    if name == "General" then return TAB_COLOR_GENERAL end
+    return TAB_COLORS[name] or TAB_COLOR_DEFAULT
+end
+
 local function RefreshChatSubTabs(header)
     if not chatSubTabs then return end
     if not GudaChatDB.showTabBar then
@@ -581,7 +611,7 @@ local function RefreshChatSubTabs(header)
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if cf and tab then
             local isDocked = cf.isDocked or (i == 1)
-            if isDocked and i ~= 2 and i ~= (ns.whisperFrameIndex or -1) then
+            if isDocked and i ~= 2 then
                 local name = GetChatTabName(i)
                 local btn = CreateFrame("Button", nil, chatSubTabs)
                 btn:SetHeight(16)
@@ -595,10 +625,11 @@ local function RefreshChatSubTabs(header)
                 btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
                 xOff = xOff + btn:GetWidth() + 8
 
+                local col = GetTabColor(name)
                 if i == selectedIndex then
-                    text:SetTextColor(1, 1, 1, 1)
+                    text:SetTextColor(col[1], col[2], col[3], 1)
                 else
-                    text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                    text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                 end
 
                 local frameIndex = i
@@ -613,14 +644,63 @@ local function RefreshChatSubTabs(header)
                 end)
 
                 btn:SetScript("OnEnter", function(self)
-                    self.text:SetTextColor(0.9, 0.9, 0.9, 1)
+                    self.text:SetTextColor(col[1], col[2], col[3], 1)
                     if chatHeader then chatHeader:SetAlpha(1) end
                 end)
                 btn:SetScript("OnLeave", function(self)
                     if frameIndex == GetSelectedChatFrameIndex() then
-                        self.text:SetTextColor(1, 1, 1, 1)
+                        self.text:SetTextColor(col[1], col[2], col[3], 1)
                     else
-                        self.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                        self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                    end
+                end)
+
+                tinsert(chatSubTabButtons, btn)
+            end
+        end
+    end
+
+    -- Also include temporary docked frames (index > NUM_CHAT_WINDOWS)
+    if CHAT_FRAMES then
+        for _, frameName in ipairs(CHAT_FRAMES) do
+            local cf = _G[frameName]
+            if cf and cf.isTemporary and cf.inUse and cf.isDocked then
+                local idx = cf:GetID()
+                local tab = _G[frameName .. "Tab"]
+                local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ("Chat " .. idx)
+                local btn = CreateFrame("Button", nil, chatSubTabs)
+                btn:SetHeight(16)
+
+                local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+                text:SetText(name)
+                btn.text = text
+
+                btn:SetWidth(text:GetStringWidth() + 8)
+                btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
+                xOff = xOff + btn:GetWidth() + 8
+
+                local col = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and TAB_COLORS["Whispers"] or GetTabColor(name)
+                if idx == selectedIndex then
+                    text:SetTextColor(col[1], col[2], col[3], 1)
+                else
+                    text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                end
+
+                btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                btn:SetScript("OnClick", function(self, button)
+                    FCF_SelectDockFrame(cf)
+                end)
+
+                btn:SetScript("OnEnter", function(self)
+                    self.text:SetTextColor(col[1], col[2], col[3], 1)
+                    if chatHeader then chatHeader:SetAlpha(1) end
+                end)
+                btn:SetScript("OnLeave", function(self)
+                    if cf == (SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()) then
+                        self.text:SetTextColor(col[1], col[2], col[3], 1)
+                    else
+                        self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                     end
                 end)
 
@@ -708,14 +788,27 @@ local function EnforceWhisperGroups(cf)
 end
 
 local function SetupWhisperFrame()
+    local function InitWhisperFrame(cf, idx)
+        ns.whisperFrame = cf
+        ns.whisperFrameIndex = idx
+        GudaChatDB.whisperFrameIndex = idx
+        EnforceWhisperGroups(cf)
+        -- Sync with ChatFrame1 so it shares the same area
+        cf:ClearAllPoints()
+        cf:SetPoint(ChatFrame1:GetPoint(1))
+        cf:SetSize(ChatFrame1:GetSize())
+        if GudaChatDB.chatFont then
+            local _, size, flags = cf:GetFont()
+            cf:SetFont(GudaChatDB.chatFont, size, flags)
+        end
+    end
+
     local idx = GudaChatDB.whisperFrameIndex
     if idx then
         local cf = _G["ChatFrame" .. idx]
         local name = cf and GetChatWindowInfo(idx)
         if cf and name == "Whispers" then
-            ns.whisperFrame = cf
-            ns.whisperFrameIndex = idx
-            EnforceWhisperGroups(cf)
+            InitWhisperFrame(cf, idx)
             return
         end
         GudaChatDB.whisperFrameIndex = nil
@@ -725,10 +818,7 @@ local function SetupWhisperFrame()
         local name = GetChatWindowInfo(i)
         if name == "Whispers" then
             local cf = _G["ChatFrame" .. i]
-            ns.whisperFrame = cf
-            ns.whisperFrameIndex = i
-            GudaChatDB.whisperFrameIndex = i
-            EnforceWhisperGroups(cf)
+            InitWhisperFrame(cf, i)
             return
         end
     end
@@ -738,11 +828,8 @@ local function SetupWhisperFrame()
         for i = NUM_CHAT_WINDOWS, 1, -1 do
             local cf = _G["ChatFrame" .. i]
             if cf then
-                EnforceWhisperGroups(cf)
                 ns.StripChatChrome(i)
-                ns.whisperFrame = cf
-                ns.whisperFrameIndex = i
-                GudaChatDB.whisperFrameIndex = i
+                InitWhisperFrame(cf, i)
                 FCF_DockFrame(cf)
                 FCF_SelectDockFrame(ChatFrame1)
                 break
@@ -1134,13 +1221,29 @@ local function CreateChatHeader(parentFrame)
     -- Update label and icon highlights when tabs switch
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
         if not cf then return end
+        local found = false
         ns.ForEachChatWindow(function(frame, i)
             if frame == cf then
                 tabLabel:SetText(GetChatTabName(i))
                 UpdateTabLabelBtnWidth()
+                found = true
             end
         end)
+        -- Check temporary frames (index > NUM_CHAT_WINDOWS)
+        if not found and CHAT_FRAMES then
+            for _, name in ipairs(CHAT_FRAMES) do
+                local frame = _G[name]
+                if frame == cf then
+                    local tab = _G[name .. "Tab"]
+                    local tabName = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or "Chat"
+                    tabLabel:SetText(tabName)
+                    UpdateTabLabelBtnWidth()
+                    break
+                end
+            end
+        end
         UpdateIconHighlights(cf)
+        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
     end)
 
     -------------------------------------------------------------------
@@ -1174,7 +1277,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: History icon
     -------------------------------------------------------------------
-    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 1, "History")
+    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, "History")
     historyBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -6, 0)
     ns.historyBtn = historyBtn
 

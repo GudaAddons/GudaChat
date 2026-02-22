@@ -78,14 +78,24 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ns.KillFrame(GeneralDockManager)
         end
 
-        hooksecurefunc("FCF_OpenTemporaryWindow", function()
-            ns.ForEachChatWindow(function(cf, i)
-                ns.StripChatChrome(i)
-                if not cf.gudaScrollbar then
-                    ns.CreateScrollbar(cf)
+        hooksecurefunc("FCF_OpenTemporaryWindow", function(chatType, chatTarget)
+            -- Blizzard already created, configured, docked, and selected the frame.
+            -- We just need to find it, strip its chrome, and refresh our tab bar.
+            for _, name in ipairs(CHAT_FRAMES) do
+                local cf = _G[name]
+                if cf and cf.isTemporary and cf.inUse and cf.isDocked then
+                    local idx = cf:GetID()
+                    ns.StripChatChrome(idx)
+                    cf:ClearAllPoints()
+                    cf:SetPoint(ChatFrame1:GetPoint(1))
+                    cf:SetSize(ChatFrame1:GetSize())
+                    if GudaChatDB.chatFont then
+                        local _, size, flags = cf:GetFont()
+                        cf:SetFont(GudaChatDB.chatFont, size, flags)
+                    end
                 end
-            end)
-            ns.ApplyChatMargins()
+            end
+            if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         end)
 
         -- Auto-select newly created chat windows

@@ -259,16 +259,6 @@ local function CreateHistoryFrame()
 
     PanelTemplates_SetNumTabs(f, #channelTabDefs)
 
-    local function SelectChannelTab(id)
-        PanelTemplates_SetTab(f, id)
-        selectedFilter = channelTabDefs[id].key
-        if f.RefreshHistory then f:RefreshHistory() end
-    end
-
-    for i, tab in ipairs(channelTabs) do
-        tab:SetScript("OnClick", function() SelectChannelTab(i) end)
-    end
-
     -- Search box
     local searchBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
     searchBox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
@@ -509,26 +499,6 @@ local function CreateHistoryFrame()
         return string.format("|cff808080%s|r |cff%s%s|r", timeStr, chanColor, body)
     end
 
-    local function FormatPlainEntry(entry)
-        local tsFmt = GetTimestampFormat()
-        local timeStr = tsFmt and date(tsFmt, entry.time) or date("%H:%M ", entry.time)
-        local senderName = entry.sender:match("^([^%-]+)") or entry.sender
-        local levelStr = (GudaChatDB.showLevel and entry.level) and string.format("[%d] ", entry.level) or ""
-
-        if entry.channel == "Whisper" and entry.outgoing then
-            return string.format("%s To [%s]: %s%s", timeStr, senderName, levelStr, entry.message)
-        elseif entry.channel == "Whisper" then
-            return string.format("%s [%s] whispers: %s%s", timeStr, senderName, levelStr, entry.message)
-        else
-            local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
-            if verb then
-                return string.format("%s [%s] %s: %s%s", timeStr, senderName, verb, levelStr, entry.message)
-            else
-                return string.format("%s [%s] [%s]: %s%s", timeStr, entry.channel, senderName, levelStr, entry.message)
-            end
-        end
-    end
-
     local lastEntries = {}
 
     function f:RefreshHistory()
@@ -638,6 +608,16 @@ local function CreateHistoryFrame()
         end
         if userInput and f.RefreshHistory then f:RefreshHistory() end
     end)
+
+    local function SelectChannelTab(id)
+        PanelTemplates_SetTab(f, id)
+        selectedFilter = channelTabDefs[id].key
+        if f.RefreshHistory then f:RefreshHistory() end
+    end
+
+    for i, tab in ipairs(channelTabs) do
+        tab:SetScript("OnClick", function() SelectChannelTab(i) end)
+    end
 
     -------------------------------------------------------------------
     -- Initialize
