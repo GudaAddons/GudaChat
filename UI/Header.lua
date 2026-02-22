@@ -423,7 +423,7 @@ local function ShowContextMenu(anchor)
 
     contextMenu:SetSize(maxW, math.abs(yOff) + 4)
     contextMenu:ClearAllPoints()
-    contextMenu:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+    contextMenu:SetPoint("BOTTOM", anchor, "TOP", 0, 2)
     contextMenu:Show()
 end
 
@@ -602,8 +602,14 @@ local function RefreshChatSubTabs(header)
                 end
 
                 local frameIndex = i
-                btn:SetScript("OnClick", function()
-                    FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
+                btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                btn:SetScript("OnClick", function(self, button)
+                    if button == "RightButton" then
+                        FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
+                        ShowContextMenu(self)
+                    else
+                        FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
+                    end
                 end)
 
                 btn:SetScript("OnEnter", function(self)
