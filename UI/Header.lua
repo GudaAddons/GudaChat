@@ -1448,6 +1448,8 @@ local function CreateChatHeader(parentFrame)
         self:SetScript("OnUpdate", function(self)
             if not IsMouseButtonDown("LeftButton") then
                 FinishDrag(self)
+            else
+                ns.SyncDockedFrames()
             end
         end)
     end)
