@@ -12,6 +12,12 @@ local function ApplyLockState()
         if locked then
             cf:SetScript("OnDragStart", nil)
         end
+        if cf.gudaResizeHandle then
+            cf.gudaResizeHandle:EnableMouse(not locked)
+            if locked then
+                cf.gudaResizeHandle.grip:SetAlpha(0)
+            end
+        end
     end)
     if locked then
         if not ns._origStartMoving then
@@ -94,6 +100,67 @@ local function StripChatChrome(index)
     end
     local resize = _G["ChatFrame" .. index .. "ResizeButton"]
     if resize then ns.KillFrame(resize) end
+
+    -- Custom resize handle (bottom-right corner)
+    if not cf.gudaResizeHandle then
+        cf:SetResizable(true)
+        if cf.SetResizeBounds then
+            cf:SetResizeBounds(200, 100)
+        elseif cf.SetMinResize then
+            cf:SetMinResize(200, 100)
+        end
+
+        local handle = CreateFrame("Frame", nil, cf)
+        handle:SetSize(16, 16)
+        handle:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", 4, -4)
+        handle:SetFrameLevel(cf:GetFrameLevel() + 10)
+        handle:EnableMouse(true)
+
+        local grip = handle:CreateTexture(nil, "OVERLAY")
+        grip:SetAllPoints()
+        grip:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+        grip:SetAlpha(0)
+        handle.grip = grip
+
+        handle:SetScript("OnEnter", function(self)
+            if GudaChatDB.locked then return end
+            self.grip:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+            self.grip:SetAlpha(0.8)
+            SetCursor("UI_RESIZE_CURSOR")
+        end)
+        handle:SetScript("OnLeave", function(self)
+            self.grip:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+            self.grip:SetAlpha(0)
+            ResetCursor()
+        end)
+
+        handle:SetScript("OnMouseDown", function(self, button)
+            if button ~= "LeftButton" or GudaChatDB.locked then return end
+            ns.cf1PositionLocked = false
+            cf:SetMovable(true)
+            cf:StartSizing("BOTTOMRIGHT")
+            self.isSizing = true
+            self.grip:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+        end)
+        handle:SetScript("OnMouseUp", function(self)
+            if not self.isSizing then return end
+            cf:StopMovingOrSizing()
+            self.isSizing = false
+            self.grip:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+            ns.cf1PositionLocked = true
+            -- Save size
+            local w, h = cf:GetSize()
+            GudaChatDB.chatSize = { w = w, h = h }
+            -- Save position (may shift during resize)
+            local point, _, relPoint, x, y = cf:GetPoint(1)
+            if point then
+                GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
+            end
+            cf:SetUserPlaced(false)
+        end)
+
+        cf.gudaResizeHandle = handle
+    end
 
     ns.StyleEditBox(cf, index)
 end

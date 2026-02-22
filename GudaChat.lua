@@ -160,6 +160,29 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             origClearAllPoints(self, ...)
         end
 
+        -- Block Blizzard from resizing ChatFrame1
+        local origSetSize = ChatFrame1.SetSize
+        local origSetWidth = ChatFrame1.SetWidth
+        local origSetHeight = ChatFrame1.SetHeight
+        ChatFrame1.SetSize = function(self, ...)
+            if ns.cf1PositionLocked then return end
+            origSetSize(self, ...)
+        end
+        ChatFrame1.SetWidth = function(self, ...)
+            if ns.cf1PositionLocked then return end
+            origSetWidth(self, ...)
+        end
+        ChatFrame1.SetHeight = function(self, ...)
+            if ns.cf1PositionLocked then return end
+            origSetHeight(self, ...)
+        end
+
+        -- Restore saved chat size
+        if GudaChatDB.chatSize then
+            local s = GudaChatDB.chatSize
+            ChatFrame1:SetSize(s.w, s.h)
+        end
+
         -- Restore saved chat position
         if GudaChatDB.position then
             local p = GudaChatDB.position
