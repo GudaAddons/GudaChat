@@ -257,43 +257,72 @@ local function ShowContextMenu(anchor, overrideIndex)
     local yOff = -4
     local maxW = 160
 
-    -- Helper to close the window, moving its content back to General (and Whispers)
+    -- Helper to close a window, routing its content back to General
     local function RemoveWindow()
         local chatFrame = _G["ChatFrame" .. id]
         if chatFrame then
-            -- Move message groups back to General (client + server)
-            if GetChatWindowMessages then
-                local msgs = { GetChatWindowMessages(id) }
-                for _, msgGroup in ipairs(msgs) do
-                    ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
-                    if AddChatWindowMessages then
-                        AddChatWindowMessages(1, msgGroup)
+            if chatFrame.isTemporary then
+                -- Temporary whisper windows: clear exclusion lists so
+                -- whispers route back to General / Whispers windows
+                local target = chatFrame.chatTarget
+                if FCF_PopInWindow then
+                    FCF_PopInWindow(chatFrame)
+                elseif FCF_RestoreChatsToFrame then
+                    FCF_RestoreChatsToFrame(ChatFrame1, chatFrame)
+                    FCF_Close(chatFrame)
+                else
+                    -- Manual fallback: clear exclusion list entries
+                    if target then
+                        -- Remove from all docked frames' exclusion lists
+                        ns.ForEachChatWindow(function(cf)
+                            if cf.excludePrivateMessageList then
+                                cf.excludePrivateMessageList[strlower(target)] = nil
+                            end
+                            if cf.excludeBNPrivateMessageList then
+                                cf.excludeBNPrivateMessageList[strlower(target)] = nil
+                            end
+                        end)
                     end
-                    -- Also route whisper messages to the Whispers window
-                    if ns.whisperFrame and (msgGroup == "WHISPER" or msgGroup == "BN_WHISPER") then
-                        ChatFrame_AddMessageGroup(ns.whisperFrame, msgGroup)
+                    FCF_Close(chatFrame)
+                end
+                -- Also ensure the Whispers window keeps receiving whispers
+                if ns.whisperFrame then
+                    ChatFrame_AddMessageGroup(ns.whisperFrame, "WHISPER")
+                    ChatFrame_AddMessageGroup(ns.whisperFrame, "BN_WHISPER")
+                end
+                -- Ensure General also receives whispers
+                ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
+                ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
+            else
+                -- Permanent windows: move messages/channels to General, then close
+                if GetChatWindowMessages then
+                    local msgs = { GetChatWindowMessages(id) }
+                    for _, msgGroup in ipairs(msgs) do
+                        ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
+                        if AddChatWindowMessages then
+                            AddChatWindowMessages(1, msgGroup)
+                        end
                     end
                 end
-            end
-            -- Move channels back to General
-            if GetChatWindowChannels then
-                local channels = { GetChatWindowChannels(id) }
-                for i = 1, #channels, 2 do
-                    local chName = channels[i]
-                    if type(chName) == "string" then
-                        if AddChatWindowChannel then
-                            AddChatWindowChannel(1, chName)
-                        end
-                        if ChatFrame1.channelList then
-                            tinsert(ChatFrame1.channelList, chName)
-                        end
-                        if ChatFrame1.zoneChannelList then
-                            tinsert(ChatFrame1.zoneChannelList, chName)
+                if GetChatWindowChannels then
+                    local channels = { GetChatWindowChannels(id) }
+                    for i = 1, #channels, 2 do
+                        local chName = channels[i]
+                        if type(chName) == "string" then
+                            if AddChatWindowChannel then
+                                AddChatWindowChannel(1, chName)
+                            end
+                            if ChatFrame1.channelList then
+                                tinsert(ChatFrame1.channelList, chName)
+                            end
+                            if ChatFrame1.zoneChannelList then
+                                tinsert(ChatFrame1.zoneChannelList, chName)
+                            end
                         end
                     end
                 end
+                FCF_Close(chatFrame)
             end
-            FCF_Close(chatFrame)
         end
         contextMenu:Hide()
         FCF_SelectDockFrame(ChatFrame1)
@@ -328,7 +357,10 @@ local function ShowContextMenu(anchor, overrideIndex)
     yOff = yOff - 20
 
     if id ~= 1 then
-        local removeBtn = CreateContextMenuItem(contextMenu, "Remove Window", function()
+        -- Use "Close Whisper Window" for temp whisper tabs, "Remove Window" otherwise
+        local isTemp = cf and cf.isTemporary
+        local removeLabel = isTemp and "Close Whisper Window" or "Remove Window"
+        local removeBtn = CreateContextMenuItem(contextMenu, removeLabel, function()
             RemoveWindow()
         end)
         removeBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
@@ -336,17 +368,19 @@ local function ShowContextMenu(anchor, overrideIndex)
         yOff = yOff - 20
 
         -- "Leave Channel" for channel-based windows
-        local tabName = GetChatTabName(id)
-        if tabName and GetChannelName then
-            local chNum = GetChannelName(tabName)
-            if chNum and chNum > 0 then
-                local leaveBtn = CreateContextMenuItem(contextMenu, "Leave " .. tabName, function()
-                    LeaveChannelByName(tabName)
-                    RemoveWindow()
-                end)
-                leaveBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-                leaveBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-                yOff = yOff - 20
+        if not isTemp then
+            local tabName = GetChatTabName(id)
+            if tabName and GetChannelName then
+                local chNum = GetChannelName(tabName)
+                if chNum and chNum > 0 then
+                    local leaveBtn = CreateContextMenuItem(contextMenu, "Leave " .. tabName, function()
+                        LeaveChannelByName(tabName)
+                        RemoveWindow()
+                    end)
+                    leaveBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+                    leaveBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+                    yOff = yOff - 20
+                end
             end
         end
     end
