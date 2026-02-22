@@ -1550,10 +1550,26 @@ local function CreateChatHeader(parentFrame)
     local closer = CreateFrame("Frame", nil, dropdown)
 
     -------------------------------------------------------------------
+    -- Left side: Logo icon (General tab)
+    -------------------------------------------------------------------
+    local logoBtn = CreateIconButton(header, ns.ASSET_PATH .. "logo.png", ICON_SIZE + 2, "General")
+    logoBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
+    logoBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+    logoBtn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            ShowContextMenu(self, 1)
+        else
+            FCF_SelectDockFrame(ChatFrame1)
+        end
+        CloseDropdown()
+    end)
+
+    -------------------------------------------------------------------
     -- Left side: Combat log icon
     -------------------------------------------------------------------
     local combatBtn = CreateIconButton(header, ns.ASSET_PATH .. "combat.png", ICON_SIZE, "Combat Log")
-    combatBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
+    combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", 6, 0)
 
     combatBtn:SetScript("OnClick", function()
         if ChatFrame2 then
@@ -1652,10 +1668,16 @@ local function CreateChatHeader(parentFrame)
     local ICON_INACTIVE = {0.7, 0.7, 0.7, 0.9}
 
     local function UpdateIconHighlights(cf)
+        local isGeneral = (cf == ChatFrame1)
         local isCombat = (cf == ChatFrame2)
+        logoBtn.icon:SetVertexColor(unpack(isGeneral and ICON_ACTIVE or ICON_INACTIVE))
         combatBtn.icon:SetVertexColor(unpack(isCombat and ICON_ACTIVE or ICON_INACTIVE))
     end
 
+    logoBtn:HookScript("OnLeave", function()
+        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+        if sel == ChatFrame1 then logoBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+    end)
     combatBtn:HookScript("OnLeave", function()
         local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
         if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
