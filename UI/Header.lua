@@ -255,8 +255,53 @@ local function ShowContextMenu(anchor, overrideIndex)
     local id = overrideIndex or GetSelectedChatFrameIndex()
     local cf = _G["ChatFrame" .. id]
     local yOff = -4
-    local maxW = 140
+    local maxW = 160
 
+    -- Helper to close the window, moving its content back to General (and Whispers)
+    local function RemoveWindow()
+        local chatFrame = _G["ChatFrame" .. id]
+        if chatFrame then
+            -- Move message groups back to General (client + server)
+            if GetChatWindowMessages then
+                local msgs = { GetChatWindowMessages(id) }
+                for _, msgGroup in ipairs(msgs) do
+                    ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
+                    if AddChatWindowMessages then
+                        AddChatWindowMessages(1, msgGroup)
+                    end
+                    -- Also route whisper messages to the Whispers window
+                    if ns.whisperFrame and (msgGroup == "WHISPER" or msgGroup == "BN_WHISPER") then
+                        ChatFrame_AddMessageGroup(ns.whisperFrame, msgGroup)
+                    end
+                end
+            end
+            -- Move channels back to General
+            if GetChatWindowChannels then
+                local channels = { GetChatWindowChannels(id) }
+                for i = 1, #channels, 2 do
+                    local chName = channels[i]
+                    if type(chName) == "string" then
+                        if AddChatWindowChannel then
+                            AddChatWindowChannel(1, chName)
+                        end
+                        if ChatFrame1.channelList then
+                            tinsert(ChatFrame1.channelList, chName)
+                        end
+                        if ChatFrame1.zoneChannelList then
+                            tinsert(ChatFrame1.zoneChannelList, chName)
+                        end
+                    end
+                end
+            end
+            FCF_Close(chatFrame)
+        end
+        contextMenu:Hide()
+        FCF_SelectDockFrame(ChatFrame1)
+    end
+
+    -------------------------------------------------------------------
+    -- Actions
+    -------------------------------------------------------------------
     local renameBtn = CreateContextMenuItem(contextMenu, "Rename Window", function()
         local chatFrame = _G["ChatFrame" .. id]
         if chatFrame then
@@ -284,60 +329,20 @@ local function ShowContextMenu(anchor, overrideIndex)
 
     if id ~= 1 then
         local removeBtn = CreateContextMenuItem(contextMenu, "Remove Window", function()
-            local chatFrame = _G["ChatFrame" .. id]
-            if chatFrame then
-                -- Move message groups back to General (client + server)
-                if GetChatWindowMessages then
-                    local msgs = { GetChatWindowMessages(id) }
-                    for _, msgGroup in ipairs(msgs) do
-                        ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
-                        if AddChatWindowMessages then
-                            AddChatWindowMessages(1, msgGroup)
-                        end
-                    end
-                end
-                -- Move channels back to General (server-side for persistence)
-                if GetChatWindowChannels then
-                    local channels = { GetChatWindowChannels(id) }
-                    for i = 1, #channels, 2 do
-                        local chName = channels[i]
-                        if type(chName) == "string" then
-                            if AddChatWindowChannel then
-                                AddChatWindowChannel(1, chName)
-                            end
-                            -- Client-side: add to ChatFrame1's channel lists for immediate display
-                            if ChatFrame1.channelList then
-                                tinsert(ChatFrame1.channelList, chName)
-                            end
-                            if ChatFrame1.zoneChannelList then
-                                tinsert(ChatFrame1.zoneChannelList, chName)
-                            end
-                        end
-                    end
-                end
-                -- Use Blizzard's FCF_Close which undocks, hides, and cleans up
-                FCF_Close(chatFrame)
-            end
-            contextMenu:Hide()
-            FCF_SelectDockFrame(ChatFrame1)
+            RemoveWindow()
         end)
         removeBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
         removeBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
         yOff = yOff - 20
 
-        -- "Leave Channel" — detect by matching tab name to a joined channel
+        -- "Leave Channel" for channel-based windows
         local tabName = GetChatTabName(id)
         if tabName and GetChannelName then
             local chNum = GetChannelName(tabName)
             if chNum and chNum > 0 then
                 local leaveBtn = CreateContextMenuItem(contextMenu, "Leave " .. tabName, function()
                     LeaveChannelByName(tabName)
-                    local chatFrame = _G["ChatFrame" .. id]
-                    if chatFrame then
-                        FCF_Close(chatFrame)
-                    end
-                    contextMenu:Hide()
-                    FCF_SelectDockFrame(ChatFrame1)
+                    RemoveWindow()
                 end)
                 leaveBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
                 leaveBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
@@ -346,6 +351,9 @@ local function ShowContextMenu(anchor, overrideIndex)
         end
     end
 
+    -------------------------------------------------------------------
+    -- Display section
+    -------------------------------------------------------------------
     local displaySep = CreateContextMenuItem(contextMenu, "Display", nil, true)
     displaySep:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
     displaySep:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
@@ -359,7 +367,7 @@ local function ShowContextMenu(anchor, overrideIndex)
     local fsm = fontSubMenu or CreateFontSubMenu()
 
     fontBtn:SetScript("OnEnter", function(self)
-        local curCf = _G["ChatFrame" .. GetSelectedChatFrameIndex()]
+        local curCf = _G["ChatFrame" .. id]
         if curCf then
             local _, curSize = curCf:GetFont()
             curSize = math.floor(curSize + 0.5)
@@ -397,11 +405,10 @@ local function ShowContextMenu(anchor, overrideIndex)
     swatch:SetPoint("RIGHT", bgBtn, "RIGHT", -8, 0)
     swatch:SetTexture("Interface\\Buttons\\WHITE8x8")
 
-    local curCf = _G["ChatFrame" .. id]
     local r, g, b, a = 0, 0, 0, 0.5
-    if curCf then
-        r, g, b = FCF_GetCurrentChatFrameBackgroundColor and FCF_GetCurrentChatFrameBackgroundColor(curCf) or 0, 0, 0
-        a = curCf.oldAlpha or 0.25
+    if cf then
+        r, g, b = FCF_GetCurrentChatFrameBackgroundColor and FCF_GetCurrentChatFrameBackgroundColor(cf) or 0, 0, 0
+        a = cf.oldAlpha or 0.25
     end
     swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
 
@@ -413,7 +420,7 @@ local function ShowContextMenu(anchor, overrideIndex)
     swatchBorder:SetDrawLayer("ARTWORK", -1)
 
     bgBtn:SetScript("OnClick", function()
-        local chatFrame = _G["ChatFrame" .. GetSelectedChatFrameIndex()]
+        local chatFrame = _G["ChatFrame" .. id]
         if not chatFrame then return end
         contextMenu:Hide()
 
@@ -469,11 +476,9 @@ local function ShowContextMenu(anchor, overrideIndex)
         if fsm then fsm:Hide() end
     end)
 
-    local filterSep = CreateContextMenuItem(contextMenu, "Filters", nil, true)
-    filterSep:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    filterSep:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
-
+    -------------------------------------------------------------------
+    -- Settings
+    -------------------------------------------------------------------
     local settBtn = CreateContextMenuItem(contextMenu, "Settings", function()
         if ChatConfigFrame and ChatConfigFrame.Show then
             ShowUIPanel(ChatConfigFrame)
@@ -944,7 +949,7 @@ local function RefreshChatSubTabs(header)
                 FinishTabDrag(self)
                 return
             end
-            if button == "RightButton" and not def.isTemp then
+            if button == "RightButton" then
                 ShowContextMenu(self, def.frameIndex)
             else
                 FCF_SelectDockFrame(def.cf)
