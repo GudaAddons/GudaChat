@@ -93,6 +93,17 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                         local _, size, flags = cf:GetFont()
                         cf:SetFont(GudaChatDB.chatFont, size, flags)
                     end
+                    -- Strip realm from tab name
+                    local tab = _G[name .. "Tab"]
+                    if tab then
+                        local tabText = tab.Text and tab.Text:GetText() or tab:GetText()
+                        if tabText then
+                            local shortName = tabText:match("^([^%-]+)")
+                            if shortName and shortName ~= tabText then
+                                if tab.Text then tab.Text:SetText(shortName) else tab:SetText(shortName) end
+                            end
+                        end
+                    end
                 end
             end
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end

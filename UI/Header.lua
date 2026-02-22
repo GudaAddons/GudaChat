@@ -590,6 +590,8 @@ local function GetTabColor(name)
     return TAB_COLORS[name] or TAB_COLOR_DEFAULT
 end
 
+local overflowDropdown  -- persistent overflow menu frame
+
 local function RefreshChatSubTabs(header)
     if not chatSubTabs then return end
     if not GudaChatDB.showTabBar then
@@ -602,9 +604,12 @@ local function RefreshChatSubTabs(header)
         btn:SetParent(nil)
     end
     wipe(chatSubTabButtons)
+    if overflowDropdown then overflowDropdown:Hide() end
 
-    local xOff = 6
     local selectedIndex = GetSelectedChatFrameIndex()
+
+    -- 1) Collect all tab definitions: { name, col, frameIndex, cf, isTemp }
+    local allTabs = {}
 
     for i = 1, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
@@ -613,54 +618,12 @@ local function RefreshChatSubTabs(header)
             local isDocked = cf.isDocked or (i == 1)
             if isDocked and i ~= 2 then
                 local name = GetChatTabName(i)
-                local btn = CreateFrame("Button", nil, chatSubTabs)
-                btn:SetHeight(16)
-
-                local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                text:SetPoint("LEFT", btn, "LEFT", 0, 0)
-                text:SetText(name)
-                btn.text = text
-
-                btn:SetWidth(text:GetStringWidth() + 8)
-                btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
-                xOff = xOff + btn:GetWidth() + 8
-
                 local col = GetTabColor(name)
-                if i == selectedIndex then
-                    text:SetTextColor(col[1], col[2], col[3], 1)
-                else
-                    text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                end
-
-                local frameIndex = i
-                btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-                btn:SetScript("OnClick", function(self, button)
-                    if button == "RightButton" then
-                        FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
-                        ShowContextMenu(self)
-                    else
-                        FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
-                    end
-                end)
-
-                btn:SetScript("OnEnter", function(self)
-                    self.text:SetTextColor(col[1], col[2], col[3], 1)
-                    if chatHeader then chatHeader:SetAlpha(1) end
-                end)
-                btn:SetScript("OnLeave", function(self)
-                    if frameIndex == GetSelectedChatFrameIndex() then
-                        self.text:SetTextColor(col[1], col[2], col[3], 1)
-                    else
-                        self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                    end
-                end)
-
-                tinsert(chatSubTabButtons, btn)
+                tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
             end
         end
     end
 
-    -- Also include temporary docked frames (index > NUM_CHAT_WINDOWS)
     if CHAT_FRAMES then
         for _, frameName in ipairs(CHAT_FRAMES) do
             local cf = _G[frameName]
@@ -668,45 +631,199 @@ local function RefreshChatSubTabs(header)
                 local idx = cf:GetID()
                 local tab = _G[frameName .. "Tab"]
                 local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ("Chat " .. idx)
-                local btn = CreateFrame("Button", nil, chatSubTabs)
-                btn:SetHeight(16)
-
-                local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                text:SetPoint("LEFT", btn, "LEFT", 0, 0)
-                text:SetText(name)
-                btn.text = text
-
-                btn:SetWidth(text:GetStringWidth() + 8)
-                btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
-                xOff = xOff + btn:GetWidth() + 8
-
                 local col = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and TAB_COLORS["Whispers"] or GetTabColor(name)
-                if idx == selectedIndex then
+                tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
+            end
+        end
+    end
+
+    -- 2) Measure which tabs fit; reserve space for overflow button
+    local barWidth = chatSubTabs:GetWidth() or 300
+    local overflowBtnWidth = 20  -- width of "..." button
+    local xOff = 6
+    local fitCount = #allTabs  -- assume all fit
+
+    -- Measure total width needed
+    local tempFont = chatSubTabs:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local widths = {}
+    for idx, def in ipairs(allTabs) do
+        tempFont:SetText(def.name)
+        widths[idx] = tempFont:GetStringWidth() + 8
+    end
+    tempFont:Hide()
+
+    -- Find how many fit
+    local totalW = 6
+    local allFit = true
+    -- First check if all tabs fit without overflow button
+    for idx = 1, #allTabs do
+        totalW = totalW + widths[idx] + 8
+    end
+    if totalW > barWidth then
+        -- Not all fit — recalculate with reserved space for "..." at the right
+        allFit = false
+        local maxUsable = barWidth - overflowBtnWidth - 12  -- reserve right side for "..."
+        totalW = 6
+        fitCount = 0
+        for idx = 1, #allTabs do
+            totalW = totalW + widths[idx] + 8
+            if totalW > maxUsable then
+                break
+            end
+            fitCount = idx
+        end
+    end
+
+    -- 3) Create visible tab buttons
+    local function CreateTabBtn(def, parent)
+        local btn = CreateFrame("Button", nil, parent)
+        btn:SetHeight(16)
+
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+        text:SetText(def.name)
+        btn.text = text
+
+        local col = def.col
+        if def.frameIndex == selectedIndex then
+            text:SetTextColor(col[1], col[2], col[3], 1)
+        else
+            text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+        end
+
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        btn:SetScript("OnClick", function(self, button)
+            if button == "RightButton" and not def.isTemp then
+                FCF_SelectDockFrame(def.cf)
+                ShowContextMenu(self)
+            else
+                FCF_SelectDockFrame(def.cf)
+            end
+        end)
+
+        btn:SetScript("OnEnter", function(self)
+            self.text:SetTextColor(col[1], col[2], col[3], 1)
+            if chatHeader then chatHeader:SetAlpha(1) end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            if def.frameIndex == GetSelectedChatFrameIndex() then
+                self.text:SetTextColor(col[1], col[2], col[3], 1)
+            else
+                self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+            end
+        end)
+
+        return btn
+    end
+
+    for idx = 1, fitCount do
+        local def = allTabs[idx]
+        local btn = CreateTabBtn(def, chatSubTabs)
+        btn:SetWidth(widths[idx])
+        btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
+        xOff = xOff + widths[idx] + 8
+        tinsert(chatSubTabButtons, btn)
+    end
+
+    -- 4) Create overflow "..." button if there are hidden tabs
+    if fitCount < #allTabs then
+        local moreBtn = CreateFrame("Button", nil, chatSubTabs)
+        moreBtn:SetHeight(16)
+        moreBtn:SetWidth(overflowBtnWidth)
+        moreBtn:SetPoint("RIGHT", chatSubTabs, "RIGHT", -6, 0)
+
+        local moreText = moreBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        moreText:SetPoint("LEFT", moreBtn, "LEFT", 0, 0)
+        moreText:SetText("...")
+        moreText:SetTextColor(0.6, 0.6, 0.6, 1)
+        moreBtn.text = moreText
+
+        moreBtn:SetScript("OnEnter", function(self)
+            self.text:SetTextColor(1, 1, 1, 1)
+            if chatHeader then chatHeader:SetAlpha(1) end
+        end)
+        moreBtn:SetScript("OnLeave", function(self)
+            self.text:SetTextColor(0.6, 0.6, 0.6, 1)
+        end)
+
+        moreBtn:SetScript("OnClick", function(self)
+            if overflowDropdown and overflowDropdown:IsShown() then
+                overflowDropdown:Hide()
+                return
+            end
+
+            if not overflowDropdown then
+                overflowDropdown = CreateFrame("Frame", "GudaChatTabOverflow", UIParent, "BackdropTemplate")
+                overflowDropdown:SetFrameStrata("TOOLTIP")
+                overflowDropdown:SetClampedToScreen(true)
+                ns.ApplyDarkBackdrop(overflowDropdown, { 0.08, 0.08, 0.08, 0.95 }, { 0.3, 0.3, 0.3, 0.6 })
+                overflowDropdown:EnableMouse(true)
+            end
+
+            -- Clear old children
+            for _, child in ipairs({ overflowDropdown:GetChildren() }) do
+                child:Hide()
+                child:SetParent(nil)
+            end
+
+            local itemHeight = 18
+            local padding = 6
+            local maxW = 60
+            local items = {}
+
+            for idx = fitCount + 1, #allTabs do
+                local def = allTabs[idx]
+                local item = CreateFrame("Button", nil, overflowDropdown)
+                item:SetHeight(itemHeight)
+
+                local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                text:SetPoint("LEFT", item, "LEFT", 8, 0)
+                text:SetText(def.name)
+                item.text = text
+
+                local col = def.col
+                if def.frameIndex == selectedIndex then
                     text:SetTextColor(col[1], col[2], col[3], 1)
                 else
                     text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                 end
 
-                btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-                btn:SetScript("OnClick", function(self, button)
-                    FCF_SelectDockFrame(cf)
-                end)
-
-                btn:SetScript("OnEnter", function(self)
+                item:SetScript("OnEnter", function(self)
                     self.text:SetTextColor(col[1], col[2], col[3], 1)
-                    if chatHeader then chatHeader:SetAlpha(1) end
                 end)
-                btn:SetScript("OnLeave", function(self)
-                    if cf == (SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()) then
+                item:SetScript("OnLeave", function(self)
+                    if def.frameIndex == GetSelectedChatFrameIndex() then
                         self.text:SetTextColor(col[1], col[2], col[3], 1)
                     else
                         self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                     end
                 end)
+                item:SetScript("OnClick", function()
+                    FCF_SelectDockFrame(def.cf)
+                    overflowDropdown:Hide()
+                end)
 
-                tinsert(chatSubTabButtons, btn)
+                local w = text:GetStringWidth() + 16
+                if w > maxW then maxW = w end
+                tinsert(items, item)
             end
-        end
+
+            local totalH = #items * itemHeight + padding * 2
+            overflowDropdown:SetSize(maxW, totalH)
+            -- Anchor above the "..." button
+            overflowDropdown:ClearAllPoints()
+            overflowDropdown:SetPoint("BOTTOMLEFT", self, "TOPLEFT", 0, 2)
+
+            for i, item in ipairs(items) do
+                item:SetWidth(maxW)
+                item:SetPoint("TOPLEFT", overflowDropdown, "TOPLEFT", 0, -padding - (i - 1) * itemHeight)
+                item:Show()
+            end
+
+            overflowDropdown:Show()
+        end)
+
+        tinsert(chatSubTabButtons, moreBtn)
     end
 end
 ns.RefreshChatSubTabs = RefreshChatSubTabs
