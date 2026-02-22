@@ -592,6 +592,44 @@ end
 
 local overflowDropdown  -- persistent overflow menu frame
 
+-- Drag state for tab reordering
+local dragState = {
+    dragging = false,
+    sourceIdx = nil,   -- index in allTabs being dragged
+    sourceBtn = nil,   -- the button frame being dragged
+    insertIdx = nil,   -- insertion point (drop before this index)
+}
+
+-- Persistent insertion indicator line
+local dragIndicator
+
+local function ApplySavedTabOrder(allTabs)
+    local saved = GudaChatDB.tabOrder
+    if not saved or #saved == 0 then return end
+    -- Build lookup: frameIndex → position in saved order
+    local orderMap = {}
+    for pos, frameIdx in ipairs(saved) do
+        orderMap[frameIdx] = pos
+    end
+    local nextPos = #saved + 1
+    table.sort(allTabs, function(a, b)
+        local posA = orderMap[a.frameIndex] or nextPos
+        local posB = orderMap[b.frameIndex] or nextPos
+        if posA == posB then
+            return a.frameIndex < b.frameIndex
+        end
+        return posA < posB
+    end)
+end
+
+local function SaveTabOrder(allTabs)
+    local order = {}
+    for _, def in ipairs(allTabs) do
+        tinsert(order, def.frameIndex)
+    end
+    GudaChatDB.tabOrder = order
+end
+
 local function RefreshChatSubTabs(header)
     if not chatSubTabs then return end
     if not GudaChatDB.showTabBar then
@@ -636,6 +674,9 @@ local function RefreshChatSubTabs(header)
             end
         end
     end
+
+    -- 1b) Apply saved tab order
+    ApplySavedTabOrder(allTabs)
 
     -- 2) Measure which tabs fit; reserve space for overflow button
     local barWidth = chatSubTabs:GetWidth() or 300
@@ -703,9 +744,100 @@ local function RefreshChatSubTabs(header)
         return cf and cf:IsShown()
     end
 
-    local function CreateTabBtn(def, parent)
+    local DRAG_THRESHOLD = 5  -- pixels before a click becomes a drag
+
+    -- Create / fetch the insertion indicator (thin vertical golden line)
+    if not dragIndicator then
+        dragIndicator = chatSubTabs:CreateTexture(nil, "OVERLAY")
+        dragIndicator:SetTexture("Interface\\Buttons\\WHITE8x8")
+        dragIndicator:SetVertexColor(0.8, 0.6, 0.0, 1)
+        dragIndicator:SetSize(2, 14)
+        dragIndicator:Hide()
+    end
+
+    -- Compute insertion index from cursor X position
+    -- Returns the index in allTabs *before which* the dragged tab should be inserted
+    local function GetInsertIndex(srcIdx)
+        local scale = chatSubTabs:GetEffectiveScale()
+        local cursorX = GetCursorPosition() / scale
+        -- Walk visible tab buttons and find the gap the cursor falls into
+        for _, tabBtn in ipairs(chatSubTabButtons) do
+            if tabBtn.tabIdx then
+                local left = tabBtn:GetLeft()
+                local right = tabBtn:GetRight()
+                if left and right then
+                    local mid = (left + right) / 2
+                    if cursorX < mid then
+                        return tabBtn.tabIdx
+                    end
+                end
+            end
+        end
+        -- Past the last tab → insert at end
+        return fitCount + 1
+    end
+
+    -- Position the indicator line at the gap before `insertIdx`
+    local function UpdateIndicator(insertIdx, srcIdx)
+        if not insertIdx or insertIdx == srcIdx or insertIdx == srcIdx + 1 then
+            -- No-op position (would result in no move)
+            dragIndicator:Hide()
+            dragState.insertIdx = nil
+            return
+        end
+        dragState.insertIdx = insertIdx
+        -- Find anchor: the left edge of the button at insertIdx, or right edge of last button
+        local anchorBtn
+        if insertIdx <= fitCount then
+            for _, tabBtn in ipairs(chatSubTabButtons) do
+                if tabBtn.tabIdx == insertIdx then
+                    anchorBtn = tabBtn
+                    break
+                end
+            end
+        end
+        dragIndicator:ClearAllPoints()
+        if anchorBtn then
+            dragIndicator:SetPoint("RIGHT", anchorBtn, "LEFT", -3, 0)
+        else
+            -- After last visible tab
+            local lastBtn
+            for _, tabBtn in ipairs(chatSubTabButtons) do
+                if tabBtn.tabIdx then lastBtn = tabBtn end
+            end
+            if lastBtn then
+                dragIndicator:SetPoint("LEFT", lastBtn, "RIGHT", 3, 0)
+            end
+        end
+        dragIndicator:Show()
+    end
+
+    local function FinishTabDrag(srcBtn)
+        if not dragState.dragging then return end
+        local insertIdx = dragState.insertIdx
+        local srcIdx = dragState.sourceIdx
+        if insertIdx and srcIdx and insertIdx ~= srcIdx and insertIdx ~= srcIdx + 1 then
+            local moved = table.remove(allTabs, srcIdx)
+            if moved then
+                local dest = insertIdx
+                if dest > srcIdx then dest = dest - 1 end
+                table.insert(allTabs, dest, moved)
+                SaveTabOrder(allTabs)
+            end
+        end
+        dragIndicator:Hide()
+        dragState.dragging = false
+        dragState.sourceIdx = nil
+        dragState.sourceBtn = nil
+        dragState.insertIdx = nil
+        srcBtn:SetScript("OnUpdate", nil)
+        RefreshChatSubTabs(header)
+    end
+
+    local function CreateTabBtn(def, parent, tabIdx)
         local btn = CreateFrame("Button", nil, parent)
         btn:SetHeight(16)
+        btn.tabIdx = tabIdx
 
         local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         text:SetPoint("LEFT", btn, "LEFT", 0, 0)
@@ -721,6 +853,10 @@ local function RefreshChatSubTabs(header)
 
         btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         btn:SetScript("OnClick", function(self, button)
+            if dragState.dragging then
+                FinishTabDrag(self)
+                return
+            end
             if button == "RightButton" and not def.isTemp then
                 FCF_SelectDockFrame(def.cf)
                 ShowContextMenu(self)
@@ -729,11 +865,57 @@ local function RefreshChatSubTabs(header)
             end
         end)
 
+        btn:SetScript("OnMouseDown", function(self, button)
+            if button == "LeftButton" then
+                local cx, cy = GetCursorPosition()
+                local scale = self:GetEffectiveScale()
+                dragState.startX = cx / scale
+                dragState.startY = cy / scale
+                dragState.pending = true
+                dragState.pendingBtn = self
+                dragState.pendingIdx = self.tabIdx
+                self:SetScript("OnUpdate", function(self)
+                    if not dragState.pending and not dragState.dragging then
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+                    if not IsMouseButtonDown("LeftButton") then
+                        if dragState.dragging then
+                            FinishTabDrag(self)
+                        end
+                        dragState.pending = false
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+                    -- Check drag threshold
+                    if dragState.pending then
+                        local cx, cy = GetCursorPosition()
+                        local scale = self:GetEffectiveScale()
+                        local dx = cx / scale - dragState.startX
+                        local dy = cy / scale - dragState.startY
+                        if (dx * dx + dy * dy) > DRAG_THRESHOLD * DRAG_THRESHOLD then
+                            dragState.pending = false
+                            dragState.dragging = true
+                            dragState.sourceIdx = dragState.pendingIdx
+                            dragState.sourceBtn = self
+                            self.text:SetTextColor(col[1] * 0.3, col[2] * 0.3, col[3] * 0.3, 0.5)
+                        end
+                    end
+                    -- Update insertion indicator while dragging
+                    if dragState.dragging then
+                        local ins = GetInsertIndex(dragState.sourceIdx)
+                        UpdateIndicator(ins, dragState.sourceIdx)
+                    end
+                end)
+            end
+        end)
+
         btn:SetScript("OnEnter", function(self)
             self.text:SetTextColor(col[1], col[2], col[3], 1)
             if chatHeader then chatHeader:SetAlpha(1) end
         end)
         btn:SetScript("OnLeave", function(self)
+            if dragState.dragging and dragState.sourceBtn == self then return end
             if IsSelectedFrame(def.cf) then
                 self.text:SetTextColor(col[1], col[2], col[3], 1)
             else
@@ -746,7 +928,7 @@ local function RefreshChatSubTabs(header)
 
     for idx = 1, fitCount do
         local def = allTabs[idx]
-        local btn = CreateTabBtn(def, chatSubTabs)
+        local btn = CreateTabBtn(def, chatSubTabs, idx)
         btn:SetWidth(widths[idx])
         btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
         xOff = xOff + widths[idx] + 8
