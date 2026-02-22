@@ -889,7 +889,7 @@ local function CreateChatSubTabs(header)
         tabBarHovering = false
         C_Timer.After(0.3, function()
             if tabBarHovering then return end
-            if bar:IsMouseOver() or (ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()) then
+            if bar:IsMouseOver() or (ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()) or (overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()) then
                 tabBarHovering = true
                 return
             end
@@ -899,7 +899,10 @@ local function CreateChatSubTabs(header)
             anim:SetFromAlpha(bar:GetAlpha())
             anim:SetToAlpha(0)
             anim:SetDuration(0.25)
-            tabBarFadeOut:SetScript("OnFinished", function() bar:SetAlpha(0) end)
+            tabBarFadeOut:SetScript("OnFinished", function()
+                bar:SetAlpha(0)
+                if overflowDropdown then overflowDropdown:Hide() end
+            end)
             tabBarFadeOut:Play()
         end)
     end
@@ -909,7 +912,8 @@ local function CreateChatSubTabs(header)
         if not bar:IsShown() then return end
         local overBar = bar:IsMouseOver()
         local overLabel = ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()
-        if overBar or overLabel then
+        local overOverflow = overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()
+        if overBar or overLabel or overOverflow then
             ShowTabBar()
         else
             HideTabBar()
