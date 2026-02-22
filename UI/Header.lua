@@ -539,43 +539,48 @@ end)
 
 ---------------------------------------------------------------------------
 -- Combat log filtering (My Actions / What Happened to Me?)
+-- Uses Blizzard's native Blizzard_CombatLog filter system:
+--   Filter 1 = Self (My Actions)
+--   Filter 2 = Everything
+--   Filter 3 = What Happened to Me?
+--   Filter 4 = Kills
 ---------------------------------------------------------------------------
 
-local combatLogFilter = "all"
-local shouldShowCombatMessage = true
-
-local combatFilterFrame = CreateFrame("Frame")
-combatFilterFrame:SetScript("OnEvent", function()
-    if combatLogFilter == "all" then
-        shouldShowCombatMessage = true
-        return
-    end
-
-    local _, _, _, sourceGUID, _, _, _, destGUID = CombatLogGetCurrentEventInfo()
-    local playerGUID = UnitGUID("player")
-
-    if combatLogFilter == "mine" then
-        shouldShowCombatMessage = (sourceGUID == playerGUID)
-    elseif combatLogFilter == "tome" then
-        shouldShowCombatMessage = (destGUID == playerGUID)
-    end
-end)
-
-local origCF2AddMessage
-local function HookCombatLogAddMessage()
-    if not ChatFrame2 then return end
-    if origCF2AddMessage then return end
-    origCF2AddMessage = ChatFrame2.AddMessage
-    ChatFrame2.AddMessage = function(self, ...)
-        if combatLogFilter ~= "all" and not shouldShowCombatMessage then
-            return
-        end
-        return origCF2AddMessage(self, ...)
-    end
-end
+local combatLogFilter = "mine"
 
 -- Subtab bar UI
 local combatSubTabs
+
+local function SwitchCombatLogFilter(key)
+    combatLogFilter = key
+    if not Blizzard_CombatLog_Filters then return end
+    local filters = Blizzard_CombatLog_Filters.filters
+    if not filters then return end
+
+    -- Use direct index: on TBC Anniversary there are typically 2 filters
+    -- Filter 1 = My Actions (source = player), Filter 2 = What Happened to Me (dest = player)
+    -- Try both orderings by checking filter count
+    local total = #filters
+    local idx
+    if key == "mine" then
+        idx = 1
+    elseif key == "tome" then
+        -- "What happened to me?" is the last filter before Kills (if present)
+        -- On 2-filter setups it's index 2; on 4-filter setups it's index 3
+        if total >= 4 then idx = 3 else idx = total end
+    end
+
+    if not idx or not filters[idx] then return end
+
+    Blizzard_CombatLog_CurrentSettings = filters[idx]
+    Blizzard_CombatLog_Filters.currentFilter = idx
+    if Blizzard_CombatLog_ApplyFilters then
+        Blizzard_CombatLog_ApplyFilters(filters[idx])
+    end
+    if Blizzard_CombatLog_Refilter then
+        Blizzard_CombatLog_Refilter()
+    end
+end
 
 local function CreateCombatSubTabs(header)
     local bar = CreateFrame("Frame", "GudaChatCombatSubTabs", UIParent, "BackdropTemplate")
@@ -592,7 +597,6 @@ local function CreateCombatSubTabs(header)
 
     local tabs = {}
     local tabDefs = {
-        { key = "all",  label = "All" },
         { key = "mine", label = "My Actions" },
         { key = "tome", label = "What Happened to Me?" },
     }
@@ -622,8 +626,7 @@ local function CreateCombatSubTabs(header)
         end
 
         btn:SetScript("OnClick", function()
-            combatLogFilter = def.key
-            shouldShowCombatMessage = true
+            SwitchCombatLogFilter(def.key)
             UpdateColors()
         end)
 
@@ -1893,11 +1896,6 @@ local function CreateChatHeader(parentFrame)
     -- Combat log subtabs
     -------------------------------------------------------------------
     CreateCombatSubTabs(header)
-    HookCombatLogAddMessage()
-    -- COMBAT_LOG_EVENT_UNFILTERED is restricted in Retail; only register where available
-    if CombatLogGetCurrentEventInfo and (select(4, GetBuildInfo()) or 0) < 110000 then
-        combatFilterFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    end
     whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
     whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
 
@@ -1918,8 +1916,7 @@ local function CreateChatHeader(parentFrame)
                 combatSubTabs:SetAlpha(header:GetAlpha())
             else
                 combatSubTabs:Hide()
-                combatLogFilter = "all"
-                shouldShowCombatMessage = true
+                SwitchCombatLogFilter("mine")
             end
         end
         if chatSubTabs and GudaChatDB.showTabBar then
