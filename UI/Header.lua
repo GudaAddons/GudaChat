@@ -2106,6 +2106,72 @@ local function CreateChatHeader(parentFrame)
         end
     end
 
+    -- Auto-select tab when sending a message to a channel with its own window
+    local AUTO_SELECT_EVENTS = {
+        CHAT_MSG_GUILD = "GUILD", CHAT_MSG_OFFICER = "OFFICER",
+        CHAT_MSG_PARTY = "PARTY", CHAT_MSG_PARTY_LEADER = "PARTY",
+        CHAT_MSG_RAID = "RAID", CHAT_MSG_RAID_LEADER = "RAID",
+        CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT", CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
+        CHAT_MSG_WHISPER_INFORM = "WHISPER", CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
+    }
+    local autoSelectFrame = CreateFrame("Frame")
+    autoSelectFrame:SetScript("OnEvent", function(self, event, msg, sender)
+        if not GudaChatDB or not GudaChatDB.showTabBar then return end
+        local group = AUTO_SELECT_EVENTS[event]
+        if not group then return end
+
+        -- Only react to our own messages
+        local playerName = UnitName("player")
+        local senderShort = sender and sender:match("^([^%-]+)") or sender
+        local isOutgoing = (event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM")
+        if not isOutgoing and senderShort ~= playerName then return end
+
+        -- For outgoing whispers, check temporary windows then dedicated Whispers tab
+        if isOutgoing then
+            if sender and CHAT_FRAMES then
+                local targetShort = sender:match("^([^%-]+)") or sender
+                for _, frameName in ipairs(CHAT_FRAMES) do
+                    local cf = _G[frameName]
+                    if cf and cf.isTemporary and cf.inUse and cf.isDocked then
+                        local ct = cf.chatTarget
+                        local ctShort = ct and ct:match("^([^%-]+)") or ct
+                        if ctShort and targetShort and ctShort:lower() == targetShort:lower() then
+                            FCF_SelectDockFrame(cf)
+                            return
+                        end
+                    end
+                end
+            end
+            if GudaChatDB.whisperTab and ns.whisperFrame then
+                FCF_SelectDockFrame(ns.whisperFrame)
+                return
+            end
+            return
+        end
+
+        -- For other chat types, find a non-General window that has this message group
+        for i = 3, NUM_CHAT_WINDOWS do
+            local cf = _G["ChatFrame" .. i]
+            local tab = _G["ChatFrame" .. i .. "Tab"]
+            if cf and tab then
+                local isDocked = cf.isDocked
+                local shown = tab:IsShown()
+                if isDocked and shown then
+                    local msgs = { GetChatWindowMessages(i) }
+                    for _, grp in ipairs(msgs) do
+                        if grp == group then
+                            FCF_SelectDockFrame(cf)
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    for ev in pairs(AUTO_SELECT_EVENTS) do
+        autoSelectFrame:RegisterEvent(ev)
+    end
+
     chatHeader = header
     ns.chatHeader = header
     return header
