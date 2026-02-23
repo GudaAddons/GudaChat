@@ -925,8 +925,11 @@ local function RefreshChatSubTabs(header)
 
     -- 2) Measure which tabs fit; reserve space for overflow button
     local barWidth = chatSubTabs:GetWidth() or 300
-    local overflowBtnWidth = 16  -- width of overflow icon button
-    local xOff = 6
+    local EXT_TAB_GAP = 6
+    local EXT_FIRST_GAP = 6
+    local EXT_MARGIN_RIGHT = 6
+    local EXT_OVERFLOW_EXTRA = EXT_TAB_GAP + 12  -- gap + button width
+    local xOff = EXT_FIRST_GAP
     local fitCount = #allTabs  -- assume all fit
 
     -- Measure total width needed
@@ -948,19 +951,17 @@ local function RefreshChatSubTabs(header)
     end
 
     -- Find how many fit
-    local totalW = 6
-    local allFit = true
+    local totalW = EXT_FIRST_GAP
     for idx = 1, #allTabs do
-        totalW = totalW + widths[idx] + 8
+        totalW = totalW + widths[idx] + (idx > 1 and EXT_TAB_GAP or 0)
     end
-    if totalW > barWidth then
+    if totalW + EXT_MARGIN_RIGHT > barWidth then
         -- Not all fit — recalculate with reserved space for overflow icon
-        allFit = false
-        local maxUsable = barWidth - overflowBtnWidth - 12
-        totalW = 6
+        local maxUsable = barWidth - EXT_OVERFLOW_EXTRA - EXT_MARGIN_RIGHT
+        totalW = EXT_FIRST_GAP
         fitCount = 0
         for idx = 1, #allTabs do
-            totalW = totalW + widths[idx] + 8
+            totalW = totalW + widths[idx] + (idx > 1 and EXT_TAB_GAP or 0)
             if totalW > maxUsable then
                 break
             end
@@ -972,10 +973,10 @@ local function RefreshChatSubTabs(header)
             allTabs[swapIdx], allTabs[selectedTabIdx] = allTabs[selectedTabIdx], allTabs[swapIdx]
             widths[swapIdx], widths[selectedTabIdx] = widths[selectedTabIdx], widths[swapIdx]
             -- Recalculate fitCount since widths changed
-            totalW = 6
+            totalW = EXT_FIRST_GAP
             fitCount = 0
             for idx = 1, #allTabs do
-                totalW = totalW + widths[idx] + 8
+                totalW = totalW + widths[idx] + (idx > 1 and EXT_TAB_GAP or 0)
                 if totalW > maxUsable then
                     break
                 end
@@ -1191,7 +1192,7 @@ local function RefreshChatSubTabs(header)
         local btn = CreateTabBtn(def, chatSubTabs, idx)
         btn:SetWidth(widths[idx])
         btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
-        xOff = xOff + widths[idx] + 8
+        xOff = xOff + widths[idx] + EXT_TAB_GAP
         tinsert(chatSubTabButtons, btn)
     end
 
@@ -1267,9 +1268,15 @@ local function RefreshChatSubTabs(header)
                         self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                     end
                 end)
-                item:SetScript("OnClick", function()
-                    FCF_SelectDockFrame(def.cf)
-                    overflowDropdown:Hide()
+                item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                item:SetScript("OnClick", function(self, button)
+                    if button == "RightButton" then
+                        overflowDropdown:Hide()
+                        ShowContextMenu(self, def.frameIndex)
+                    else
+                        FCF_SelectDockFrame(def.cf)
+                        overflowDropdown:Hide()
+                    end
                 end)
 
                 local w = text:GetStringWidth() + 16
@@ -2132,12 +2139,18 @@ local function CreateChatHeader(parentFrame)
         if not GudaChatDB.inlineTabBar then
             tabLabel:Show()
             tabLabelBtn:Show()
+            logoBtn:Show()
+            combatBtn:ClearAllPoints()
+            combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", 6, 0)
             return
         end
 
-        -- Hide center label and external tab bar
+        -- Hide center label, logo icon, and external tab bar
         tabLabel:Hide()
         tabLabelBtn:Hide()
+        logoBtn:Hide()
+        combatBtn:ClearAllPoints()
+        combatBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
         if chatSubTabs then chatSubTabs:Hide() end
 
         -- Collect tabs (same logic as RefreshChatSubTabs)
@@ -2192,28 +2205,26 @@ local function CreateChatHeader(parentFrame)
         end
         tempFont:Hide()
 
-        -- Pixel budget: first tab gap=10, subsequent gap=8 each, plus 6px right margin
-        -- totalW counts (width+8) per tab, actual usage = totalW + 2 (first gap 10 vs 8)
-        -- Without overflow: need totalW + 2 + 6 <= totalSpace
-        -- With overflow: need totalW + 2 + 8(gap) + 12(btn) + 6(margin) <= totalSpace
+        -- Pixel budget: first tab gap=8, subsequent gap=6, plus 6px right margin
+        local TAB_GAP = 6
+        local FIRST_GAP = 8
         local marginRight = 6
-        local overflowExtra = 8 + 12  -- gap + button width
-        local firstGapExtra = 2       -- first tab uses 10px gap instead of 8
+        local overflowExtra = TAB_GAP + 12  -- gap + button width
 
-        local totalW = 0
+        local totalW = FIRST_GAP
         local fitCount = #allTabs
 
         for idx = 1, #allTabs do
-            totalW = totalW + widths[idx] + 8
+            totalW = totalW + widths[idx] + (idx > 1 and TAB_GAP or 0)
         end
 
-        local allFitLimit = totalSpace - firstGapExtra - marginRight
+        local allFitLimit = totalSpace - marginRight
         if totalW > allFitLimit then
-            local maxUsable = totalSpace - firstGapExtra - overflowExtra - marginRight
-            totalW = 0
+            local maxUsable = totalSpace - overflowExtra - marginRight
+            totalW = FIRST_GAP
             fitCount = 0
             for idx = 1, #allTabs do
-                totalW = totalW + widths[idx] + 8
+                totalW = totalW + widths[idx] + (idx > 1 and TAB_GAP or 0)
                 if totalW > maxUsable then break end
                 fitCount = idx
             end
@@ -2228,10 +2239,10 @@ local function CreateChatHeader(parentFrame)
             if selectedTabIdx and selectedTabIdx > fitCount and fitCount > 0 then
                 allTabs[fitCount], allTabs[selectedTabIdx] = allTabs[selectedTabIdx], allTabs[fitCount]
                 widths[fitCount], widths[selectedTabIdx] = widths[selectedTabIdx], widths[fitCount]
-                totalW = 0
+                totalW = FIRST_GAP
                 fitCount = 0
                 for idx = 1, #allTabs do
-                    totalW = totalW + widths[idx] + 8
+                    totalW = totalW + widths[idx] + (idx > 1 and TAB_GAP or 0)
                     if totalW > maxUsable then break end
                     fitCount = idx
                 end
@@ -2326,7 +2337,7 @@ local function CreateChatHeader(parentFrame)
 
         -- Create visible tab buttons
         local prevAnchor = leftAnchor
-        local gap = 10
+        local gap = FIRST_GAP
         for idx = 1, fitCount do
             local def = allTabs[idx]
             local col = def.col
@@ -2432,7 +2443,7 @@ local function CreateChatHeader(parentFrame)
 
             btn:SetWidth(widths[idx])
             btn:SetPoint("LEFT", prevAnchor, "RIGHT", gap, 0)
-            gap = 8
+            gap = TAB_GAP
             prevAnchor = btn
             tinsert(inlineTabButtons, btn)
         end
@@ -2441,7 +2452,7 @@ local function CreateChatHeader(parentFrame)
         if fitCount < #allTabs then
             local moreBtn = CreateFrame("Button", nil, header)
             moreBtn:SetSize(12, 12)
-            moreBtn:SetPoint("LEFT", prevAnchor, "RIGHT", 8, 0)
+            moreBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -marginRight, 0)
 
             local moreIcon = moreBtn:CreateTexture(nil, "OVERLAY")
             moreIcon:SetAllPoints()
@@ -2509,9 +2520,15 @@ local function CreateChatHeader(parentFrame)
                             self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                         end
                     end)
-                    item:SetScript("OnClick", function()
-                        FCF_SelectDockFrame(def.cf)
-                        inlineOverflowDropdown:Hide()
+                    item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                    item:SetScript("OnClick", function(self, button)
+                        if button == "RightButton" then
+                            inlineOverflowDropdown:Hide()
+                            ShowContextMenu(self, def.frameIndex)
+                        else
+                            FCF_SelectDockFrame(def.cf)
+                            inlineOverflowDropdown:Hide()
+                        end
                     end)
 
                     local w = text:GetStringWidth() + 16
