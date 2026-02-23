@@ -660,6 +660,113 @@ end
 local chatSubTabs
 local chatSubTabButtons = {}
 
+-- Tab blink state: tracks which frameIndex values have unread messages
+local blinkingTabs = {}
+
+-- Chat events that should trigger tab blink notifications
+local BLINK_EVENTS = {
+    CHAT_MSG_GUILD = "GUILD", CHAT_MSG_OFFICER = "OFFICER",
+    CHAT_MSG_PARTY = "PARTY", CHAT_MSG_PARTY_LEADER = "PARTY",
+    CHAT_MSG_RAID = "RAID", CHAT_MSG_RAID_LEADER = "RAID",
+    CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT", CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
+    CHAT_MSG_WHISPER = "WHISPER", CHAT_MSG_BN_WHISPER = "BN_WHISPER",
+}
+
+local blinkListener = CreateFrame("Frame")
+blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
+    if not GudaChatDB or not GudaChatDB.showTabBar then return end
+    local msgGroup = BLINK_EVENTS[event]
+    if not msgGroup then return end
+
+    local selectedIdx = GetSelectedChatFrameIndex()
+    local changed = false
+
+    -- Check permanent windows
+    for i = 1, NUM_CHAT_WINDOWS do
+        if i ~= selectedIdx and i ~= 2 then
+            local cf = _G["ChatFrame" .. i]
+            if cf and (cf.isDocked or i == 1) then
+                local msgs = { GetChatWindowMessages(i) }
+                for _, grp in ipairs(msgs) do
+                    if grp == msgGroup or grp == event:gsub("CHAT_MSG_", "") then
+                        if not blinkingTabs[i] then
+                            blinkingTabs[i] = true
+                            changed = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Check temporary whisper windows (match sender to chatTarget)
+    if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and CHAT_FRAMES then
+        local senderShort = sender and sender:match("^([^%-]+)") or sender
+        for _, frameName in ipairs(CHAT_FRAMES) do
+            local cf = _G[frameName]
+            if cf and cf.isTemporary and cf.inUse and cf.isDocked then
+                local idx = cf:GetID()
+                if idx ~= selectedIdx then
+                    local target = cf.chatTarget
+                    local targetShort = target and target:match("^([^%-]+)") or target
+                    if targetShort and senderShort and targetShort:lower() == senderShort:lower() then
+                        if not blinkingTabs[idx] then
+                            blinkingTabs[idx] = true
+                            changed = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if changed then
+        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.ShowTabBar then ns.ShowTabBar() end
+    end
+end)
+
+for ev in pairs(BLINK_EVENTS) do
+    blinkListener:RegisterEvent(ev)
+end
+
+-- Clear blink when a tab is selected
+hooksecurefunc("FCF_SelectDockFrame", function(cf)
+    if not cf then return end
+    local cleared = false
+    for i = 1, NUM_CHAT_WINDOWS do
+        if _G["ChatFrame" .. i] == cf then
+            if blinkingTabs[i] then
+                blinkingTabs[i] = nil
+                cleared = true
+            end
+            break
+        end
+    end
+    if not cleared and CHAT_FRAMES then
+        for _, name in ipairs(CHAT_FRAMES) do
+            if _G[name] == cf then
+                local idx = cf:GetID()
+                if blinkingTabs[idx] then
+                    blinkingTabs[idx] = nil
+                end
+                break
+            end
+        end
+    end
+end)
+
+-- Public helpers
+function ns.HasBlinkingTabs()
+    return next(blinkingTabs) ~= nil
+end
+function ns.StartTabBlink(frameIndex)
+    blinkingTabs[frameIndex] = true
+end
+function ns.StopTabBlink(frameIndex)
+    blinkingTabs[frameIndex] = nil
+end
+
 -- Map common tab names to Blizzard ChatTypeInfo keys
 local TAB_NAME_TO_CHATTYPE = {
     ["Guild"]    = "GUILD",
@@ -1044,12 +1151,28 @@ local function RefreshChatSubTabs(header)
         end)
         btn:SetScript("OnLeave", function(self)
             if dragState.dragging and dragState.sourceBtn == self then return end
+            if self.blinking then return end
             if IsSelectedFrame(def.cf) then
                 self.text:SetTextColor(col[1], col[2], col[3], 1)
             else
                 self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
             end
         end)
+
+        -- Blink animation for unread messages
+        if blinkingTabs[def.frameIndex] then
+            btn.blinking = true
+            local blinkAG = text:CreateAnimationGroup()
+            blinkAG:SetLooping("BOUNCE")
+            local fade = blinkAG:CreateAnimation("Alpha")
+            fade:SetFromAlpha(1)
+            fade:SetToAlpha(0.2)
+            fade:SetDuration(0.5)
+            fade:SetSmoothing("IN_OUT")
+            blinkAG:Play()
+            text:SetTextColor(col[1], col[2], col[3], 1)
+            btn.blinkAG = blinkAG
+        end
 
         return btn
     end
@@ -1199,6 +1322,10 @@ local function CreateChatSubTabs(header)
         tabBarHovering = false
         C_Timer.After(0.3, function()
             if tabBarHovering then return end
+            if ns.HasBlinkingTabs and ns.HasBlinkingTabs() then
+                tabBarHovering = true
+                return
+            end
             if bar:IsMouseOver() or (ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()) or (overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()) then
                 tabBarHovering = true
                 return
@@ -1229,6 +1356,8 @@ local function CreateChatSubTabs(header)
             HideTabBar()
         end
     end)
+
+    ns.ShowTabBar = ShowTabBar
 
     chatSubTabs = bar
     ns.chatSubTabs = bar
@@ -1321,14 +1450,24 @@ local function SetupWhisperFrame()
 end
 ns.SetupWhisperFrame = SetupWhisperFrame
 
--- Listen for incoming whispers to trigger blink notification
+-- Listen for incoming whispers to trigger blink on the dedicated Whispers tab
 local whisperListener = CreateFrame("Frame")
 whisperListener:SetScript("OnEvent", function()
     if not GudaChatDB or not GudaChatDB.whisperTab then return end
-    if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.StartWhisperBlink then
-        ns.StartWhisperBlink()
+    if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.whisperFrameIndex then
+        blinkingTabs[ns.whisperFrameIndex] = true
+        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.ShowTabBar then ns.ShowTabBar() end
     end
 end)
+
+ns.StartWhisperBlink = function()
+    if ns.whisperFrameIndex then
+        blinkingTabs[ns.whisperFrameIndex] = true
+        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.ShowTabBar then ns.ShowTabBar() end
+    end
+end
 
 ---------------------------------------------------------------------------
 -- Create chat header
