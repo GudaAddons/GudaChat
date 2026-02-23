@@ -45,7 +45,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             GudaChatDB.showLevel = false
         end
         if GudaChatDB.emojis == nil then
-            GudaChatDB.emojis = true
+            GudaChatDB.emojis = false
         end
         if GudaChatDB.emojiSize == nil then
             GudaChatDB.emojiSize = ns.DEFAULT_EMOJI_SIZE

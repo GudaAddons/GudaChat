@@ -520,7 +520,7 @@ local function ShowContextMenu(anchor, overrideIndex)
 
     contextMenu:SetSize(maxW, math.abs(yOff) + 4)
     contextMenu:ClearAllPoints()
-    contextMenu:SetPoint("BOTTOM", anchor, "TOP", 0, 2)
+    contextMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
     contextMenu:Show()
 end
 
@@ -585,8 +585,8 @@ end
 local function CreateCombatSubTabs(header)
     local bar = CreateFrame("Frame", "GudaChatCombatSubTabs", UIParent, "BackdropTemplate")
     bar:SetHeight(20)
-    bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 1)
-    bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 1)
+    bar:SetPoint("BOTTOMLEFT", header, "TOPLEFT", 0, -1)
+    bar:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT", 0, -1)
     bar:SetFrameStrata("MEDIUM")
     bar:SetFrameLevel(101)
 
@@ -1291,8 +1291,8 @@ ns.RefreshChatSubTabs = RefreshChatSubTabs
 local function CreateChatSubTabs(header)
     local bar = CreateFrame("Frame", "GudaChatSubTabs", UIParent, "BackdropTemplate")
     bar:SetHeight(20)
-    bar:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 1)
-    bar:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 1)
+    bar:SetPoint("BOTTOMLEFT", header, "TOPLEFT", 0, -1)
+    bar:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT", 0, -1)
     bar:SetFrameStrata("MEDIUM")
     bar:SetFrameLevel(101)
 
