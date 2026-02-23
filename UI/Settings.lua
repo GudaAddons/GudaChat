@@ -411,6 +411,20 @@ local function CreateSettingsFrame()
             end
         end))
 
+        Add(CreateCheckbox(tabPanels[1], "Inline tab bar", GudaChatDB.inlineTabBar, function(checked)
+            GudaChatDB.inlineTabBar = checked
+            if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
+            if ns.chatSubTabs then
+                if checked then
+                    ns.chatSubTabs:Hide()
+                elseif GudaChatDB.showTabBar then
+                    ns.RefreshChatSubTabs(ns.chatHeader)
+                    ns.chatSubTabs:Show()
+                    ns.chatSubTabs:SetAlpha(0)
+                end
+            end
+        end))
+
         Add(CreateCheckbox(tabPanels[1], "Whisper tab", GudaChatDB.whisperTab, function(checked)
             GudaChatDB.whisperTab = checked
             if checked then
@@ -421,6 +435,7 @@ local function CreateSettingsFrame()
                 end
             end
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+            if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         end))
     end
 

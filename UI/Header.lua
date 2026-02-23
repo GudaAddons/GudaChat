@@ -674,7 +674,7 @@ local BLINK_EVENTS = {
 
 local blinkListener = CreateFrame("Frame")
 blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
-    if not GudaChatDB or not GudaChatDB.showTabBar then return end
+    if not GudaChatDB or not (GudaChatDB.showTabBar or GudaChatDB.inlineTabBar) then return end
     local msgGroup = BLINK_EVENTS[event]
     if not msgGroup then return end
 
@@ -685,7 +685,7 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
     for i = 1, NUM_CHAT_WINDOWS do
         if i ~= selectedIdx and i ~= 2 then
             local cf = _G["ChatFrame" .. i]
-            if cf and (cf.isDocked or i == 1) then
+            if cf and (cf.isDocked or i == 1) and not cf:IsShown() then
                 local msgs = { GetChatWindowMessages(i) }
                 for _, grp in ipairs(msgs) do
                     if grp == msgGroup or grp == event:gsub("CHAT_MSG_", "") then
@@ -706,7 +706,7 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
             local cf = _G[frameName]
             if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                 local idx = cf:GetID()
-                if idx ~= selectedIdx then
+                if idx ~= selectedIdx and not cf:IsShown() then
                     local target = cf.chatTarget
                     local targetShort = target and target:match("^([^%-]+)") or target
                     if targetShort and senderShort and targetShort:lower() == senderShort:lower() then
@@ -722,6 +722,7 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
 
     if changed then
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
     end
 end)
@@ -861,7 +862,7 @@ end
 
 local function RefreshChatSubTabs(header)
     if not chatSubTabs then return end
-    if not GudaChatDB.showTabBar then
+    if not GudaChatDB.showTabBar or GudaChatDB.inlineTabBar then
         chatSubTabs:Hide()
         return
     end
@@ -1457,6 +1458,7 @@ whisperListener:SetScript("OnEvent", function()
     if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.whisperFrameIndex then
         blinkingTabs[ns.whisperFrameIndex] = true
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
     end
 end)
@@ -1465,6 +1467,7 @@ ns.StartWhisperBlink = function()
     if ns.whisperFrameIndex then
         blinkingTabs[ns.whisperFrameIndex] = true
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
     end
 end
@@ -1551,7 +1554,8 @@ local function CreateChatHeader(parentFrame)
         local blizzDropdownOpen = DropDownList1 and DropDownList1:IsShown()
         local contextMenuOpen = contextMenu and contextMenu:IsShown()
         local fontMenuOpen = fontSubMenu and fontSubMenu:IsShown()
-        if over or dropdownOpen or chatTypeOpen or blizzDropdownOpen or contextMenuOpen or fontMenuOpen then
+        local inlineOverflow = GudaChatInlineTabOverflow and GudaChatInlineTabOverflow:IsShown() and GudaChatInlineTabOverflow:IsMouseOver()
+        if over or dropdownOpen or chatTypeOpen or blizzDropdownOpen or contextMenuOpen or fontMenuOpen or inlineOverflow then
             ShowHeader()
         else
             HideHeader()
@@ -1851,6 +1855,7 @@ local function CreateChatHeader(parentFrame)
         end
         UpdateIconHighlights(cf)
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
     end)
 
     -------------------------------------------------------------------
@@ -2057,6 +2062,431 @@ local function CreateChatHeader(parentFrame)
     end)
 
     -------------------------------------------------------------------
+    -- Inline tabs (rendered directly in header bar)
+    -------------------------------------------------------------------
+    local inlineTabButtons = {}
+    local inlineOverflowDropdown
+    local inlineDragIndicator
+    local inlineDragState = {
+        dragging = false,
+        sourceIdx = nil,
+        sourceBtn = nil,
+        insertIdx = nil,
+    }
+
+    local function RefreshInlineTabs()
+        -- Clean up existing inline buttons
+        for _, btn in ipairs(inlineTabButtons) do
+            btn:Hide()
+            btn:SetParent(nil)
+        end
+        wipe(inlineTabButtons)
+        if inlineOverflowDropdown then inlineOverflowDropdown:Hide() end
+
+        if not GudaChatDB.inlineTabBar then
+            tabLabel:Show()
+            tabLabelBtn:Show()
+            return
+        end
+
+        -- Hide center label and external tab bar
+        tabLabel:Hide()
+        tabLabelBtn:Hide()
+        if chatSubTabs then chatSubTabs:Hide() end
+
+        -- Collect tabs (same logic as RefreshChatSubTabs)
+        local allTabs = {}
+
+        for i = 1, NUM_CHAT_WINDOWS do
+            local cf = _G["ChatFrame" .. i]
+            local tab = _G["ChatFrame" .. i .. "Tab"]
+            if cf and tab then
+                local isDocked = cf.isDocked or (i == 1)
+                local shown = (i == 1) or tab:IsShown()
+                if isDocked and shown and i ~= 2 then
+                    if not (not GudaChatDB.whisperTab and ns.whisperFrame and cf == ns.whisperFrame) then
+                        local name = GetChatTabName(i)
+                        local col = GetTabColor(name, i)
+                        tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
+                    end
+                end
+            end
+        end
+
+        if CHAT_FRAMES then
+            for _, frameName in ipairs(CHAT_FRAMES) do
+                local cf = _G[frameName]
+                if cf and cf.isTemporary and cf.inUse and cf.isDocked then
+                    local idx = cf:GetID()
+                    local tab = _G[frameName .. "Tab"]
+                    local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ("Chat " .. idx)
+                    local whisperInfo = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and ChatTypeInfo["WHISPER"]
+                    local col = whisperInfo and { whisperInfo.r, whisperInfo.g, whisperInfo.b } or GetTabColor(name, idx)
+                    tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
+                end
+            end
+        end
+
+        ApplySavedTabOrder(allTabs)
+
+        -- Measure available width between left icons and chatTypeBtn
+        local leftAnchor = historyBtn:IsShown() and historyBtn or combatBtn
+        local leftEdge = leftAnchor:GetRight()
+        local rightEdge = chatTypeBtn:GetLeft()
+        if not leftEdge or not rightEdge then return end
+        local availableWidth = rightEdge - leftEdge - 20
+        if availableWidth < 40 then return end
+
+        -- Measure tab widths
+        local tempFont = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local widths = {}
+        for idx, def in ipairs(allTabs) do
+            tempFont:SetText(def.name)
+            widths[idx] = tempFont:GetStringWidth() + 8
+        end
+        tempFont:Hide()
+
+        -- Find how many fit
+        local overflowBtnWidth = 16
+        local totalW = 0
+        local fitCount = #allTabs
+
+        for idx = 1, #allTabs do
+            totalW = totalW + widths[idx] + 8
+        end
+
+        if totalW > availableWidth then
+            local maxUsable = availableWidth - overflowBtnWidth - 12
+            totalW = 0
+            fitCount = 0
+            for idx = 1, #allTabs do
+                totalW = totalW + widths[idx] + 8
+                if totalW > maxUsable then break end
+                fitCount = idx
+            end
+            -- Ensure selected tab is visible
+            local selectedTabIdx
+            for idx, def in ipairs(allTabs) do
+                if def.cf and def.cf:IsShown() then
+                    selectedTabIdx = idx
+                    break
+                end
+            end
+            if selectedTabIdx and selectedTabIdx > fitCount and fitCount > 0 then
+                allTabs[fitCount], allTabs[selectedTabIdx] = allTabs[selectedTabIdx], allTabs[fitCount]
+                widths[fitCount], widths[selectedTabIdx] = widths[selectedTabIdx], widths[fitCount]
+                totalW = 0
+                fitCount = 0
+                for idx = 1, #allTabs do
+                    totalW = totalW + widths[idx] + 8
+                    if totalW > maxUsable then break end
+                    fitCount = idx
+                end
+            end
+        end
+
+        -- Drag indicator
+        if not inlineDragIndicator then
+            inlineDragIndicator = header:CreateTexture(nil, "OVERLAY")
+            inlineDragIndicator:SetTexture("Interface\\Buttons\\WHITE8x8")
+            inlineDragIndicator:SetVertexColor(0.8, 0.6, 0.0, 1)
+            inlineDragIndicator:SetSize(2, 14)
+            inlineDragIndicator:Hide()
+        end
+
+        local function IsSelectedFrame(cf)
+            return cf and cf:IsShown()
+        end
+
+        local DRAG_THRESHOLD = 5
+
+        local function GetInsertIndex(srcIdx)
+            local scale = header:GetEffectiveScale()
+            local cursorX = GetCursorPosition() / scale
+            for _, tabBtn in ipairs(inlineTabButtons) do
+                if tabBtn.tabIdx then
+                    local left = tabBtn:GetLeft()
+                    local right = tabBtn:GetRight()
+                    if left and right then
+                        local mid = (left + right) / 2
+                        if cursorX < mid then
+                            return tabBtn.tabIdx
+                        end
+                    end
+                end
+            end
+            return fitCount + 1
+        end
+
+        local function UpdateIndicator(insertIdx, srcIdx)
+            if not insertIdx or insertIdx == srcIdx or insertIdx == srcIdx + 1 then
+                inlineDragIndicator:Hide()
+                inlineDragState.insertIdx = nil
+                return
+            end
+            inlineDragState.insertIdx = insertIdx
+            local anchorBtn
+            if insertIdx <= fitCount then
+                for _, tabBtn in ipairs(inlineTabButtons) do
+                    if tabBtn.tabIdx == insertIdx then
+                        anchorBtn = tabBtn
+                        break
+                    end
+                end
+            end
+            inlineDragIndicator:ClearAllPoints()
+            if anchorBtn then
+                inlineDragIndicator:SetPoint("RIGHT", anchorBtn, "LEFT", -3, 0)
+            else
+                local lastBtn
+                for _, tabBtn in ipairs(inlineTabButtons) do
+                    if tabBtn.tabIdx then lastBtn = tabBtn end
+                end
+                if lastBtn then
+                    inlineDragIndicator:SetPoint("LEFT", lastBtn, "RIGHT", 3, 0)
+                end
+            end
+            inlineDragIndicator:Show()
+        end
+
+        local function FinishTabDrag(srcBtn)
+            if not inlineDragState.dragging then return end
+            local insertIdx = inlineDragState.insertIdx
+            local srcIdx = inlineDragState.sourceIdx
+            if insertIdx and srcIdx and insertIdx ~= srcIdx and insertIdx ~= srcIdx + 1 then
+                local moved = table.remove(allTabs, srcIdx)
+                if moved then
+                    local dest = insertIdx
+                    if dest > srcIdx then dest = dest - 1 end
+                    table.insert(allTabs, dest, moved)
+                    SaveTabOrder(allTabs)
+                end
+            end
+            inlineDragIndicator:Hide()
+            inlineDragState.dragging = false
+            inlineDragState.sourceIdx = nil
+            inlineDragState.sourceBtn = nil
+            inlineDragState.insertIdx = nil
+            srcBtn:SetScript("OnUpdate", nil)
+            RefreshInlineTabs()
+        end
+
+        -- Create visible tab buttons
+        local prevAnchor = leftAnchor
+        local gap = 10
+        for idx = 1, fitCount do
+            local def = allTabs[idx]
+            local col = def.col
+            local btn = CreateFrame("Button", nil, header)
+            btn:SetHeight(16)
+            btn.tabIdx = idx
+
+            local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+            text:SetText(def.name)
+            btn.text = text
+
+            if IsSelectedFrame(def.cf) then
+                text:SetTextColor(col[1], col[2], col[3], 1)
+            else
+                text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+            end
+
+            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            btn:SetScript("OnClick", function(self, button)
+                if inlineDragState.dragging then
+                    FinishTabDrag(self)
+                    return
+                end
+                if button == "RightButton" then
+                    ShowContextMenu(self, def.frameIndex)
+                else
+                    FCF_SelectDockFrame(def.cf)
+                end
+            end)
+
+            btn:SetScript("OnMouseDown", function(self, button)
+                if button == "LeftButton" then
+                    local cx, cy = GetCursorPosition()
+                    local scale = self:GetEffectiveScale()
+                    inlineDragState.startX = cx / scale
+                    inlineDragState.startY = cy / scale
+                    inlineDragState.pending = true
+                    inlineDragState.pendingBtn = self
+                    inlineDragState.pendingIdx = self.tabIdx
+                    self:SetScript("OnUpdate", function(self)
+                        if not inlineDragState.pending and not inlineDragState.dragging then
+                            self:SetScript("OnUpdate", nil)
+                            return
+                        end
+                        if not IsMouseButtonDown("LeftButton") then
+                            if inlineDragState.dragging then
+                                FinishTabDrag(self)
+                            end
+                            inlineDragState.pending = false
+                            self:SetScript("OnUpdate", nil)
+                            return
+                        end
+                        if inlineDragState.pending then
+                            local cx, cy = GetCursorPosition()
+                            local scale = self:GetEffectiveScale()
+                            local dx = cx / scale - inlineDragState.startX
+                            local dy = cy / scale - inlineDragState.startY
+                            if (dx * dx + dy * dy) > DRAG_THRESHOLD * DRAG_THRESHOLD then
+                                inlineDragState.pending = false
+                                inlineDragState.dragging = true
+                                inlineDragState.sourceIdx = inlineDragState.pendingIdx
+                                inlineDragState.sourceBtn = self
+                                self.text:SetTextColor(col[1] * 0.3, col[2] * 0.3, col[3] * 0.3, 0.5)
+                            end
+                        end
+                        if inlineDragState.dragging then
+                            local ins = GetInsertIndex(inlineDragState.sourceIdx)
+                            UpdateIndicator(ins, inlineDragState.sourceIdx)
+                        end
+                    end)
+                end
+            end)
+
+            btn:SetScript("OnEnter", function(self)
+                self.text:SetTextColor(col[1], col[2], col[3], 1)
+                if chatHeader then chatHeader:SetAlpha(1) end
+            end)
+            btn:SetScript("OnLeave", function(self)
+                if inlineDragState.dragging and inlineDragState.sourceBtn == self then return end
+                if self.blinking then return end
+                if IsSelectedFrame(def.cf) then
+                    self.text:SetTextColor(col[1], col[2], col[3], 1)
+                else
+                    self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                end
+            end)
+
+            -- Blink animation for unread messages
+            if blinkingTabs[def.frameIndex] then
+                btn.blinking = true
+                local blinkAG = text:CreateAnimationGroup()
+                blinkAG:SetLooping("BOUNCE")
+                local fade = blinkAG:CreateAnimation("Alpha")
+                fade:SetFromAlpha(1)
+                fade:SetToAlpha(0.2)
+                fade:SetDuration(0.5)
+                fade:SetSmoothing("IN_OUT")
+                blinkAG:Play()
+                text:SetTextColor(col[1], col[2], col[3], 1)
+                btn.blinkAG = blinkAG
+            end
+
+            btn:SetWidth(widths[idx])
+            btn:SetPoint("LEFT", prevAnchor, "RIGHT", gap, 0)
+            gap = 8
+            prevAnchor = btn
+            tinsert(inlineTabButtons, btn)
+        end
+
+        -- Overflow button if there are hidden tabs
+        if fitCount < #allTabs then
+            local moreBtn = CreateFrame("Button", nil, header)
+            moreBtn:SetSize(12, 12)
+            moreBtn:SetPoint("LEFT", prevAnchor, "RIGHT", 8, 0)
+
+            local moreIcon = moreBtn:CreateTexture(nil, "OVERLAY")
+            moreIcon:SetAllPoints()
+            moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
+            moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            moreBtn.icon = moreIcon
+
+            moreBtn:SetScript("OnEnter", function(self)
+                self.icon:SetVertexColor(1, 1, 1, 1)
+                if chatHeader then chatHeader:SetAlpha(1) end
+            end)
+            moreBtn:SetScript("OnLeave", function(self)
+                self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            end)
+
+            moreBtn:SetScript("OnClick", function(self)
+                if inlineOverflowDropdown and inlineOverflowDropdown:IsShown() then
+                    inlineOverflowDropdown:Hide()
+                    return
+                end
+
+                if not inlineOverflowDropdown then
+                    inlineOverflowDropdown = CreateFrame("Frame", "GudaChatInlineTabOverflow", UIParent, "BackdropTemplate")
+                    inlineOverflowDropdown:SetFrameStrata("TOOLTIP")
+                    inlineOverflowDropdown:SetClampedToScreen(true)
+                    ns.ApplyDarkBackdrop(inlineOverflowDropdown, { 0.08, 0.08, 0.08, 0.95 }, { 0.3, 0.3, 0.3, 0.6 })
+                    inlineOverflowDropdown:EnableMouse(true)
+                end
+
+                for _, child in ipairs({ inlineOverflowDropdown:GetChildren() }) do
+                    child:Hide()
+                    child:SetParent(nil)
+                end
+
+                local itemHeight = 18
+                local padding = 6
+                local maxW = 60
+                local items = {}
+                local selectedIndex = GetSelectedChatFrameIndex()
+
+                for oidx = fitCount + 1, #allTabs do
+                    local def = allTabs[oidx]
+                    local item = CreateFrame("Button", nil, inlineOverflowDropdown)
+                    item:SetHeight(itemHeight)
+
+                    local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    text:SetPoint("LEFT", item, "LEFT", 8, 0)
+                    text:SetText(def.name)
+                    item.text = text
+
+                    local col = def.col
+                    if def.frameIndex == selectedIndex then
+                        text:SetTextColor(col[1], col[2], col[3], 1)
+                    else
+                        text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                    end
+
+                    item:SetScript("OnEnter", function(self)
+                        self.text:SetTextColor(col[1], col[2], col[3], 1)
+                    end)
+                    item:SetScript("OnLeave", function(self)
+                        if def.frameIndex == GetSelectedChatFrameIndex() then
+                            self.text:SetTextColor(col[1], col[2], col[3], 1)
+                        else
+                            self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                        end
+                    end)
+                    item:SetScript("OnClick", function()
+                        FCF_SelectDockFrame(def.cf)
+                        inlineOverflowDropdown:Hide()
+                    end)
+
+                    local w = text:GetStringWidth() + 16
+                    if w > maxW then maxW = w end
+                    tinsert(items, item)
+                end
+
+                local totalH = #items * itemHeight + padding * 2
+                inlineOverflowDropdown:SetSize(maxW, totalH)
+                -- Anchor downward from the overflow button
+                inlineOverflowDropdown:ClearAllPoints()
+                inlineOverflowDropdown:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+
+                for i, item in ipairs(items) do
+                    item:SetWidth(maxW)
+                    item:SetPoint("TOPLEFT", inlineOverflowDropdown, "TOPLEFT", 0, -padding - (i - 1) * itemHeight)
+                    item:Show()
+                end
+
+                inlineOverflowDropdown:Show()
+            end)
+
+            tinsert(inlineTabButtons, moreBtn)
+        end
+    end
+    ns.RefreshInlineTabs = RefreshInlineTabs
+
+    -------------------------------------------------------------------
     -- Combat log subtabs
     -------------------------------------------------------------------
     CreateCombatSubTabs(header)
@@ -2071,6 +2501,9 @@ local function CreateChatHeader(parentFrame)
         RefreshChatSubTabs(header)
         chatSubTabs:Show()
         chatSubTabs:SetAlpha(0)
+    end
+    if GudaChatDB.inlineTabBar then
+        RefreshInlineTabs()
     end
 
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
@@ -2092,6 +2525,7 @@ local function CreateChatHeader(parentFrame)
                 chatSubTabs:Show()
             end
         end
+        RefreshInlineTabs()
     end)
 
     -- Refresh chat subtabs when windows are created/removed/docked
@@ -2102,6 +2536,7 @@ local function CreateChatHeader(parentFrame)
                 if chatSubTabs and GudaChatDB.showTabBar then
                     RefreshChatSubTabs(header)
                 end
+                RefreshInlineTabs()
             end)
         end
     end
@@ -2116,7 +2551,7 @@ local function CreateChatHeader(parentFrame)
     }
     local autoSelectFrame = CreateFrame("Frame")
     autoSelectFrame:SetScript("OnEvent", function(self, event, msg, sender)
-        if not GudaChatDB or not GudaChatDB.showTabBar then return end
+        if not GudaChatDB or not (GudaChatDB.showTabBar or GudaChatDB.inlineTabBar) then return end
         local group = AUTO_SELECT_EVENTS[event]
         if not group then return end
 
