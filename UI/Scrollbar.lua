@@ -76,6 +76,7 @@ local function CreateScrollbar(chatFrame)
     local sbFadeIn, sbFadeOut
     function slider.FadeIn()
         if sbFadeOut then sbFadeOut:Stop() end
+        if slider:GetAlpha() >= 1 then return end
         sbFadeIn = slider:CreateAnimationGroup()
         local anim = sbFadeIn:CreateAnimation("Alpha")
         anim:SetFromAlpha(slider:GetAlpha())
@@ -87,6 +88,7 @@ local function CreateScrollbar(chatFrame)
 
     function slider.FadeOut()
         if sbFadeIn then sbFadeIn:Stop() end
+        if slider:GetAlpha() <= 0 then return end
         sbFadeOut = slider:CreateAnimationGroup()
         local anim = sbFadeOut:CreateAnimation("Alpha")
         anim:SetFromAlpha(slider:GetAlpha())

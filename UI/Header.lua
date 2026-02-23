@@ -1304,10 +1304,12 @@ local function CreateChatSubTabs(header)
     -- Independent hover fade for the tab bar
     local tabBarHovering = false
     local tabBarFadeIn, tabBarFadeOut
+    local tabBarHideGen = 0
 
     local function ShowTabBar()
         if tabBarHovering then return end
         tabBarHovering = true
+        tabBarHideGen = tabBarHideGen + 1
         if tabBarFadeOut then tabBarFadeOut:Stop() end
         tabBarFadeIn = bar:CreateAnimationGroup()
         local anim = tabBarFadeIn:CreateAnimation("Alpha")
@@ -1321,7 +1323,10 @@ local function CreateChatSubTabs(header)
     local function HideTabBar()
         if not tabBarHovering then return end
         tabBarHovering = false
+        tabBarHideGen = tabBarHideGen + 1
+        local gen = tabBarHideGen
         C_Timer.After(0.3, function()
+            if gen ~= tabBarHideGen then return end
             if tabBarHovering then return end
             if ns.HasBlinkingTabs and ns.HasBlinkingTabs() then
                 tabBarHovering = true
@@ -1497,10 +1502,40 @@ local function CreateChatHeader(parentFrame)
 
     local fadeIn, fadeOut
     local isHovering = false
+    local hideTimerGen = 0  -- generation counter to invalidate stale timers
+
+    -- Check if mouse is over any scrollbar belonging to a visible chat frame
+    local function IsOverScrollbar()
+        for i = 1, NUM_CHAT_WINDOWS do
+            local cf = _G["ChatFrame" .. i]
+            if cf and cf.gudaScrollbar and cf:IsVisible() and cf.gudaScrollbar:IsMouseOver() then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Unified check: is the cursor anywhere in the chat UI area?
+    local function IsOverChatUI()
+        if header:IsMouseOver() or parentFrame:IsMouseOver() then return true end
+        if combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver() then return true end
+        if chatSubTabs and chatSubTabs:IsShown() and chatSubTabs:GetAlpha() > 0 and chatSubTabs:IsMouseOver() then return true end
+        if IsOverScrollbar() then return true end
+        -- Open menus/dropdowns
+        if GudaChatTabDropdown and GudaChatTabDropdown:IsShown() then return true end
+        if GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown() then return true end
+        if GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown() then return true end
+        if DropDownList1 and DropDownList1:IsShown() then return true end
+        if contextMenu and contextMenu:IsShown() then return true end
+        if fontSubMenu and fontSubMenu:IsShown() then return true end
+        if GudaChatInlineTabOverflow and GudaChatInlineTabOverflow:IsShown() and GudaChatInlineTabOverflow:IsMouseOver() then return true end
+        return false
+    end
 
     local function ShowHeader()
         if isHovering then return end
         isHovering = true
+        hideTimerGen = hideTimerGen + 1  -- invalidate any pending hide timer
         if fadeOut then fadeOut:Stop() end
         fadeIn = header:CreateAnimationGroup()
         local anim = fadeIn:CreateAnimation("Alpha")
@@ -1519,12 +1554,12 @@ local function CreateChatHeader(parentFrame)
     local function HideHeader()
         if not isHovering then return end
         isHovering = false
+        hideTimerGen = hideTimerGen + 1
+        local gen = hideTimerGen  -- capture current generation
         C_Timer.After(0.3, function()
+            if gen ~= hideTimerGen then return end  -- a newer show/hide call superseded us
             if isHovering then return end
-            if header:IsMouseOver() or parentFrame:IsMouseOver()
-                or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver())
-                or (GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown() and GudaChatTypeDropdown:IsMouseOver())
-                or (GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown() and GudaChatEmoteSubMenu:IsMouseOver()) then
+            if IsOverChatUI() then
                 isHovering = true
                 return
             end
@@ -1547,15 +1582,7 @@ local function CreateChatHeader(parentFrame)
     -- Detect hover via OnUpdate
     local monitor = CreateFrame("Frame")
     monitor:SetScript("OnUpdate", function()
-        local over = header:IsMouseOver() or parentFrame:IsMouseOver()
-            or (combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver())
-        local dropdownOpen = GudaChatTabDropdown and GudaChatTabDropdown:IsShown()
-        local chatTypeOpen = (GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown()) or (GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown())
-        local blizzDropdownOpen = DropDownList1 and DropDownList1:IsShown()
-        local contextMenuOpen = contextMenu and contextMenu:IsShown()
-        local fontMenuOpen = fontSubMenu and fontSubMenu:IsShown()
-        local inlineOverflow = GudaChatInlineTabOverflow and GudaChatInlineTabOverflow:IsShown() and GudaChatInlineTabOverflow:IsMouseOver()
-        if over or dropdownOpen or chatTypeOpen or blizzDropdownOpen or contextMenuOpen or fontMenuOpen or inlineOverflow then
+        if IsOverChatUI() then
             ShowHeader()
         else
             HideHeader()
