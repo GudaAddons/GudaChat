@@ -724,6 +724,9 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
+        if GudaChatDB.inlineTabBar and ns.chatHeader then
+            ns.chatHeader:SetAlpha(1)
+        end
     end
 end)
 
@@ -1465,6 +1468,9 @@ whisperListener:SetScript("OnEvent", function()
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
+        if GudaChatDB.inlineTabBar and ns.chatHeader then
+            ns.chatHeader:SetAlpha(1)
+        end
     end
 end)
 
@@ -1474,6 +1480,9 @@ ns.StartWhisperBlink = function()
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
+        if GudaChatDB.inlineTabBar and ns.chatHeader then
+            ns.chatHeader:SetAlpha(1)
+        end
     end
 end
 
@@ -1560,6 +1569,11 @@ local function CreateChatHeader(parentFrame)
             if gen ~= hideTimerGen then return end  -- a newer show/hide call superseded us
             if isHovering then return end
             if IsOverChatUI() then
+                isHovering = true
+                return
+            end
+            -- Keep header visible while inline tabs are blinking
+            if GudaChatDB.inlineTabBar and ns.HasBlinkingTabs and ns.HasBlinkingTabs() then
                 isHovering = true
                 return
             end
