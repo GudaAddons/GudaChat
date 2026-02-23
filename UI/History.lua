@@ -336,12 +336,9 @@ local function CreateHistoryFrame()
     msgFrame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
     msgFrame:SetFontObject(GameFontNormal)
     do
-        local fontPath = GudaChatDB.chatFont
-        local fontSize = GudaChatDB.historyFontSize
-        if fontPath or fontSize then
-            local curFont, curSize, curFlags = msgFrame:GetFont()
-            msgFrame:SetFont(fontPath or curFont, fontSize or curSize, curFlags)
-        end
+        local chatFont, chatSize, chatFlags = ChatFrame1:GetFont()
+        if GudaChatDB.chatFont then chatFont = GudaChatDB.chatFont end
+        msgFrame:SetFont(chatFont, chatSize, chatFlags)
     end
     msgFrame:SetJustifyH("LEFT")
     msgFrame:SetFading(false)
@@ -577,12 +574,10 @@ local function CreateHistoryFrame()
 
         local eb = CreateFrame("EditBox", nil, scrollFrame)
         eb:SetFontObject(ChatFontNormal)
-        if GudaChatDB.chatFont then
-            local _, sz, fl = eb:GetFont()
-            eb:SetFont(GudaChatDB.chatFont, GudaChatDB.historyFontSize or sz, fl)
-        elseif GudaChatDB.historyFontSize then
-            local fo, _, fl = eb:GetFont()
-            eb:SetFont(fo, GudaChatDB.historyFontSize, fl)
+        do
+            local chatFont, chatSize, chatFlags = ChatFrame1:GetFont()
+            if GudaChatDB.chatFont then chatFont = GudaChatDB.chatFont end
+            eb:SetFont(chatFont, chatSize, chatFlags)
         end
         eb:SetMultiLine(true)
         eb:SetAutoFocus(false)
