@@ -97,7 +97,13 @@ local function StripChatChrome(index)
     local bg = _G["ChatFrame" .. index .. "Background"]
     if bg then
         bg:SetAlpha(0)
+        if bg.Hide then
+            bg:Hide()
+            bg:SetScript("OnShow", function(self) self:Hide() end)
+        end
     end
+    -- Force oldAlpha to 0 so Blizzard's fade system never restores the background
+    cf.oldAlpha = 0
     local resize = _G["ChatFrame" .. index .. "ResizeButton"]
     if resize then ns.KillFrame(resize) end
 
