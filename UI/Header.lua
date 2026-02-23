@@ -248,6 +248,8 @@ local function ShowContextMenu(anchor, overrideIndex)
         tinsert(UISpecialFrames, "GudaChatContextMenu")
         f:SetScript("OnHide", function()
             if fontSubMenu then fontSubMenu:Hide() end
+            local iod = _G["GudaChatInlineTabOverflow"]
+            if iod and iod:IsShown() then iod:Hide() end
         end)
         contextMenu = f
     end
@@ -2119,6 +2121,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     local inlineTabButtons = {}
     local inlineOverflowDropdown
+    local inlineMoreBtn
     local inlineDragIndicator
     local inlineDragState = {
         dragging = false,
@@ -2480,6 +2483,29 @@ local function CreateChatHeader(parentFrame)
                     inlineOverflowDropdown:SetClampedToScreen(true)
                     ns.ApplyDarkBackdrop(inlineOverflowDropdown, { 0.08, 0.08, 0.08, 0.95 }, { 0.3, 0.3, 0.3, 0.6 })
                     inlineOverflowDropdown:EnableMouse(true)
+                    local hideElapsed = 0
+                    local HIDE_DELAY = 0.3
+                    inlineOverflowDropdown:SetScript("OnUpdate", function(self, dt)
+                        if not self:IsShown() then return end
+                        if contextMenu and contextMenu:IsShown() then
+                            hideElapsed = 0
+                            return
+                        end
+                        local overDropdown = self:IsMouseOver(0, 0, 10, 0)
+                        local overMore = inlineMoreBtn and inlineMoreBtn:IsMouseOver()
+                        if overDropdown or overMore then
+                            hideElapsed = 0
+                        else
+                            hideElapsed = hideElapsed + dt
+                            if hideElapsed >= HIDE_DELAY then
+                                self:Hide()
+                                hideElapsed = 0
+                            end
+                        end
+                    end)
+                    inlineOverflowDropdown:SetScript("OnShow", function()
+                        hideElapsed = 0
+                    end)
                 end
 
                 for _, child in ipairs({ inlineOverflowDropdown:GetChildren() }) do
@@ -2523,7 +2549,6 @@ local function CreateChatHeader(parentFrame)
                     item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
                     item:SetScript("OnClick", function(self, button)
                         if button == "RightButton" then
-                            inlineOverflowDropdown:Hide()
                             ShowContextMenu(self, def.frameIndex)
                         else
                             FCF_SelectDockFrame(def.cf)
@@ -2551,6 +2576,7 @@ local function CreateChatHeader(parentFrame)
                 inlineOverflowDropdown:Show()
             end)
 
+            inlineMoreBtn = moreBtn
             tinsert(inlineTabButtons, moreBtn)
         end
     end
