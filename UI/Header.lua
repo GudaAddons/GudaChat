@@ -78,7 +78,7 @@ StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
         local chatFrame = ns._renamingFrame
         local id = ns._renamingIndex
         if chatFrame and name and name ~= "" and id then
-            FCF_SetWindowName(chatFrame, name, true)
+            FCF_SetWindowName(chatFrame, name)
             FCF_SelectDockFrame(chatFrame)
         end
     end,
@@ -88,7 +88,7 @@ StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
         local chatFrame = ns._renamingFrame
         local id = ns._renamingIndex
         if chatFrame and name and name ~= "" and id then
-            FCF_SetWindowName(chatFrame, name, true)
+            FCF_SetWindowName(chatFrame, name)
             FCF_SelectDockFrame(chatFrame)
         end
         parent:Hide()
