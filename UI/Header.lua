@@ -9,6 +9,11 @@ local HEADER_HEIGHT = 22
 local chatHeader
 
 local function GetChatTabName(index)
+    -- Prefer server-stored name (persists across reloads, even with hidden tabs)
+    if GetChatWindowInfo then
+        local name = GetChatWindowInfo(index)
+        if name and name ~= "" then return name end
+    end
     local tab = _G["ChatFrame" .. index .. "Tab"]
     if tab then
         local name = tab.Text and tab.Text:GetText() or tab:GetText()
@@ -2175,8 +2180,8 @@ local function CreateChatHeader(parentFrame)
         local leftEdge = leftAnchor:GetRight()
         local rightEdge = chatTypeBtn:GetLeft()
         if not leftEdge or not rightEdge then return end
-        local availableWidth = rightEdge - leftEdge - 20
-        if availableWidth < 40 then return end
+        local totalSpace = rightEdge - leftEdge
+        if totalSpace < 60 then return end
 
         -- Measure tab widths
         local tempFont = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2187,8 +2192,14 @@ local function CreateChatHeader(parentFrame)
         end
         tempFont:Hide()
 
-        -- Find how many fit
-        local overflowBtnWidth = 16
+        -- Pixel budget: first tab gap=10, subsequent gap=8 each, plus 6px right margin
+        -- totalW counts (width+8) per tab, actual usage = totalW + 2 (first gap 10 vs 8)
+        -- Without overflow: need totalW + 2 + 6 <= totalSpace
+        -- With overflow: need totalW + 2 + 8(gap) + 12(btn) + 6(margin) <= totalSpace
+        local marginRight = 6
+        local overflowExtra = 8 + 12  -- gap + button width
+        local firstGapExtra = 2       -- first tab uses 10px gap instead of 8
+
         local totalW = 0
         local fitCount = #allTabs
 
@@ -2196,8 +2207,9 @@ local function CreateChatHeader(parentFrame)
             totalW = totalW + widths[idx] + 8
         end
 
-        if totalW > availableWidth then
-            local maxUsable = availableWidth - overflowBtnWidth - 12
+        local allFitLimit = totalSpace - firstGapExtra - marginRight
+        if totalW > allFitLimit then
+            local maxUsable = totalSpace - firstGapExtra - overflowExtra - marginRight
             totalW = 0
             fitCount = 0
             for idx = 1, #allTabs do
