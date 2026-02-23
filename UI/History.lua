@@ -26,6 +26,11 @@ local CHANNEL_TO_CHATTYPE = {
 }
 ns.CHANNEL_TO_CHATTYPE = CHANNEL_TO_CHATTYPE
 
+local CHANNEL_SLASH_COMMANDS = {
+    Say = "/s", Yell = "/y", Guild = "/g", Officer = "/o",
+    Party = "/p", Raid = "/raid", Instance = "/bg", Whisper = "/w",
+}
+
 local REPLAY_CHANNEL_FORMATS = {
     Say = "says",
     Yell = "yells",
@@ -356,6 +361,31 @@ local function CreateHistoryFrame()
         end
     end)
 
+    -- Hyperlink handlers for clickable channels, names, and item tooltips
+    msgFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        local chatSlash = link:match("^gudachat:chat:(.+)")
+        if chatSlash then
+            ChatFrame_OpenChat(chatSlash .. " ", ChatFrame1)
+            return
+        end
+        SetItemRef(link, text, button)
+    end)
+
+    msgFrame:SetScript("OnHyperlinkEnter", function(self, link)
+        local linkType = link:match("^(%a+):")
+        if linkType and (linkType == "item" or linkType == "spell" or linkType == "enchant"
+            or linkType == "talent" or linkType == "quest" or linkType == "achievement"
+            or linkType == "currency" or linkType == "battlepet") then
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            GameTooltip:SetHyperlink(link)
+            GameTooltip:Show()
+        end
+    end)
+
+    msgFrame:SetScript("OnHyperlinkLeave", function()
+        GameTooltip:Hide()
+    end)
+
     -- Scrollbar for history
     local histSlider = CreateFrame("Slider", nil, msgFrame, "BackdropTemplate")
     histSlider:SetWidth(6)
@@ -488,15 +518,18 @@ local function CreateHistoryFrame()
 
         local body
         if entry.channel == "Whisper" and entry.outgoing then
-            body = string.format("To %s: %s%s", nameLink, levelStr, entry.message)
+            local whisperLink = string.format("|Hgudachat:chat:/w %s|h", entry.sender:match("^([^%-]+)") or entry.sender)
+            body = string.format("%sTo|h %s: %s%s", whisperLink, nameLink, levelStr, entry.message)
         elseif entry.channel == "Whisper" then
-            body = string.format("%s whispers: %s%s", nameLink, levelStr, entry.message)
+            local whisperLink = string.format("|Hgudachat:chat:/w %s|h", entry.sender:match("^([^%-]+)") or entry.sender)
+            body = string.format("%s %s whispers:|h %s%s", nameLink, whisperLink, levelStr, entry.message)
         else
             local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
             if verb then
                 body = string.format("%s %s: %s%s", nameLink, verb, levelStr, entry.message)
             else
-                body = string.format("|cff%s[%s]|r %s: %s%s", chanColor, entry.channel, nameLink, levelStr, entry.message)
+                local chanLink = string.format("|Hgudachat:chat:%s|h", CHANNEL_SLASH_COMMANDS[entry.channel] or "/s")
+                body = string.format("|cff%s%s[%s]|h|r %s: %s%s", chanColor, chanLink, entry.channel, nameLink, levelStr, entry.message)
             end
         end
 
