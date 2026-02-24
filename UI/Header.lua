@@ -250,6 +250,8 @@ local function ShowContextMenu(anchor, overrideIndex)
             if fontSubMenu then fontSubMenu:Hide() end
             local iod = _G["GudaChatInlineTabOverflow"]
             if iod and iod:IsShown() then iod:Hide() end
+            local eod = _G["GudaChatTabOverflow"]
+            if eod and eod:IsShown() then eod:Hide() end
         end)
         contextMenu = f
     end
@@ -1273,7 +1275,6 @@ local function RefreshChatSubTabs(header)
                 item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
                 item:SetScript("OnClick", function(self, button)
                     if button == "RightButton" then
-                        overflowDropdown:Hide()
                         ShowContextMenu(self, def.frameIndex)
                     else
                         FCF_SelectDockFrame(def.cf)
@@ -1349,6 +1350,10 @@ local function CreateChatSubTabs(header)
                 tabBarHovering = true
                 return
             end
+            if contextMenu and contextMenu:IsShown() then
+                tabBarHovering = true
+                return
+            end
             if bar:IsMouseOver() or (ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()) or (overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()) then
                 tabBarHovering = true
                 return
@@ -1373,7 +1378,8 @@ local function CreateChatSubTabs(header)
         local overBar = bar:IsMouseOver()
         local overLabel = ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()
         local overOverflow = overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()
-        if overBar or overLabel or overOverflow then
+        local overContext = contextMenu and contextMenu:IsShown()
+        if overBar or overLabel or overOverflow or overContext then
             ShowTabBar()
         else
             HideTabBar()
