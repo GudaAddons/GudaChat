@@ -41,6 +41,24 @@ ns.REPLAY_CHANNEL_FORMATS = REPLAY_CHANNEL_FORMATS
 -- Message capture for chat history
 ---------------------------------------------------------------------------
 
+local historySeq = 0
+
+local function InitHistorySeq()
+    if not GudaChatDB or not GudaChatDB.history then return end
+    local maxSeq = 0
+    for _, bucket in pairs(GudaChatDB.history) do
+        if type(bucket) == "table" then
+            for _, entry in ipairs(bucket) do
+                if entry.seq and entry.seq > maxSeq then
+                    maxSeq = entry.seq
+                end
+            end
+        end
+    end
+    historySeq = maxSeq
+end
+ns.InitHistorySeq = InitHistorySeq
+
 local historyCaptureFrame = CreateFrame("Frame")
 local HISTORY_EVENTS = {
     "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
@@ -74,8 +92,10 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
 
     local isOutgoing = channelKey == "WHISPER_INFORM" or channelKey == "BN_WHISPER_INFORM"
 
+    historySeq = historySeq + 1
     tinsert(bucket, {
         time = time(),
+        seq = historySeq,
         channel = label,
         sender = sender or "",
         message = msg or "",
@@ -116,7 +136,10 @@ local function ReplayHistory()
     end
     if #all == 0 then return end
 
-    table.sort(all, function(a, b) return a.time < b.time end)
+    table.sort(all, function(a, b)
+            if a.time == b.time then return (a.seq or 0) < (b.seq or 0) end
+            return a.time < b.time
+        end)
     local start = math.max(1, #all - 9)
 
     ChatFrame1:AddMessage("|cff555555--- previous session ---|r")
@@ -465,7 +488,10 @@ local function CreateHistoryFrame()
                     end
                 end
             end
-            table.sort(results, function(a, b) return a.time < b.time end)
+            table.sort(results, function(a, b)
+                if a.time == b.time then return (a.seq or 0) < (b.seq or 0) end
+                return a.time < b.time
+            end)
         else
             local bucket = historyDB[selectedFilter]
             if bucket then
