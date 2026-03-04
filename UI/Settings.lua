@@ -244,7 +244,7 @@ local settingsFrame
 
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(340, 460)
+    f:SetSize(400, 460)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -276,7 +276,7 @@ local function CreateSettingsFrame()
         tabTemplate = "TabButtonTemplate"
     end
 
-    local tabDefs = { "General", "Messages", "History" }
+    local tabDefs = { "General", "Messages", "History", "Notifications" }
     local tabPanels = {}
     local tabs = {}
 
@@ -329,26 +329,44 @@ local function CreateSettingsFrame()
             yOff = yOff + widget:GetHeight() + 8
             tinsert(ctrls, widget)
         end
-        return Add, ctrls
+        local function AddPair(w1, w2)
+            local row = CreateFrame("Frame", nil, panel)
+            local h = math.max(w1:GetHeight(), w2:GetHeight())
+            row:SetHeight(h)
+
+            w1:SetParent(row)
+            w1:ClearAllPoints()
+            w1:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+            w1:SetPoint("RIGHT", row, "CENTER", -4, 0)
+
+            w2:SetParent(row)
+            w2:ClearAllPoints()
+            w2:SetPoint("TOPLEFT", row, "TOP", 4, 0)
+            w2:SetPoint("RIGHT", row, "TOPRIGHT", 0, 0)
+
+            Add(row)
+        end
+        return Add, AddPair, ctrls
     end
 
     -------------------------------------------------------------------
     -- Tab 1: General
     -------------------------------------------------------------------
     do
-        local Add = BuildPanel(tabPanels[1])
+        local Add, AddPair = BuildPanel(tabPanels[1])
 
         Add(CreateSeparator(tabPanels[1], "Chat Window"))
 
-        Add(CreateCheckbox(tabPanels[1], "Lock chat position", GudaChatDB.locked, function(checked)
-            GudaChatDB.locked = checked
-            ns.ApplyLockState()
-        end))
-
-        Add(CreateCheckbox(tabPanels[1], "Disable message fading", not GudaChatDB.fading, function(checked)
-            GudaChatDB.fading = not checked
-            ChatFrame1:SetFading(GudaChatDB.fading)
-        end))
+        AddPair(
+            CreateCheckbox(tabPanels[1], "Lock chat position", GudaChatDB.locked, function(checked)
+                GudaChatDB.locked = checked
+                ns.ApplyLockState()
+            end),
+            CreateCheckbox(tabPanels[1], "Disable message fading", not GudaChatDB.fading, function(checked)
+                GudaChatDB.fading = not checked
+                ChatFrame1:SetFading(GudaChatDB.fading)
+            end)
+        )
 
         local currentFont = GudaChatDB.chatFont or "Fonts\\FRIZQT__.TTF"
         Add(CreateDropdown(tabPanels[1], "Font", FONT_OPTIONS, currentFont, function(value)
@@ -377,53 +395,60 @@ local function CreateSettingsFrame()
 
         Add(CreateSeparator(tabPanels[1], "Input Bar"))
 
-        Add(CreateCheckbox(tabPanels[1], "Show input bar on top", GudaChatDB.inputPosition == "top", function(checked)
-            local wasTop = GudaChatDB.inputPosition == "top"
-            GudaChatDB.inputPosition = checked and "top" or "bottom"
-            ns.ForEachChatWindow(function(cf, i)
-                ns.PositionEditBox(cf, i, GudaChatDB.inputPosition)
-            end)
-            local point, rel, relPoint, x, y = ChatFrame1:GetPoint(1)
-            if point and rel then
-                ns.cf1PositionLocked = false
-                if wasTop and not checked then
-                    ChatFrame1:SetPoint(point, rel, relPoint, x, y + ns.INPUT_BAR_CLAMP)
-                elseif not wasTop and checked then
-                    ChatFrame1:SetPoint(point, rel, relPoint, x, y - ns.INPUT_BAR_CLAMP)
+        AddPair(
+            CreateCheckbox(tabPanels[1], "Input bar on top", GudaChatDB.inputPosition == "top", function(checked)
+                local wasTop = GudaChatDB.inputPosition == "top"
+                GudaChatDB.inputPosition = checked and "top" or "bottom"
+                ns.ForEachChatWindow(function(cf, i)
+                    ns.PositionEditBox(cf, i, GudaChatDB.inputPosition)
+                end)
+                local point, rel, relPoint, x, y = ChatFrame1:GetPoint(1)
+                if point and rel then
+                    ns.cf1PositionLocked = false
+                    if wasTop and not checked then
+                        ChatFrame1:SetPoint(point, rel, relPoint, x, y + ns.INPUT_BAR_CLAMP)
+                    elseif not wasTop and checked then
+                        ChatFrame1:SetPoint(point, rel, relPoint, x, y - ns.INPUT_BAR_CLAMP)
+                    end
+                    ns.cf1PositionLocked = true
                 end
-                ns.cf1PositionLocked = true
-            end
-            ns.ApplyChatMargins()
-        end))
+                ns.ApplyChatMargins()
+            end),
+            CreateCheckbox(tabPanels[1], "Transparent input bar", GudaChatDB.transparentInput, function(checked)
+                GudaChatDB.transparentInput = checked
+                ns.ApplyTransparentInput()
+            end)
+        )
 
         Add(CreateSeparator(tabPanels[1], "Tabs"))
 
-        Add(CreateCheckbox(tabPanels[1], "Show tab bar", GudaChatDB.showTabBar, function(checked)
-            GudaChatDB.showTabBar = checked
-            if ns.chatSubTabs then
-                if checked then
-                    ns.RefreshChatSubTabs(ns.chatHeader)
-                    ns.chatSubTabs:Show()
-                    ns.chatSubTabs:SetAlpha(0)
-                else
-                    ns.chatSubTabs:Hide()
+        AddPair(
+            CreateCheckbox(tabPanels[1], "Show tab bar", GudaChatDB.showTabBar, function(checked)
+                GudaChatDB.showTabBar = checked
+                if ns.chatSubTabs then
+                    if checked then
+                        ns.RefreshChatSubTabs(ns.chatHeader)
+                        ns.chatSubTabs:Show()
+                        ns.chatSubTabs:SetAlpha(0)
+                    else
+                        ns.chatSubTabs:Hide()
+                    end
                 end
-            end
-        end))
-
-        Add(CreateCheckbox(tabPanels[1], "Inline tab bar", GudaChatDB.inlineTabBar, function(checked)
-            GudaChatDB.inlineTabBar = checked
-            if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-            if ns.chatSubTabs then
-                if checked then
-                    ns.chatSubTabs:Hide()
-                elseif GudaChatDB.showTabBar then
-                    ns.RefreshChatSubTabs(ns.chatHeader)
-                    ns.chatSubTabs:Show()
-                    ns.chatSubTabs:SetAlpha(0)
+            end),
+            CreateCheckbox(tabPanels[1], "Inline tab bar", GudaChatDB.inlineTabBar, function(checked)
+                GudaChatDB.inlineTabBar = checked
+                if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
+                if ns.chatSubTabs then
+                    if checked then
+                        ns.chatSubTabs:Hide()
+                    elseif GudaChatDB.showTabBar then
+                        ns.RefreshChatSubTabs(ns.chatHeader)
+                        ns.chatSubTabs:Show()
+                        ns.chatSubTabs:SetAlpha(0)
+                    end
                 end
-            end
-        end))
+            end)
+        )
 
         Add(CreateCheckbox(tabPanels[1], "Whisper tab", GudaChatDB.whisperTab, function(checked)
             GudaChatDB.whisperTab = checked
@@ -443,18 +468,19 @@ local function CreateSettingsFrame()
     -- Tab 2: Messages
     -------------------------------------------------------------------
     do
-        local Add = BuildPanel(tabPanels[2])
+        local Add, AddPair = BuildPanel(tabPanels[2])
 
         Add(CreateSeparator(tabPanels[2], "Messages"))
 
-        Add(CreateCheckbox(tabPanels[2], "Class colored names", GudaChatDB.classColors, function(checked)
-            GudaChatDB.classColors = checked
-            ns.ApplyClassColors()
-        end))
-
-        Add(CreateCheckbox(tabPanels[2], "Show player level", GudaChatDB.showLevel, function(checked)
-            GudaChatDB.showLevel = checked
-        end))
+        AddPair(
+            CreateCheckbox(tabPanels[2], "Class colored names", GudaChatDB.classColors, function(checked)
+                GudaChatDB.classColors = checked
+                ns.ApplyClassColors()
+            end),
+            CreateCheckbox(tabPanels[2], "Show player level", GudaChatDB.showLevel, function(checked)
+                GudaChatDB.showLevel = checked
+            end)
+        )
 
         Add(CreateCheckbox(tabPanels[2], "Copyable links", GudaChatDB.copyLinks, function(checked)
             GudaChatDB.copyLinks = checked
@@ -485,7 +511,7 @@ local function CreateSettingsFrame()
     -- Tab 3: History
     -------------------------------------------------------------------
     do
-        local Add = BuildPanel(tabPanels[3])
+        local Add, AddPair = BuildPanel(tabPanels[3])
 
         Add(CreateSeparator(tabPanels[3], "History"))
 
@@ -524,6 +550,52 @@ local function CreateSettingsFrame()
             StaticPopup_Show("GUDACHAT_CLEAR_HISTORY")
         end)
         Add(clearContainer)
+    end
+
+    -------------------------------------------------------------------
+    -- Tab 4: Notifications
+    -------------------------------------------------------------------
+    do
+        local Add, AddPair = BuildPanel(tabPanels[4])
+
+        Add(CreateSeparator(tabPanels[4], "Tab Blink Notifications"))
+
+        Add(CreateCheckbox(tabPanels[4], "Enable notifications", GudaChatDB.notifications.general, function(checked)
+            GudaChatDB.notifications.general = checked
+        end))
+
+        AddPair(
+            CreateCheckbox(tabPanels[4], "Party", GudaChatDB.notifications.party, function(checked)
+                GudaChatDB.notifications.party = checked
+            end),
+            CreateCheckbox(tabPanels[4], "Raid / Instance", GudaChatDB.notifications.raid, function(checked)
+                GudaChatDB.notifications.raid = checked
+            end)
+        )
+
+        AddPair(
+            CreateCheckbox(tabPanels[4], "Guild / Officer", GudaChatDB.notifications.guild, function(checked)
+                GudaChatDB.notifications.guild = checked
+            end),
+            CreateCheckbox(tabPanels[4], "Whispers", GudaChatDB.notifications.whispers, function(checked)
+                GudaChatDB.notifications.whispers = checked
+            end)
+        )
+
+        Add(CreateSeparator(tabPanels[4], "Numbered Channels"))
+
+        AddPair(
+            CreateCheckbox(tabPanels[4], "Trade", GudaChatDB.notifications.trade, function(checked)
+                GudaChatDB.notifications.trade = checked
+            end),
+            CreateCheckbox(tabPanels[4], "LookingForGroup", GudaChatDB.notifications.lfg, function(checked)
+                GudaChatDB.notifications.lfg = checked
+            end)
+        )
+
+        Add(CreateCheckbox(tabPanels[4], "Other (custom channels)", GudaChatDB.notifications.other, function(checked)
+            GudaChatDB.notifications.other = checked
+        end))
     end
 
     f:SetScript("OnShow", function()

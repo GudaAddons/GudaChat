@@ -13,8 +13,8 @@ local function PositionEditBox(chatFrame, index, position)
     eb:ClearAllPoints()
     local extraR = ns.IS_RETAIL and 13 or 0
     if position == "top" then
-        eb:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -4, 4)
-        eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 4 + extraR, 4)
+        eb:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -4, -2)
+        eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 4 + extraR, -2)
     else
         eb:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -4, -4)
         eb:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 4 + extraR, -4)
@@ -84,6 +84,10 @@ local function StyleEditBox(chatFrame, index)
         eb.gudaBg = bg
     end
 
+    if GudaChatDB and GudaChatDB.transparentInput and eb.gudaBg then
+        eb.gudaBg:SetAlpha(0)
+    end
+
     local header = _G["ChatFrame" .. index .. "EditBoxHeader"]
     if header then
         header:SetTextColor(0.6, 0.6, 0.6)
@@ -132,13 +136,23 @@ local function StyleEditBox(chatFrame, index)
     eb.chatFrame = chatFrame
 
     eb:HookScript("OnEditFocusGained", function(self)
+        ns.hideHeaderForInput = true
         if self.gudaBg then
-            self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_GOLDEN_A))
+            if GudaChatDB and GudaChatDB.transparentInput then
+                self.gudaBg:SetAlpha(0)
+            else
+                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_GOLDEN_A))
+            end
         end
     end)
     eb:HookScript("OnEditFocusLost", function(self)
+        ns.hideHeaderForInput = false
         if self.gudaBg then
-            self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
+            if GudaChatDB and GudaChatDB.transparentInput then
+                self.gudaBg:SetAlpha(0)
+            else
+                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
+            end
         end
         local picker = _G["GudaChatEmojiPicker"]
         if picker and picker:IsShown() then
@@ -147,6 +161,21 @@ local function StyleEditBox(chatFrame, index)
     end)
 end
 ns.StyleEditBox = StyleEditBox
+
+function ns.ApplyTransparentInput()
+    local transparent = GudaChatDB and GudaChatDB.transparentInput
+    ns.ForEachChatWindow(function(_, i)
+        local eb = _G["ChatFrame" .. i .. "EditBox"]
+        if eb and eb.gudaBg then
+            if transparent then
+                eb.gudaBg:SetAlpha(0)
+            else
+                eb.gudaBg:SetAlpha(1)
+                eb.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
+            end
+        end
+    end)
+end
 
 -- Prevent Blizzard's FCF_UpdateButtonSide from re-adding button side spacing
 if FCF_UpdateButtonSide then

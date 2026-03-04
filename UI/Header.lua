@@ -48,7 +48,7 @@ local function CreateIconButton(parent, texturePath, size, tooltip)
             SetTooltipFontSize(12)
             GameTooltip:Show()
         end
-        if chatHeader then chatHeader:SetAlpha(1) end
+        if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
     end)
     btn:SetScript("OnLeave", function(self)
         self.icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
@@ -641,7 +641,7 @@ local function CreateCombatSubTabs(header)
 
         btn:SetScript("OnEnter", function(self)
             self.text:SetTextColor(0.9, 0.9, 0.9, 1)
-            if chatHeader then chatHeader:SetAlpha(1) end
+            if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
         end)
         btn:SetScript("OnLeave", function()
             UpdateColors()
@@ -674,18 +674,50 @@ local blinkingTabs = {}
 
 -- Chat events that should trigger tab blink notifications
 local BLINK_EVENTS = {
+    CHAT_MSG_SAY = "SAY", CHAT_MSG_YELL = "YELL", CHAT_MSG_EMOTE = "EMOTE",
     CHAT_MSG_GUILD = "GUILD", CHAT_MSG_OFFICER = "OFFICER",
     CHAT_MSG_PARTY = "PARTY", CHAT_MSG_PARTY_LEADER = "PARTY",
     CHAT_MSG_RAID = "RAID", CHAT_MSG_RAID_LEADER = "RAID",
     CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT", CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
     CHAT_MSG_WHISPER = "WHISPER", CHAT_MSG_BN_WHISPER = "BN_WHISPER",
+    CHAT_MSG_CHANNEL = "CHANNEL",
+}
+
+-- Map events to notification category keys in GudaChatDB.notifications
+local EVENT_TO_NOTIFY_CATEGORY = {
+    CHAT_MSG_PARTY = "party", CHAT_MSG_PARTY_LEADER = "party",
+    CHAT_MSG_RAID = "raid", CHAT_MSG_RAID_LEADER = "raid", CHAT_MSG_RAID_WARNING = "raid",
+    CHAT_MSG_INSTANCE_CHAT = "raid", CHAT_MSG_INSTANCE_CHAT_LEADER = "raid",
+    CHAT_MSG_GUILD = "guild", CHAT_MSG_OFFICER = "guild",
+    CHAT_MSG_WHISPER = "whispers", CHAT_MSG_BN_WHISPER = "whispers",
 }
 
 local blinkListener = CreateFrame("Frame")
-blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
+blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not GudaChatDB or not (GudaChatDB.showTabBar or GudaChatDB.inlineTabBar) then return end
     local msgGroup = BLINK_EVENTS[event]
     if not msgGroup then return end
+
+    -- Check notification category setting
+    local notif = GudaChatDB.notifications
+    if notif then
+        -- General acts as master toggle
+        if not notif.general then return end
+
+        local category = EVENT_TO_NOTIFY_CATEGORY[event]
+        if event == "CHAT_MSG_CHANNEL" then
+            -- arg9 (channelName) is the 7th vararg after msg, sender
+            local _, _, _, _, _, _, channelName = ...
+            if channelName and channelName:find("Trade") then
+                category = "trade"
+            elseif channelName and channelName:find("LookingForGroup") then
+                category = "lfg"
+            else
+                category = "other"
+            end
+        end
+        if category and not notif[category] then return end
+    end
 
     local selectedIdx = GetSelectedChatFrameIndex()
     local changed = false
@@ -734,7 +766,7 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender)
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
         if GudaChatDB.inlineTabBar and ns.chatHeader then
-            ns.chatHeader:SetAlpha(1)
+            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
         end
     end
 end)
@@ -1161,7 +1193,7 @@ local function RefreshChatSubTabs(header)
 
         btn:SetScript("OnEnter", function(self)
             self.text:SetTextColor(col[1], col[2], col[3], 1)
-            if chatHeader then chatHeader:SetAlpha(1) end
+            if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
         end)
         btn:SetScript("OnLeave", function(self)
             if dragState.dragging and dragState.sourceBtn == self then return end
@@ -1214,7 +1246,7 @@ local function RefreshChatSubTabs(header)
 
         moreBtn:SetScript("OnEnter", function(self)
             self.icon:SetVertexColor(1, 1, 1, 1)
-            if chatHeader then chatHeader:SetAlpha(1) end
+            if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
         end)
         moreBtn:SetScript("OnLeave", function(self)
             self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
@@ -1325,6 +1357,7 @@ local function CreateChatSubTabs(header)
     local tabBarHideGen = 0
 
     local function ShowTabBar()
+        if ns.hideHeaderForInput then return end
         if tabBarHovering then return end
         tabBarHovering = true
         tabBarHideGen = tabBarHideGen + 1
@@ -1375,6 +1408,13 @@ local function CreateChatSubTabs(header)
     local tabBarMonitor = CreateFrame("Frame")
     tabBarMonitor:SetScript("OnUpdate", function()
         if not bar:IsShown() then return end
+        if ns.hideHeaderForInput then
+            if tabBarHovering then
+                tabBarHovering = false
+                bar:SetAlpha(0)
+            end
+            return
+        end
         local overBar = bar:IsMouseOver()
         local overLabel = ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()
         local overOverflow = overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()
@@ -1489,7 +1529,7 @@ whisperListener:SetScript("OnEvent", function()
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
         if GudaChatDB.inlineTabBar and ns.chatHeader then
-            ns.chatHeader:SetAlpha(1)
+            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
         end
     end
 end)
@@ -1501,7 +1541,7 @@ ns.StartWhisperBlink = function()
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         if ns.ShowTabBar then ns.ShowTabBar() end
         if GudaChatDB.inlineTabBar and ns.chatHeader then
-            ns.chatHeader:SetAlpha(1)
+            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
         end
     end
 end
@@ -1562,6 +1602,7 @@ local function CreateChatHeader(parentFrame)
     end
 
     local function ShowHeader()
+        if ns.hideHeaderForInput then return end
         if isHovering then return end
         isHovering = true
         hideTimerGen = hideTimerGen + 1  -- invalidate any pending hide timer
@@ -1616,6 +1657,16 @@ local function CreateChatHeader(parentFrame)
     -- Detect hover via OnUpdate
     local monitor = CreateFrame("Frame")
     monitor:SetScript("OnUpdate", function()
+        if ns.hideHeaderForInput then
+            if isHovering then
+                isHovering = false
+                if fadeIn then fadeIn:Stop() end
+                header:SetAlpha(0)
+                if combatSubTabs then combatSubTabs:SetAlpha(0) end
+                ns.FadeOutScrollbar()
+            end
+            return
+        end
         if IsOverChatUI() then
             ShowHeader()
         else
@@ -1846,7 +1897,7 @@ local function CreateChatHeader(parentFrame)
         GameTooltip:SetText("Click to switch tabs, right-click for options", 0.7, 0.7, 0.7)
         SetTooltipFontSize(12)
         GameTooltip:Show()
-        if chatHeader then chatHeader:SetAlpha(1) end
+        if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
     end)
     tabLabelBtn:SetScript("OnLeave", function(self)
         tabLabel:SetTextColor(0.6, 0.45, 0.0, 0.8)
@@ -2423,7 +2474,7 @@ local function CreateChatHeader(parentFrame)
 
             btn:SetScript("OnEnter", function(self)
                 self.text:SetTextColor(col[1], col[2], col[3], 1)
-                if chatHeader then chatHeader:SetAlpha(1) end
+                if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
             end)
             btn:SetScript("OnLeave", function(self)
                 if inlineDragState.dragging and inlineDragState.sourceBtn == self then return end
@@ -2471,7 +2522,7 @@ local function CreateChatHeader(parentFrame)
 
             moreBtn:SetScript("OnEnter", function(self)
                 self.icon:SetVertexColor(1, 1, 1, 1)
-                if chatHeader then chatHeader:SetAlpha(1) end
+                if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
             end)
             moreBtn:SetScript("OnLeave", function(self)
                 self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)

@@ -53,6 +53,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.whisperTab == nil then
             GudaChatDB.whisperTab = false
         end
+        if GudaChatDB.transparentInput == nil then
+            GudaChatDB.transparentInput = false
+        end
         -- chatFont: nil means default (Fonts\FRIZQT__.TTF)
         if GudaChatDB.showTabBar == nil then
             GudaChatDB.showTabBar = true
@@ -65,6 +68,18 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         GudaChatDB.historyMax = GudaChatDB.historyMax or 500
         if GudaChatDB.historyEnabled == nil then
             GudaChatDB.historyEnabled = true
+        end
+        if GudaChatDB.notifications == nil then
+            GudaChatDB.notifications = {
+                general = true,
+                party = true,
+                raid = true,
+                guild = true,
+                whispers = true,
+                trade = false,
+                lfg = false,
+                other = false,
+            }
         end
         self:UnregisterEvent("ADDON_LOADED")
 
