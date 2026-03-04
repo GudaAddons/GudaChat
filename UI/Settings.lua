@@ -560,9 +560,14 @@ local function CreateSettingsFrame()
 
         Add(CreateSeparator(tabPanels[4], "Tab Blink Notifications"))
 
-        Add(CreateCheckbox(tabPanels[4], "Enable notifications", GudaChatDB.notifications.general, function(checked)
-            GudaChatDB.notifications.general = checked
-        end))
+        AddPair(
+            CreateCheckbox(tabPanels[4], "Enable notifications", GudaChatDB.notifications.general, function(checked)
+                GudaChatDB.notifications.general = checked
+            end),
+            CreateCheckbox(tabPanels[4], "General tab", GudaChatDB.notifications.generalTab, function(checked)
+                GudaChatDB.notifications.generalTab = checked
+            end)
+        )
 
         AddPair(
             CreateCheckbox(tabPanels[4], "Party", GudaChatDB.notifications.party, function(checked)

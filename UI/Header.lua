@@ -725,14 +725,19 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     -- Check permanent windows
     for i = 1, NUM_CHAT_WINDOWS do
         if i ~= selectedIdx and i ~= 2 then
-            local cf = _G["ChatFrame" .. i]
-            if cf and (cf.isDocked or i == 1) and not cf:IsShown() then
-                local msgs = { GetChatWindowMessages(i) }
-                for _, grp in ipairs(msgs) do
-                    if grp == msgGroup or grp == event:gsub("CHAT_MSG_", "") then
-                        if not blinkingTabs[i] then
-                            blinkingTabs[i] = true
-                            changed = true
+            -- Skip General tab if notifications for it are disabled
+            if i == 1 and notif and not notif.generalTab then
+                -- Don't blink General tab
+            else
+                local cf = _G["ChatFrame" .. i]
+                if cf and (cf.isDocked or i == 1) and not cf:IsShown() then
+                    local msgs = { GetChatWindowMessages(i) }
+                    for _, grp in ipairs(msgs) do
+                        if grp == msgGroup or grp == event:gsub("CHAT_MSG_", "") then
+                            if not blinkingTabs[i] then
+                                blinkingTabs[i] = true
+                                changed = true
+                            end
                         end
                     end
                 end

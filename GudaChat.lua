@@ -72,6 +72,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.notifications == nil then
             GudaChatDB.notifications = {
                 general = true,
+                generalTab = true,
                 party = true,
                 raid = true,
                 guild = true,
@@ -80,6 +81,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                 lfg = false,
                 other = false,
             }
+        end
+        if GudaChatDB.notifications.generalTab == nil then
+            GudaChatDB.notifications.generalTab = true
         end
         self:UnregisterEvent("ADDON_LOADED")
 
