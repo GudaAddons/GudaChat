@@ -135,8 +135,25 @@ local function StyleEditBox(chatFrame, index)
     eb:SetAlpha(1)
     eb.chatFrame = chatFrame
 
+    -- On retail, force classic-style edit box: hidden until focused.
+    -- Hook OnShow so Blizzard's chat style system cannot keep it visible.
+    if ns.IS_RETAIL then
+        eb:Hide()
+        eb:SetAutoFocus(false)
+        eb:HookScript("OnShow", function(self)
+            -- Allow show only during chat activation (focus will follow).
+            -- If shown without focus and not about to get it, re-hide next frame.
+            C_Timer.After(0, function()
+                if self:IsShown() and not self:HasFocus() then
+                    self:Hide()
+                end
+            end)
+        end)
+    end
+
     eb:HookScript("OnEditFocusGained", function(self)
         ns.hideHeaderForInput = true
+        self:Show()
         if self.gudaBg then
             if GudaChatDB and GudaChatDB.transparentInput then
                 self.gudaBg:SetAlpha(0)
@@ -147,6 +164,9 @@ local function StyleEditBox(chatFrame, index)
     end)
     eb:HookScript("OnEditFocusLost", function(self)
         ns.hideHeaderForInput = false
+        if ns.IS_RETAIL then
+            self:Hide()
+        end
         if self.gudaBg then
             if GudaChatDB and GudaChatDB.transparentInput then
                 self.gudaBg:SetAlpha(0)

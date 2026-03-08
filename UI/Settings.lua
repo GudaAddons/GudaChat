@@ -456,7 +456,7 @@ local function CreateSettingsFrame()
                 ns.SetupWhisperFrame()
             else
                 if ns.whisperFrame and ns.whisperFrame:IsShown() then
-                    FCF_SelectDockFrame(ChatFrame1)
+                    C_Timer.After(0, function() FCF_SelectDockFrame(ChatFrame1) end)
                 end
             end
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end

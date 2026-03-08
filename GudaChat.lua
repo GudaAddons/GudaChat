@@ -134,7 +134,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                 for i = NUM_CHAT_WINDOWS, 1, -1 do
                     local cf = _G["ChatFrame" .. i]
                     if cf and cf:IsShown() then
-                        FCF_SelectDockFrame(cf)
+                        C_Timer.After(0, function() FCF_SelectDockFrame(cf) end)
                         break
                     end
                 end
@@ -145,7 +145,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if FCF_SetWindowName then
             hooksecurefunc("FCF_SetWindowName", function(chatFrame)
                 if chatFrame then
-                    FCF_SelectDockFrame(chatFrame)
+                    C_Timer.After(0, function() FCF_SelectDockFrame(chatFrame) end)
                 end
             end)
         end

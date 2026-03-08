@@ -8,6 +8,32 @@ local ICON_SIZE = 16
 local HEADER_HEIGHT = 22
 local chatHeader
 
+-- Direct frame-switch that avoids FCF_SelectDockFrame entirely.
+-- FCF_SelectDockFrame → FCFDock_UpdateTabs → FCF_CheckShowChatFrame calls
+-- SetShown on combat-log quick buttons, which triggers the protected
+-- ClearEventFilters() in Blizzard_CombatLogProcessor and causes
+-- ADDON_ACTION_FORBIDDEN on retail 12.x+.
+-- We manage dock state + frame visibility ourselves instead.
+local function SafeSelectDockFrame(cf)
+    if not cf then return end
+    C_Timer.After(0, function()
+        local dock = GENERAL_CHAT_DOCK
+        if dock and dock.DOCKED_CHAT_FRAMES then
+            dock.selected = cf
+            for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
+                if frame == cf then
+                    frame:Show()
+                else
+                    frame:Hide()
+                end
+            end
+        else
+            cf:Show()
+        end
+        SELECTED_CHAT_FRAME = cf
+    end)
+end
+
 local function GetChatTabName(index)
     -- Prefer server-stored name (persists across reloads, even with hidden tabs)
     if GetChatWindowInfo then
@@ -79,7 +105,7 @@ StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
         local id = ns._renamingIndex
         if chatFrame and name and name ~= "" and id then
             FCF_SetWindowName(chatFrame, name)
-            FCF_SelectDockFrame(chatFrame)
+            SafeSelectDockFrame(chatFrame)
         end
     end,
     EditBoxOnEnterPressed = function(self)
@@ -89,7 +115,7 @@ StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
         local id = ns._renamingIndex
         if chatFrame and name and name ~= "" and id then
             FCF_SetWindowName(chatFrame, name)
-            FCF_SelectDockFrame(chatFrame)
+            SafeSelectDockFrame(chatFrame)
         end
         parent:Hide()
     end,
@@ -329,7 +355,7 @@ local function ShowContextMenu(anchor, overrideIndex)
             end
         end
         contextMenu:Hide()
-        FCF_SelectDockFrame(ChatFrame1)
+        SafeSelectDockFrame(ChatFrame1)
     end
 
     -------------------------------------------------------------------
@@ -1147,7 +1173,7 @@ local function RefreshChatSubTabs(header)
             if button == "RightButton" then
                 ShowContextMenu(self, def.frameIndex)
             else
-                FCF_SelectDockFrame(def.cf)
+                SafeSelectDockFrame(def.cf)
             end
         end)
 
@@ -1314,7 +1340,7 @@ local function RefreshChatSubTabs(header)
                     if button == "RightButton" then
                         ShowContextMenu(self, def.frameIndex)
                     else
-                        FCF_SelectDockFrame(def.cf)
+                        SafeSelectDockFrame(def.cf)
                         overflowDropdown:Hide()
                     end
                 end)
@@ -1485,7 +1511,7 @@ local function SetupWhisperFrame()
         cf:SetMaxLines(500)
         cf:SetFading(GudaChatDB.fading or false)
         cf:SetJustifyH("LEFT")
-        FCF_SelectDockFrame(ChatFrame1)
+        SafeSelectDockFrame(ChatFrame1)
     end
 
     local idx = GudaChatDB.whisperFrameIndex
@@ -1516,7 +1542,7 @@ local function SetupWhisperFrame()
                 ns.StripChatChrome(i)
                 InitWhisperFrame(cf, i)
                 FCF_DockFrame(cf)
-                FCF_SelectDockFrame(ChatFrame1)
+                SafeSelectDockFrame(ChatFrame1)
                 break
             end
         end
@@ -1792,7 +1818,7 @@ local function CreateChatHeader(parentFrame)
 
                     local frameIndex = i
                     mb:SetScript("OnClick", function()
-                        FCF_SelectDockFrame(_G["ChatFrame" .. frameIndex])
+                        SafeSelectDockFrame(_G["ChatFrame" .. frameIndex])
                         CloseDropdown()
                     end)
 
@@ -1820,7 +1846,7 @@ local function CreateChatHeader(parentFrame)
         if button == "RightButton" then
             ShowContextMenu(self, 1)
         else
-            FCF_SelectDockFrame(ChatFrame1)
+            SafeSelectDockFrame(ChatFrame1)
         end
         CloseDropdown()
     end)
@@ -1833,11 +1859,10 @@ local function CreateChatHeader(parentFrame)
 
     combatBtn:SetScript("OnClick", function()
         if ChatFrame2 then
-            if ChatFrame2:IsShown() then
-                FCF_SelectDockFrame(ChatFrame1)
-            else
-                FCF_SelectDockFrame(ChatFrame2)
-            end
+            -- Defer to next frame to avoid tainting ClearEventFilters() in
+            -- Blizzard_CombatLogProcessor (retail 12.x+)
+            local target = ChatFrame2:IsShown() and ChatFrame1 or ChatFrame2
+            SafeSelectDockFrame(target)
         end
     end)
 
@@ -2430,7 +2455,7 @@ local function CreateChatHeader(parentFrame)
                 if button == "RightButton" then
                     ShowContextMenu(self, def.frameIndex)
                 else
-                    FCF_SelectDockFrame(def.cf)
+                    SafeSelectDockFrame(def.cf)
                 end
             end)
 
@@ -2613,7 +2638,7 @@ local function CreateChatHeader(parentFrame)
                         if button == "RightButton" then
                             ShowContextMenu(self, def.frameIndex)
                         else
-                            FCF_SelectDockFrame(def.cf)
+                            SafeSelectDockFrame(def.cf)
                             inlineOverflowDropdown:Hide()
                         end
                     end)
@@ -2729,14 +2754,14 @@ local function CreateChatHeader(parentFrame)
                         local ct = cf.chatTarget
                         local ctShort = ct and ct:match("^([^%-]+)") or ct
                         if ctShort and targetShort and ctShort:lower() == targetShort:lower() then
-                            FCF_SelectDockFrame(cf)
+                            SafeSelectDockFrame(cf)
                             return
                         end
                     end
                 end
             end
             if GudaChatDB.whisperTab and ns.whisperFrame then
-                FCF_SelectDockFrame(ns.whisperFrame)
+                SafeSelectDockFrame(ns.whisperFrame)
                 return
             end
             return
@@ -2753,7 +2778,7 @@ local function CreateChatHeader(parentFrame)
                     local msgs = { GetChatWindowMessages(i) }
                     for _, grp in ipairs(msgs) do
                         if grp == group then
-                            FCF_SelectDockFrame(cf)
+                            SafeSelectDockFrame(cf)
                             return
                         end
                     end
