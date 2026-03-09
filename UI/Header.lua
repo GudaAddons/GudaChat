@@ -825,10 +825,15 @@ hooksecurefunc("FCF_SelectDockFrame", function(cf)
                 local idx = cf:GetID()
                 if blinkingTabs[idx] then
                     blinkingTabs[idx] = nil
+                    cleared = true
                 end
                 break
             end
         end
+    end
+    if cleared then
+        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
     end
 end)
 
@@ -1173,6 +1178,11 @@ local function RefreshChatSubTabs(header)
             if button == "RightButton" then
                 ShowContextMenu(self, def.frameIndex)
             else
+                if blinkingTabs[def.frameIndex] then
+                    blinkingTabs[def.frameIndex] = nil
+                    ns.RefreshChatSubTabs()
+                    ns.RefreshInlineTabs()
+                end
                 SafeSelectDockFrame(def.cf)
             end
         end)
@@ -2455,6 +2465,11 @@ local function CreateChatHeader(parentFrame)
                 if button == "RightButton" then
                     ShowContextMenu(self, def.frameIndex)
                 else
+                    if blinkingTabs[def.frameIndex] then
+                        blinkingTabs[def.frameIndex] = nil
+                        ns.RefreshChatSubTabs()
+                        ns.RefreshInlineTabs()
+                    end
                     SafeSelectDockFrame(def.cf)
                 end
             end)
