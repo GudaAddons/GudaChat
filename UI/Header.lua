@@ -745,6 +745,13 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
         if category and not notif[category] then return end
     end
 
+    -- Don't blink for our own messages
+    local playerName = UnitName("player")
+    if playerName and sender then
+        local senderName = sender:match("^([^%-]+)")
+        if senderName and senderName == playerName then return end
+    end
+
     local selectedIdx = GetSelectedChatFrameIndex()
     local changed = false
 
@@ -830,10 +837,6 @@ hooksecurefunc("FCF_SelectDockFrame", function(cf)
                 break
             end
         end
-    end
-    if cleared then
-        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
-        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
     end
 end)
 
@@ -1180,8 +1183,7 @@ local function RefreshChatSubTabs(header)
             else
                 if blinkingTabs[def.frameIndex] then
                     blinkingTabs[def.frameIndex] = nil
-                    ns.RefreshChatSubTabs()
-                    ns.RefreshInlineTabs()
+                    if self.blinkAG then self.blinkAG:Stop() end
                 end
                 SafeSelectDockFrame(def.cf)
             end
@@ -2467,8 +2469,7 @@ local function CreateChatHeader(parentFrame)
                 else
                     if blinkingTabs[def.frameIndex] then
                         blinkingTabs[def.frameIndex] = nil
-                        ns.RefreshChatSubTabs()
-                        ns.RefreshInlineTabs()
+                        if self.blinkAG then self.blinkAG:Stop() end
                     end
                     SafeSelectDockFrame(def.cf)
                 end
