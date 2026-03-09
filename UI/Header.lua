@@ -7,6 +7,7 @@ local addonName, ns = ...
 local ICON_SIZE = 16
 local HEADER_HEIGHT = 22
 local chatHeader
+local UpdateSubTabsForFrame  -- forward-declared; assigned after subtabs are created
 
 -- Direct frame-switch that avoids FCF_SelectDockFrame entirely.
 -- FCF_SelectDockFrame → FCFDock_UpdateTabs → FCF_CheckShowChatFrame calls
@@ -31,6 +32,7 @@ local function SafeSelectDockFrame(cf)
             cf:Show()
         end
         SELECTED_CHAT_FRAME = cf
+        if UpdateSubTabsForFrame then UpdateSubTabsForFrame(cf) end
     end)
 end
 
@@ -2705,26 +2707,29 @@ local function CreateChatHeader(parentFrame)
         RefreshInlineTabs()
     end
 
-    hooksecurefunc("FCF_SelectDockFrame", function(cf)
+    UpdateSubTabsForFrame = function(cf)
         if combatSubTabs then
             if cf == ChatFrame2 then
                 combatSubTabs:Show()
-                combatSubTabs:SetAlpha(header:GetAlpha())
+                combatSubTabs:SetAlpha(chatHeader and chatHeader:GetAlpha() or 1)
             else
                 combatSubTabs:Hide()
                 SwitchCombatLogFilter("mine")
             end
         end
         if chatSubTabs and GudaChatDB.showTabBar then
-            local isCombat = (cf == ChatFrame2)
-            if isCombat then
+            if cf == ChatFrame2 then
                 chatSubTabs:Hide()
             else
-                RefreshChatSubTabs(header)
+                RefreshChatSubTabs(chatHeader)
                 chatSubTabs:Show()
             end
         end
         RefreshInlineTabs()
+    end
+
+    hooksecurefunc("FCF_SelectDockFrame", function(cf)
+        UpdateSubTabsForFrame(cf)
     end)
 
     -- Refresh chat subtabs when windows are created/removed/docked
