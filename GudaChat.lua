@@ -96,6 +96,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GeneralDockManager then
             ns.KillFrame(GeneralDockManager)
         end
+        if QuickJoinToastButton then
+            ns.KillFrame(QuickJoinToastButton)
+        end
 
         hooksecurefunc("FCF_OpenTemporaryWindow", function(chatType, chatTarget)
             -- Blizzard already created, configured, docked, and selected the frame.
@@ -134,7 +137,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                 for i = NUM_CHAT_WINDOWS, 1, -1 do
                     local cf = _G["ChatFrame" .. i]
                     if cf and cf:IsShown() then
-                        C_Timer.After(0, function() FCF_SelectDockFrame(cf) end)
+                        ns.SafeSelectDockFrame(cf)
                         break
                     end
                 end
@@ -145,7 +148,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if FCF_SetWindowName then
             hooksecurefunc("FCF_SetWindowName", function(chatFrame)
                 if chatFrame then
-                    C_Timer.After(0, function() FCF_SelectDockFrame(chatFrame) end)
+                    ns.SafeSelectDockFrame(chatFrame)
                 end
             end)
         end

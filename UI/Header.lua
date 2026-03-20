@@ -22,19 +22,24 @@ local function SafeSelectDockFrame(cf)
         if dock and dock.DOCKED_CHAT_FRAMES then
             dock.selected = cf
             for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
-                if frame == cf then
-                    frame:Show()
-                else
-                    frame:Hide()
+                -- Skip combat log: Show/Hide on it triggers FrameLocks →
+                -- ClearEventFilters() which is protected and causes taint.
+                if frame ~= ChatFrame2 then
+                    if frame == cf then
+                        frame:Show()
+                    else
+                        frame:Hide()
+                    end
                 end
             end
-        else
+        elseif cf ~= ChatFrame2 then
             cf:Show()
         end
         SELECTED_CHAT_FRAME = cf
         if UpdateSubTabsForFrame then UpdateSubTabsForFrame(cf) end
     end)
 end
+ns.SafeSelectDockFrame = SafeSelectDockFrame
 
 local function GetChatTabName(index)
     -- Prefer server-stored name (persists across reloads, even with hidden tabs)
