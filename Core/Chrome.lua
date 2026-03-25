@@ -96,14 +96,25 @@ local function StripChatChrome(index)
 
     local bg = _G["ChatFrame" .. index .. "Background"]
     if bg then
-        bg:SetAlpha(0)
-        if bg.Hide then
-            bg:Hide()
-            bg:SetScript("OnShow", function(self) self:Hide() end)
+        -- Check if the user previously set a background color (saved server-side)
+        local savedAlpha = select(6, GetChatWindowInfo(index)) or 0
+        if savedAlpha and savedAlpha > 0 then
+            -- User has a saved background → keep it visible
+            bg:SetScript("OnShow", nil)
+            bg:Show()
+            bg:SetAlpha(savedAlpha)
+            cf.oldAlpha = savedAlpha
+        else
+            bg:SetAlpha(0)
+            if bg.Hide then
+                bg:Hide()
+                bg:SetScript("OnShow", function(self) self:Hide() end)
+            end
+            cf.oldAlpha = 0
         end
+    else
+        cf.oldAlpha = 0
     end
-    -- Force oldAlpha to 0 so Blizzard's fade system never restores the background
-    cf.oldAlpha = 0
     local resize = _G["ChatFrame" .. index .. "ResizeButton"]
     if resize then ns.KillFrame(resize) end
 

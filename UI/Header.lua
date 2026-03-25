@@ -516,20 +516,43 @@ local function ShowContextMenu(anchor, overrideIndex)
             if FCF_SetWindowColor then
                 FCF_SetWindowColor(chatFrame, nr, ng, nb)
             end
+            local bg = _G[chatFrame:GetName() .. "Background"]
+            if bg then
+                bg:SetScript("OnShow", nil)
+                bg:Show()
+                bg:SetAlpha(chatFrame.oldAlpha or 0.25)
+            end
         end
         info.opacityFunc = function()
             local newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or ColorPickerFrame:GetColorAlpha() or 0)
             if FCF_SetWindowAlpha then
                 FCF_SetWindowAlpha(chatFrame, newAlpha)
             end
+            local bg = _G[chatFrame:GetName() .. "Background"]
+            if bg then
+                bg:SetScript("OnShow", nil)
+                bg:Show()
+                bg:SetAlpha(newAlpha)
+            end
         end
         info.cancelFunc = function(prev)
             if FCF_SetWindowColor then
                 FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
             end
+            local prevAlpha = prev.opacity and (1 - prev.opacity) or prev.a or 0
             if FCF_SetWindowAlpha then
-                local alpha = prev.opacity and (1 - prev.opacity) or prev.a or 0
-                FCF_SetWindowAlpha(chatFrame, alpha)
+                FCF_SetWindowAlpha(chatFrame, prevAlpha)
+            end
+            local bg = _G[chatFrame:GetName() .. "Background"]
+            if bg then
+                if prevAlpha <= 0 then
+                    bg:Hide()
+                    bg:SetScript("OnShow", function(self) self:Hide() end)
+                else
+                    bg:SetScript("OnShow", nil)
+                    bg:Show()
+                    bg:SetAlpha(prevAlpha)
+                end
             end
         end
 
