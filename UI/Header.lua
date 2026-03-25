@@ -24,9 +24,11 @@ local function SafeSelectDockFrame(cf)
         if dock and dock.DOCKED_CHAT_FRAMES then
             dock.selected = cf
             for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
-                -- Skip combat log: Show/Hide on it triggers FrameLocks →
+                -- On retail 12.x+, Show/Hide on ChatFrame2 triggers FrameLocks →
                 -- ClearEventFilters() which is protected and causes taint.
-                if frame ~= ChatFrame2 then
+                -- On Classic/Anniversary this is safe.
+                local skipShowHide = ns.IS_RETAIL and frame == ChatFrame2
+                if not skipShowHide then
                     if frame == cf then
                         frame:Show()
                     else
@@ -34,7 +36,7 @@ local function SafeSelectDockFrame(cf)
                     end
                 end
             end
-        elseif cf ~= ChatFrame2 then
+        else
             cf:Show()
         end
         SELECTED_CHAT_FRAME = cf
@@ -602,17 +604,32 @@ local function SwitchCombatLogFilter(key)
     local filters = Blizzard_CombatLog_Filters.filters
     if not filters then return end
 
-    -- Use direct index: on TBC Anniversary there are typically 2 filters
-    -- Filter 1 = My Actions (source = player), Filter 2 = What Happened to Me (dest = player)
-    -- Try both orderings by checking filter count
-    local total = #filters
-    local idx
+    -- Search by name first (handles any filter order across WoW versions)
+    local targetName
     if key == "mine" then
-        idx = 1
+        targetName = QUICKBUTTON_NAME_SELF    -- "My Actions"
     elseif key == "tome" then
-        -- "What happened to me?" is the last filter before Kills (if present)
-        -- On 2-filter setups it's index 2; on 4-filter setups it's index 3
-        if total >= 4 then idx = 3 else idx = total end
+        targetName = QUICKBUTTON_NAME_ME      -- "What happened to me?"
+    end
+
+    local idx
+    if targetName then
+        for i, filter in ipairs(filters) do
+            if filter.name == targetName then
+                idx = i
+                break
+            end
+        end
+    end
+
+    -- Fallback to index-based lookup if name search fails
+    if not idx then
+        local total = #filters
+        if key == "mine" then
+            idx = 1
+        elseif key == "tome" then
+            if total >= 4 then idx = 3 else idx = total end
+        end
     end
 
     if not idx or not filters[idx] then return end
@@ -695,6 +712,13 @@ local function CreateCombatSubTabs(header)
     end
 
     combatSubTabs = bar
+
+    -- Apply the default filter so combat log shows messages on login
+    SwitchCombatLogFilter("mine")
+    if not Blizzard_CombatLog_Filters then
+        C_Timer.After(1, function() SwitchCombatLogFilter(combatLogFilter) end)
+    end
+
     return bar
 end
 
@@ -2021,31 +2045,6 @@ local function CreateChatHeader(parentFrame)
         UpdateIconHighlights(cf)
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-    end)
-
-    -- Prevent Blizzard from switching away from the user's tab when the
-    -- current tab already receives the same message groups as the target.
-    -- GudaChat never calls FCF_SelectDockFrame (it uses SafeSelectDockFrame),
-    -- so any call here comes from Blizzard's chat system (e.g. typing /party).
-    hooksecurefunc("FCF_SelectDockFrame", function(cf)
-        if not cf or not userSelectedFrame or cf == userSelectedFrame then return end
-        if cf == ChatFrame2 or userSelectedFrame == ChatFrame2 then return end
-        -- Build a set of message groups on the target frame
-        local targetIdx = cf:GetID()
-        local targetMsgs = { GetChatWindowMessages(targetIdx) }
-        if #targetMsgs == 0 then return end
-        -- Check if the user's frame has ANY of the target's groups
-        local userIdx = userSelectedFrame:GetID()
-        local userMsgs = { GetChatWindowMessages(userIdx) }
-        local userSet = {}
-        for _, g in ipairs(userMsgs) do userSet[g] = true end
-        for _, g in ipairs(targetMsgs) do
-            if userSet[g] then
-                -- User's frame already receives this group → switch back
-                SafeSelectDockFrame(userSelectedFrame)
-                return
-            end
-        end
     end)
 
     -------------------------------------------------------------------
