@@ -15,8 +15,10 @@ local UpdateSubTabsForFrame  -- forward-declared; assigned after subtabs are cre
 -- ClearEventFilters() in Blizzard_CombatLogProcessor and causes
 -- ADDON_ACTION_FORBIDDEN on retail 12.x+.
 -- We manage dock state + frame visibility ourselves instead.
+local userSelectedFrame  -- tracks the frame the user (or GudaChat) intentionally selected
 local function SafeSelectDockFrame(cf)
     if not cf then return end
+    userSelectedFrame = cf
     C_Timer.After(0, function()
         local dock = GENERAL_CHAT_DOCK
         if dock and dock.DOCKED_CHAT_FRAMES then
@@ -524,7 +526,8 @@ local function ShowContextMenu(anchor, overrideIndex)
                 FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
             end
             if FCF_SetWindowAlpha then
-                FCF_SetWindowAlpha(chatFrame, 1 - prev.opacity)
+                local alpha = prev.opacity and (1 - prev.opacity) or prev.a or 0
+                FCF_SetWindowAlpha(chatFrame, alpha)
             end
         end
 
@@ -1988,6 +1991,7 @@ local function CreateChatHeader(parentFrame)
     end)
 
     -- Set initial highlight (General is selected by default on load)
+    userSelectedFrame = userSelectedFrame or ChatFrame1
     UpdateIconHighlights(ChatFrame1)
 
     -- Update label and icon highlights when tabs switch
@@ -2017,6 +2021,31 @@ local function CreateChatHeader(parentFrame)
         UpdateIconHighlights(cf)
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
+    end)
+
+    -- Prevent Blizzard from switching away from the user's tab when the
+    -- current tab already receives the same message groups as the target.
+    -- GudaChat never calls FCF_SelectDockFrame (it uses SafeSelectDockFrame),
+    -- so any call here comes from Blizzard's chat system (e.g. typing /party).
+    hooksecurefunc("FCF_SelectDockFrame", function(cf)
+        if not cf or not userSelectedFrame or cf == userSelectedFrame then return end
+        if cf == ChatFrame2 or userSelectedFrame == ChatFrame2 then return end
+        -- Build a set of message groups on the target frame
+        local targetIdx = cf:GetID()
+        local targetMsgs = { GetChatWindowMessages(targetIdx) }
+        if #targetMsgs == 0 then return end
+        -- Check if the user's frame has ANY of the target's groups
+        local userIdx = userSelectedFrame:GetID()
+        local userMsgs = { GetChatWindowMessages(userIdx) }
+        local userSet = {}
+        for _, g in ipairs(userMsgs) do userSet[g] = true end
+        for _, g in ipairs(targetMsgs) do
+            if userSet[g] then
+                -- User's frame already receives this group → switch back
+                SafeSelectDockFrame(userSelectedFrame)
+                return
+            end
+        end
     end)
 
     -------------------------------------------------------------------
@@ -2791,6 +2820,15 @@ local function CreateChatHeader(parentFrame)
                 return
             end
             return
+        end
+
+        -- If the user's frame already receives this message group, stay put
+        if userSelectedFrame and userSelectedFrame ~= ChatFrame2 then
+            local userIdx = userSelectedFrame:GetID()
+            local userMsgs = { GetChatWindowMessages(userIdx) }
+            for _, grp in ipairs(userMsgs) do
+                if grp == group then return end
+            end
         end
 
         -- For other chat types, find a non-General window that has this message group
