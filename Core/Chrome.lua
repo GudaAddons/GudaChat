@@ -96,10 +96,10 @@ local function StripChatChrome(index)
 
     local bg = _G["ChatFrame" .. index .. "Background"]
     if bg then
-        -- Check if the user previously set a background color (saved server-side)
-        local savedAlpha = select(6, GetChatWindowInfo(index)) or 0
+        -- When global background is enabled, always start hidden (ApplyGlobalBackground handles it)
+        local useGlobal = GudaChatDB and GudaChatDB.useGlobalBg
+        local savedAlpha = not useGlobal and (select(6, GetChatWindowInfo(index)) or 0) or 0
         if savedAlpha and savedAlpha > 0 then
-            -- User has a saved background → keep it visible
             bg:SetScript("OnShow", nil)
             bg:Show()
             bg:SetAlpha(savedAlpha)
@@ -200,3 +200,31 @@ local function RehideAllTabs()
     end)
 end
 ns.RehideAllTabs = RehideAllTabs
+
+---------------------------------------------------------------------------
+-- Global background color/opacity
+---------------------------------------------------------------------------
+
+local function ApplyGlobalBackground()
+    local alpha = GudaChatDB and GudaChatDB.globalBgAlpha or 0
+    local color = GudaChatDB and GudaChatDB.globalBgColor or { r = 0.08, g = 0.08, b = 0.08 }
+    ns.ForEachChatWindow(function(cf, i)
+        local bg = _G["ChatFrame" .. i .. "Background"]
+        if not bg then return end
+        if alpha > 0 then
+            bg:SetScript("OnShow", nil)
+            bg:Show()
+            bg:SetAlpha(alpha)
+            if FCF_SetWindowColor then
+                FCF_SetWindowColor(cf, color.r, color.g, color.b)
+            end
+            cf.oldAlpha = alpha
+        else
+            bg:SetAlpha(0)
+            bg:Hide()
+            bg:SetScript("OnShow", function(self) self:Hide() end)
+            cf.oldAlpha = 0
+        end
+    end)
+end
+ns.ApplyGlobalBackground = ApplyGlobalBackground

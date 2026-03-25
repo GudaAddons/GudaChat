@@ -56,6 +56,15 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.transparentInput == nil then
             GudaChatDB.transparentInput = false
         end
+        if GudaChatDB.useGlobalBg == nil then
+            GudaChatDB.useGlobalBg = true
+        end
+        if GudaChatDB.globalBgAlpha == nil then
+            GudaChatDB.globalBgAlpha = 0
+        end
+        if GudaChatDB.globalBgColor == nil then
+            GudaChatDB.globalBgColor = { r = 0.08, g = 0.08, b = 0.08 }
+        end
         -- chatFont: nil means default (Fonts\FRIZQT__.TTF)
         if GudaChatDB.showTabBar == nil then
             GudaChatDB.showTabBar = true
@@ -89,6 +98,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         ns.ForEachChatWindow(function(_, i) ns.StripChatChrome(i) end)
+        if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+            ns.ApplyGlobalBackground()
+        end
 
         if GeneralDockManagerOverflowButton then
             ns.KillFrame(GeneralDockManagerOverflowButton)

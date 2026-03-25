@@ -244,7 +244,7 @@ local settingsFrame
 
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(400, 460)
+    f:SetSize(400, 520)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -462,6 +462,114 @@ local function CreateSettingsFrame()
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
             if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         end))
+
+        Add(CreateSeparator(tabPanels[1], "Background"))
+
+        do
+            local bgRow = CreateFrame("Frame", nil, tabPanels[1])
+            bgRow:SetHeight(36)
+
+            local bgAlphaPercent = math.floor((GudaChatDB.globalBgAlpha or 0) * 100)
+            local bgSlider = CreateSlider(bgRow, "Opacity", 0, 100, 5, bgAlphaPercent, function(value)
+                GudaChatDB.globalBgAlpha = value / 100
+                if GudaChatDB.useGlobalBg then
+                    ns.ApplyGlobalBackground()
+                end
+            end)
+            bgSlider:SetParent(bgRow)
+            bgSlider:ClearAllPoints()
+            bgSlider:SetPoint("TOPLEFT", bgRow, "TOPLEFT", 0, 0)
+            bgSlider:SetPoint("RIGHT", bgRow, "RIGHT", -34, 0)
+
+            local bgColor = GudaChatDB.globalBgColor or { r = 0.08, g = 0.08, b = 0.08 }
+            local swatch = CreateFrame("Button", nil, bgRow)
+            swatch:SetSize(20, 20)
+            swatch:SetPoint("RIGHT", bgRow, "RIGHT", 0, 0)
+
+            local swatchTex = swatch:CreateTexture(nil, "ARTWORK")
+            swatchTex:SetAllPoints()
+            swatchTex:SetTexture("Interface\\Buttons\\WHITE8x8")
+            swatchTex:SetVertexColor(bgColor.r, bgColor.g, bgColor.b, math.max(GudaChatDB.globalBgAlpha or 0, 0.3))
+
+            local swatchBorder = swatch:CreateTexture(nil, "OVERLAY")
+            swatchBorder:SetSize(22, 22)
+            swatchBorder:SetPoint("CENTER", swatch, "CENTER")
+            swatchBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
+            swatchBorder:SetVertexColor(0.5, 0.5, 0.5, 0.8)
+            swatchBorder:SetDrawLayer("ARTWORK", -1)
+
+            swatch:SetScript("OnClick", function()
+                local info = {}
+                info.r = GudaChatDB.globalBgColor.r
+                info.g = GudaChatDB.globalBgColor.g
+                info.b = GudaChatDB.globalBgColor.b
+                info.hasOpacity = false
+                info.swatchFunc = function()
+                    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                    GudaChatDB.globalBgColor = { r = nr, g = ng, b = nb }
+                    swatchTex:SetVertexColor(nr, ng, nb, math.max(GudaChatDB.globalBgAlpha, 0.3))
+                    if GudaChatDB.useGlobalBg then
+                        ns.ApplyGlobalBackground()
+                    end
+                end
+                info.cancelFunc = function(prev)
+                    GudaChatDB.globalBgColor = { r = prev.r, g = prev.g, b = prev.b }
+                    swatchTex:SetVertexColor(prev.r, prev.g, prev.b, math.max(GudaChatDB.globalBgAlpha, 0.3))
+                    if GudaChatDB.useGlobalBg then
+                        ns.ApplyGlobalBackground()
+                    end
+                end
+                if ColorPickerFrame.SetupColorPickerAndShow then
+                    ColorPickerFrame:SetupColorPickerAndShow(info)
+                else
+                    ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
+                    ColorPickerFrame.hasOpacity = false
+                    ColorPickerFrame.func = info.swatchFunc
+                    ColorPickerFrame.cancelFunc = info.cancelFunc
+                    ColorPickerFrame.previousValues = { r = info.r, g = info.g, b = info.b }
+                    ColorPickerFrame:Hide()
+                    ColorPickerFrame:Show()
+                end
+            end)
+
+            local function UpdateBgControlsVisibility(enabled)
+                if enabled then
+                    bgSlider:Show()
+                    swatch:Show()
+                else
+                    bgSlider:Hide()
+                    swatch:Hide()
+                end
+            end
+
+            Add(CreateCheckbox(tabPanels[1], "Override per-tab backgrounds", GudaChatDB.useGlobalBg, function(checked)
+                GudaChatDB.useGlobalBg = checked
+                UpdateBgControlsVisibility(checked)
+                if checked then
+                    ns.ApplyGlobalBackground()
+                else
+                    ns.ForEachChatWindow(function(cf, i)
+                        local bg = _G["ChatFrame" .. i .. "Background"]
+                        if not bg then return end
+                        local savedAlpha = select(6, GetChatWindowInfo(i)) or 0
+                        if savedAlpha > 0 then
+                            bg:SetScript("OnShow", nil)
+                            bg:Show()
+                            bg:SetAlpha(savedAlpha)
+                            cf.oldAlpha = savedAlpha
+                        else
+                            bg:SetAlpha(0)
+                            bg:Hide()
+                            bg:SetScript("OnShow", function(self) self:Hide() end)
+                            cf.oldAlpha = 0
+                        end
+                    end)
+                end
+            end))
+            Add(bgRow)
+
+            UpdateBgControlsVisibility(GudaChatDB.useGlobalBg)
+        end
     end
 
     -------------------------------------------------------------------
