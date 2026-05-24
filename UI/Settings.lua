@@ -594,6 +594,17 @@ local function CreateSettingsFrame()
             GudaChatDB.copyLinks = checked
         end))
 
+        Add(CreateSeparator(tabPanels[2], "Name Highlight"))
+
+        AddPair(
+            CreateCheckbox(tabPanels[2], "Highlight my name", GudaChatDB.highlightName, function(checked)
+                GudaChatDB.highlightName = checked
+            end),
+            CreateCheckbox(tabPanels[2], "Sound on mention", GudaChatDB.highlightSound, function(checked)
+                GudaChatDB.highlightSound = checked
+            end)
+        )
+
         Add(CreateSeparator(tabPanels[2], "Emojis"))
 
         Add(CreateCheckbox(tabPanels[2], "Enable emojis", GudaChatDB.emojis, function(checked)

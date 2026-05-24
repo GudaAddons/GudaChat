@@ -217,3 +217,86 @@ function ns.EnableCopyLinks()
     end
     ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", FilterAddURLLinks)
 end
+
+---------------------------------------------------------------------------
+-- Highlight own name + sound on mention
+---------------------------------------------------------------------------
+
+local NAME_HIGHLIGHT_CHANNELS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER",
+    "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
+    "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_CHANNEL",
+}
+
+local namePattern, classHex
+local lastMentionSound = 0
+local MENTION_SOUND_THROTTLE = 0.3
+
+local function BuildNameHighlight()
+    local name = UnitName("player")
+    if not name then return end
+    -- Match the name as a whole word, case-insensitively: "Vati" -> "[Vv][Aa][Tt][Ii]".
+    local body = name:gsub("%a", function(c) return "[" .. c:upper() .. c:lower() .. "]" end)
+    namePattern = "%f[%w]" .. body .. "%f[%W]"
+    local _, class = UnitClass("player")
+    local c = class and RAID_CLASS_COLORS[class]
+    classHex = c and string.format("|cff%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) or "|cffffd200"
+end
+
+-- Public channels (Trade / General / LookingForGroup) are skipped to avoid spam.
+local function IsPublicChannel(channelName)
+    if not channelName then return false end
+    return channelName:find("Trade") ~= nil
+        or channelName:find("General") ~= nil
+        or channelName:find("LookingForGroup") ~= nil
+end
+
+local function FilterHighlightName(self, event, msg, sender, ...)
+    if not GudaChatDB or not GudaChatDB.highlightName then return false end
+    if not namePattern then BuildNameHighlight() end
+    if not namePattern or not msg then return false end
+    if event == "CHAT_MSG_CHANNEL" and IsPublicChannel(select(7, ...)) then return false end
+
+    -- Color only plain text, never inside existing hyperlinks/[brackets].
+    local parts = (ns.SplitProtected and ns.SplitProtected(msg)) or { { text = msg, free = true } }
+    local changed = false
+    for _, part in ipairs(parts) do
+        if part.free then
+            local newText, n = part.text:gsub(namePattern, function(m)
+                return classHex .. m .. "|r"
+            end)
+            if n > 0 then
+                part.text = newText
+                changed = true
+            end
+        end
+    end
+    if not changed then return false end
+
+    -- Sound: skip our own messages; throttle (also dedupes multi-frame display).
+    local senderShort = sender and sender:match("^([^%-]+)")
+    local isSelf = senderShort and senderShort == UnitName("player")
+    if not isSelf and GudaChatDB.highlightSound and SOUNDKIT and SOUNDKIT.TELL_MESSAGE then
+        local now = GetTime()
+        if now - lastMentionSound > MENTION_SOUND_THROTTLE then
+            lastMentionSound = now
+            PlaySound(SOUNDKIT.TELL_MESSAGE)
+        end
+    end
+
+    local result = ""
+    for _, part in ipairs(parts) do
+        result = result .. part.text
+    end
+    return false, result, sender, ...
+end
+
+function ns.EnableNameHighlight()
+    BuildNameHighlight()
+    for _, channel in ipairs(NAME_HIGHLIGHT_CHANNELS) do
+        ChatFrame_AddMessageEventFilter(channel, FilterHighlightName)
+    end
+end

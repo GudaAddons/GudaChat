@@ -78,6 +78,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.copyLinks == nil then
             GudaChatDB.copyLinks = true
         end
+        if GudaChatDB.highlightName == nil then
+            GudaChatDB.highlightName = true
+        end
+        if GudaChatDB.highlightSound == nil then
+            GudaChatDB.highlightSound = true
+        end
         if GudaChatDB.locked == nil then
             GudaChatDB.locked = false
         end
@@ -306,6 +312,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.EnableLevelDisplay()
         ns.EnableCopyLinks()
         ns.EnableEmojis()
+        ns.EnableNameHighlight()
         ns.SetupLinkHook()
         ns.InitHistorySeq()
         ns.RegisterHistoryEvents()
