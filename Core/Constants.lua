@@ -208,5 +208,12 @@ ns.CHAT_MSG_CHANNELS = {
 
 ns.DEFAULT_EMOJI_SIZE = 12
 
--- Detect Retail client (build >= 110000)
+-- Detect Retail client (interface >= 110000)
 ns.IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 110000
+
+-- Detect the modern (Dragonflight 10.0+) client engine. True on retail AND on the
+-- Cataclysm/MoP-era "Classic" clients, which share retail's chat engine but report low
+-- interface numbers (so IS_RETAIL alone misses them). Feature-detect via the Settings API,
+-- which shipped in 10.0 alongside the modern chat frame and is absent on the 1.15/legacy
+-- engine; this self-corrects for whichever engine the TBC/Anniversary client happens to run.
+ns.IS_MODERN = ns.IS_RETAIL or (Settings ~= nil) or false

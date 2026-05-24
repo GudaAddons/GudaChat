@@ -9,7 +9,7 @@ local function CreateScrollbar(chatFrame)
     local slider = CreateFrame("Slider", nil, chatFrame, "BackdropTemplate")
     chatFrame.gudaScrollbar = slider
     slider:SetWidth(6)
-    local scrollOffR = ns.IS_RETAIL and 12 or 0
+    local scrollOffR = ns.IS_MODERN and 12 or 0
     slider:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", -2 + scrollOffR, -2)
     slider:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2 + scrollOffR, 2)
     slider:SetOrientation("VERTICAL")

@@ -142,12 +142,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ns.ApplyGlobalBackground()
         end
 
-        -- On retail, Show/Hide on ChatFrame2 triggers protected ClearEventFilters()
+        -- On modern engines, Show/Hide on ChatFrame2 triggers protected ClearEventFilters()
         -- which causes taint during combat. We Show() it once here (safe, not in combat)
         -- and keep it always "shown" — SafeSelectDockFrame uses SetAlpha(0/1) to toggle.
-        if ns.IS_RETAIL and ChatFrame2 then
+        if ns.IS_MODERN and ChatFrame2 then
             ChatFrame2:Show()
-            ChatFrame2:SetAlpha(0)
+            ns.SetCombatLogVisible(false)
         end
 
         if GeneralDockManagerOverflowButton then
@@ -326,14 +326,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if FCF_DockUpdate then
             hooksecurefunc("FCF_DockUpdate", function()
                 ns.ApplyChatMargins()
-                -- On retail, keep ChatFrame2 always "shown" (alpha controls visibility)
+                -- On modern engines, keep ChatFrame2 always "shown" (alpha controls visibility)
                 -- Blizzard dock updates can re-hide it.
-                if ns.IS_RETAIL and ChatFrame2 and not ChatFrame2:IsShown() then
+                if ns.IS_MODERN and ChatFrame2 and not ChatFrame2:IsShown() then
                     ChatFrame2:Show()
                     local sel = SELECTED_CHAT_FRAME or (GENERAL_CHAT_DOCK and GENERAL_CHAT_DOCK.selected)
-                    if sel ~= ChatFrame2 then
-                        ChatFrame2:SetAlpha(0)
-                    end
+                    ns.SetCombatLogVisible(sel == ChatFrame2)
                 end
             end)
         end

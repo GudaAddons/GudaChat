@@ -16,6 +16,18 @@ local UpdateSubTabsForFrame  -- forward-declared; assigned after subtabs are cre
 -- ADDON_ACTION_FORBIDDEN on retail 12.x+.
 -- We manage dock state + frame visibility ourselves instead.
 local userSelectedFrame  -- tracks the frame the user (or GudaChat) intentionally selected
+
+-- ChatFrame2 is kept Show()n on modern clients (alpha-toggled) to avoid combat taint.
+-- While transparent it overlaps the visible frame, so it must not intercept mouse input
+-- (a SetAlpha(0) frame still receives mouse wheel/clicks) — tie its mouse to its visibility.
+local function SetCombatLogVisible(visible)
+    if not ChatFrame2 then return end
+    ChatFrame2:SetAlpha(visible and 1 or 0)
+    ChatFrame2:EnableMouseWheel(visible)
+    ChatFrame2:EnableMouse(visible)
+end
+ns.SetCombatLogVisible = SetCombatLogVisible
+
 local function SafeSelectDockFrame(cf)
     if not cf then return end
     userSelectedFrame = cf
@@ -25,16 +37,16 @@ local function SafeSelectDockFrame(cf)
             dock.selected = cf
             for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
                 if frame == cf then
-                    -- On retail, use SetAlpha for ChatFrame2 to avoid taint
+                    -- On modern engines, use SetAlpha for ChatFrame2 to avoid taint
                     -- from ClearEventFilters() triggered by Show/Hide.
-                    if ns.IS_RETAIL and frame == ChatFrame2 then
-                        frame:SetAlpha(1)
+                    if ns.IS_MODERN and frame == ChatFrame2 then
+                        SetCombatLogVisible(true)
                     else
                         frame:Show()
                     end
                 else
-                    if ns.IS_RETAIL and frame == ChatFrame2 then
-                        frame:SetAlpha(0)
+                    if ns.IS_MODERN and frame == ChatFrame2 then
+                        SetCombatLogVisible(false)
                     else
                         frame:Hide()
                     end
@@ -704,26 +716,19 @@ local function SwitchCombatLogFilter(key)
 
     if not idx or not filters[idx] then return end
 
-    Blizzard_CombatLog_CurrentSettings = filters[idx]
-    Blizzard_CombatLog_Filters.currentFilter = idx
-
-    -- Try Blizzard's native apply/refilter API
-    if Blizzard_CombatLog_ApplyFilters then
+    -- Switch via Blizzard's supported API. CombatLog_SwitchToFilter (present on modern
+    -- and Classic clients) updates the CombatLogProcessor's filterSettings correctly and
+    -- refreshes the window. Assigning combatLogProcessor.filterSettings ourselves corrupts
+    -- the processor's state and makes Blizzard_CombatLogProcessor throw on every combat event.
+    if CombatLog_SwitchToFilter then
+        CombatLog_SwitchToFilter(idx)
+    elseif Blizzard_CombatLog_ApplyFilters then
+        -- Legacy fallback (older clients without CombatLog_SwitchToFilter)
+        Blizzard_CombatLog_CurrentSettings = filters[idx]
+        Blizzard_CombatLog_Filters.currentFilter = idx
         Blizzard_CombatLog_ApplyFilters(filters[idx])
-    end
-    if Blizzard_CombatLog_Refilter then
-        Blizzard_CombatLog_Refilter()
-    end
-
-    -- If native API is missing, update the CombatLogProcessor directly
-    if not Blizzard_CombatLog_ApplyFilters then
-        -- The processor stores filterSettings internally; update it
-        if ChatFrame2 and ChatFrame2.combatLogProcessor then
-            ChatFrame2.combatLogProcessor.filterSettings = filters[idx]
-        end
-        -- Refresh: clear and let new events populate with the correct filter
-        if ChatFrame2 then
-            ChatFrame2:Clear()
+        if Blizzard_CombatLog_Refilter then
+            Blizzard_CombatLog_Refilter()
         end
     end
 end
@@ -1714,7 +1719,7 @@ end
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
-    local extraR = ns.IS_RETAIL and 13 or 0
+    local extraR = ns.IS_MODERN and 13 or 0
     header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -4, 0)
     header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 4 + extraR, 0)
     header:SetFrameStrata("MEDIUM")
@@ -1989,7 +1994,7 @@ local function CreateChatHeader(parentFrame)
 
     combatBtn:SetScript("OnClick", function()
         if ChatFrame2 then
-            -- Use userSelectedFrame instead of IsShown() because on retail
+            -- Use userSelectedFrame instead of IsShown() because on modern engines
             -- we use SetAlpha(0/1) which doesn't change IsShown() state.
             local target = (userSelectedFrame == ChatFrame2) and ChatFrame1 or ChatFrame2
             SafeSelectDockFrame(target)
