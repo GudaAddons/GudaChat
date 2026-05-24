@@ -10,6 +10,46 @@ SlashCmdList["GUDACHAT"] = function(msg)
     msg = strtrim(msg):lower()
     if msg == "" or msg == "settings" or msg == "options" then
         ns.ToggleSettings()
+    elseif msg == "debugfilters" then
+        local cf = DEFAULT_CHAT_FRAME
+        cf:AddMessage("|cff00ccffGudaChat|r combat log filter debug:")
+        cf:AddMessage("QUICKBUTTON_NAME_SELF = " .. tostring(QUICKBUTTON_NAME_SELF))
+        cf:AddMessage("QUICKBUTTON_NAME_ME = " .. tostring(QUICKBUTTON_NAME_ME))
+        cf:AddMessage("COMBATLOG_FILTER_ME = " .. tostring(COMBATLOG_FILTER_ME))
+        cf:AddMessage("Blizzard_CombatLog_ApplyFilters = " .. tostring(Blizzard_CombatLog_ApplyFilters))
+        cf:AddMessage("Blizzard_CombatLog_Refilter = " .. tostring(Blizzard_CombatLog_Refilter))
+        cf:AddMessage("CombatLog_SwitchToFilter = " .. tostring(CombatLog_SwitchToFilter))
+        cf:AddMessage("ChatFrame2.combatLogProcessor = " .. tostring(ChatFrame2 and ChatFrame2.combatLogProcessor))
+        -- Scan ChatFrame2 for processor-like keys
+        if ChatFrame2 then
+            local cf2keys = {}
+            for k, v in pairs(ChatFrame2) do
+                if type(k) == "string" and (k:lower():find("combat") or k:lower():find("processor") or k:lower():find("filter")) then
+                    tinsert(cf2keys, k .. "=" .. type(v))
+                end
+            end
+            cf:AddMessage("ChatFrame2 combat keys: " .. (#cf2keys > 0 and table.concat(cf2keys, ", ") or "none"))
+        end
+        -- Scan globals for CombatLog functions
+        local found = {}
+        for k, v in pairs(_G) do
+            if type(k) == "string" and k:find("CombatLog") and (type(v) == "function" or type(v) == "table") then
+                tinsert(found, k .. "=" .. type(v))
+            end
+        end
+        table.sort(found)
+        cf:AddMessage("CombatLog globals: " .. (#found > 0 and table.concat(found, ", ") or "none"))
+        cf:AddMessage("Blizzard_CombatLog_CurrentSettings = " .. tostring(Blizzard_CombatLog_CurrentSettings))
+        cf:AddMessage("currentFilter = " .. tostring(Blizzard_CombatLog_Filters and Blizzard_CombatLog_Filters.currentFilter))
+        if Blizzard_CombatLog_Filters and Blizzard_CombatLog_Filters.filters then
+            local filters = Blizzard_CombatLog_Filters.filters
+            cf:AddMessage("Total filters: " .. #filters)
+            for i, f in ipairs(filters) do
+                cf:AddMessage("  [" .. i .. "] name=" .. tostring(f.name) .. " | quickButtonName=" .. tostring(f.quickButtonName))
+            end
+        else
+            cf:AddMessage("Blizzard_CombatLog_Filters not available")
+        end
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r commands:")
         DEFAULT_CHAT_FRAME:AddMessage("  |cffffd200/gc|r — open settings")
@@ -100,6 +140,14 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.ForEachChatWindow(function(_, i) ns.StripChatChrome(i) end)
         if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
             ns.ApplyGlobalBackground()
+        end
+
+        -- On retail, Show/Hide on ChatFrame2 triggers protected ClearEventFilters()
+        -- which causes taint during combat. We Show() it once here (safe, not in combat)
+        -- and keep it always "shown" — SafeSelectDockFrame uses SetAlpha(0/1) to toggle.
+        if ns.IS_RETAIL and ChatFrame2 then
+            ChatFrame2:Show()
+            ChatFrame2:SetAlpha(0)
         end
 
         if GeneralDockManagerOverflowButton then
@@ -276,7 +324,18 @@ loader:SetScript("OnEvent", function(self, event, arg1)
 
         -- Reapply clamp insets after Blizzard dock updates reset them
         if FCF_DockUpdate then
-            hooksecurefunc("FCF_DockUpdate", ns.ApplyChatMargins)
+            hooksecurefunc("FCF_DockUpdate", function()
+                ns.ApplyChatMargins()
+                -- On retail, keep ChatFrame2 always "shown" (alpha controls visibility)
+                -- Blizzard dock updates can re-hide it.
+                if ns.IS_RETAIL and ChatFrame2 and not ChatFrame2:IsShown() then
+                    ChatFrame2:Show()
+                    local sel = SELECTED_CHAT_FRAME or (GENERAL_CHAT_DOCK and GENERAL_CHAT_DOCK.selected)
+                    if sel ~= ChatFrame2 then
+                        ChatFrame2:SetAlpha(0)
+                    end
+                end
+            end)
         end
 
         ns.ReplayHistory()

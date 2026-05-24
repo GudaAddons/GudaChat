@@ -24,13 +24,17 @@ local function SafeSelectDockFrame(cf)
         if dock and dock.DOCKED_CHAT_FRAMES then
             dock.selected = cf
             for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
-                -- On retail 12.x+, Show/Hide on ChatFrame2 triggers FrameLocks →
-                -- ClearEventFilters() which is protected and causes taint.
-                -- On Classic/Anniversary this is safe.
-                local skipShowHide = ns.IS_RETAIL and frame == ChatFrame2
-                if not skipShowHide then
-                    if frame == cf then
+                if frame == cf then
+                    -- On retail, use SetAlpha for ChatFrame2 to avoid taint
+                    -- from ClearEventFilters() triggered by Show/Hide.
+                    if ns.IS_RETAIL and frame == ChatFrame2 then
+                        frame:SetAlpha(1)
+                    else
                         frame:Show()
+                    end
+                else
+                    if ns.IS_RETAIL and frame == ChatFrame2 then
+                        frame:SetAlpha(0)
                     else
                         frame:Hide()
                     end
@@ -627,15 +631,15 @@ local function SwitchCombatLogFilter(key)
     local filters = Blizzard_CombatLog_Filters.filters
     if not filters then return end
 
-    -- Search by name first (handles any filter order across WoW versions)
+    local idx
+
+    -- 1) Search by Blizzard quick-button name globals
     local targetName
     if key == "mine" then
-        targetName = QUICKBUTTON_NAME_SELF    -- "My Actions"
+        targetName = type(QUICKBUTTON_NAME_SELF) == "string" and QUICKBUTTON_NAME_SELF or nil
     elseif key == "tome" then
-        targetName = QUICKBUTTON_NAME_ME      -- "What happened to me?"
+        targetName = type(QUICKBUTTON_NAME_ME) == "string" and QUICKBUTTON_NAME_ME or nil
     end
-
-    local idx
     if targetName then
         for i, filter in ipairs(filters) do
             if filter.name == targetName then
@@ -645,7 +649,50 @@ local function SwitchCombatLogFilter(key)
         end
     end
 
-    -- Fallback to index-based lookup if name search fails
+    -- 2) Search by hasQuickButton text (retail uses this)
+    if not idx then
+        for i, filter in ipairs(filters) do
+            if filter.hasQuickButton then
+                local qbName = filter.quickButtonName or filter.name or ""
+                if key == "mine" and (qbName == "Self" or qbName:find("My Actions") or qbName:find("Self")) then
+                    idx = i
+                    break
+                elseif key == "tome" and (qbName == "Me" or qbName:find("What [Hh]appened") or qbName:find("Me")) then
+                    idx = i
+                    break
+                end
+            end
+        end
+    end
+
+    -- 3) Search by filter settings (sourceFlags/destFlags with COMBATLOG_FILTER_ME)
+    if not idx and COMBATLOG_FILTER_ME then
+        for i, filter in ipairs(filters) do
+            local settings = filter.settings or filter
+            if key == "mine" and settings.sourceFlags then
+                local flags = settings.sourceFlags
+                if type(flags) == "table" then flags = flags[1] or 0 end
+                if type(flags) == "number" and bit.band(flags, COMBATLOG_FILTER_ME) > 0 then
+                    -- Check it's not also a dest filter (that would be "What happened to me")
+                    local dFlags = settings.destFlags
+                    if type(dFlags) == "table" then dFlags = dFlags[1] or 0 end
+                    if not dFlags or dFlags == 0 or type(dFlags) ~= "number" then
+                        idx = i
+                        break
+                    end
+                end
+            elseif key == "tome" and settings.destFlags then
+                local flags = settings.destFlags
+                if type(flags) == "table" then flags = flags[1] or 0 end
+                if type(flags) == "number" and bit.band(flags, COMBATLOG_FILTER_ME) > 0 then
+                    idx = i
+                    break
+                end
+            end
+        end
+    end
+
+    -- 4) Last resort: index-based fallback
     if not idx then
         local total = #filters
         if key == "mine" then
@@ -659,11 +706,25 @@ local function SwitchCombatLogFilter(key)
 
     Blizzard_CombatLog_CurrentSettings = filters[idx]
     Blizzard_CombatLog_Filters.currentFilter = idx
+
+    -- Try Blizzard's native apply/refilter API
     if Blizzard_CombatLog_ApplyFilters then
         Blizzard_CombatLog_ApplyFilters(filters[idx])
     end
     if Blizzard_CombatLog_Refilter then
         Blizzard_CombatLog_Refilter()
+    end
+
+    -- If native API is missing, update the CombatLogProcessor directly
+    if not Blizzard_CombatLog_ApplyFilters then
+        -- The processor stores filterSettings internally; update it
+        if ChatFrame2 and ChatFrame2.combatLogProcessor then
+            ChatFrame2.combatLogProcessor.filterSettings = filters[idx]
+        end
+        -- Refresh: clear and let new events populate with the correct filter
+        if ChatFrame2 then
+            ChatFrame2:Clear()
+        end
     end
 end
 
@@ -1928,9 +1989,9 @@ local function CreateChatHeader(parentFrame)
 
     combatBtn:SetScript("OnClick", function()
         if ChatFrame2 then
-            -- Defer to next frame to avoid tainting ClearEventFilters() in
-            -- Blizzard_CombatLogProcessor (retail 12.x+)
-            local target = ChatFrame2:IsShown() and ChatFrame1 or ChatFrame2
+            -- Use userSelectedFrame instead of IsShown() because on retail
+            -- we use SetAlpha(0/1) which doesn't change IsShown() state.
+            local target = (userSelectedFrame == ChatFrame2) and ChatFrame1 or ChatFrame2
             SafeSelectDockFrame(target)
         end
     end)
