@@ -157,21 +157,38 @@ end
 
 local function FilterAddURLLinks(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.copyLinks then return false end
+    if not msg or msg == "" then return false end
+    -- Skip messages that already contain our link — re-processing would nest the
+    -- hyperlink inside itself, corrupting both the display and the click target.
+    if msg:find("|Hgudachat:url:", 1, true) then return false end
+
+    -- Only linkify plain text, never inside existing hyperlinks / [brackets], using the
+    -- same splitter the emoji filter uses. Prevents matching a URL-like substring inside
+    -- an item link (or a link we just created in this same message).
+    local parts = (ns.SplitProtected and ns.SplitProtected(msg)) or { { text = msg, free = true } }
 
     local changed = false
-    for _, pattern in ipairs(URL_PATTERNS) do
-        local newMsg = msg:gsub(pattern, function(url)
-            changed = true
-            return LinkifyURL(url)
-        end)
-        if changed then
-            msg = newMsg
-            break
+    for _, part in ipairs(parts) do
+        if part.free then
+            for _, pattern in ipairs(URL_PATTERNS) do
+                local newText, n = part.text:gsub(pattern, function(url)
+                    return LinkifyURL(url)
+                end)
+                if n > 0 then
+                    part.text = newText
+                    changed = true
+                    break
+                end
+            end
         end
     end
 
     if changed then
-        return false, msg, ...
+        local result = ""
+        for _, part in ipairs(parts) do
+            result = result .. part.text
+        end
+        return false, result, ...
     end
     return false
 end

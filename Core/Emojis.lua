@@ -188,6 +188,7 @@ local function SplitProtected(msg)
     end
     return parts
 end
+ns.SplitProtected = SplitProtected
 
 local function FilterAddEmojis(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.emojis then return false end
