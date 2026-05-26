@@ -137,6 +137,10 @@ local FONT_OPTIONS = {
     { label = "Arial Narrow",           value = "Fonts\\ARIALN.TTF" },
     { label = "Morpheus",               value = "Fonts\\MORPHEUS.TTF" },
     { label = "Skurri",                 value = "Fonts\\SKURRI.TTF" },
+    { label = "Fira Sans Medium",       value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\FiraSans-Medium.ttf" },
+    { label = "Ubuntu",                 value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\Ubuntu-Regular.ttf" },
+    { label = "Archivo Black",          value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\ArchivoBlack-Regular.ttf" },
+    { label = "Audiowide",              value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\Audiowide-Regular.ttf" },
 }
 
 local function ApplyChatFont(fontPath)
