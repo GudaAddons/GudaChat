@@ -31,6 +31,15 @@ end
 
 local levelCache = {}
 
+-- On modern clients (11.0+), name-returning APIs like UnitName/GetGuildRosterInfo can hand
+-- back "secret" strings when our execution is tainted. Comparing those with `==` throws
+-- ("attempt to compare ... a secret string value"). pcall the comparison so a secret value
+-- simply yields "no match" instead of erroring the whole filter chain.
+local function NamesMatch(a, b)
+    local ok, equal = pcall(function() return a == b end)
+    return ok and equal
+end
+
 local function GetPlayerLevel(name)
     if not name then return nil end
     if levelCache[name] then return levelCache[name] end
@@ -43,7 +52,7 @@ local function GetPlayerLevel(name)
     for _, unit in ipairs(unitIDs) do
         if UnitExists(unit) then
             local unitName = UnitName(unit)
-            if unitName == name then
+            if NamesMatch(unitName, name) then
                 local level = UnitLevel(unit)
                 if level and level > 0 then
                     levelCache[name] = level
@@ -58,10 +67,12 @@ local function GetPlayerLevel(name)
         for i = 1, numMembers do
             local gName, _, _, gLevel = GetGuildRosterInfo(i)
             if gName then
-                local shortName = gName:match("^([^%-]+)")
-                if shortName == name and gLevel and gLevel > 0 then
-                    levelCache[shortName] = gLevel
-                    if shortName == name then return gLevel end
+                -- gName may also be a secret string on modern clients; matching/string ops
+                -- would throw, so do it inside pcall.
+                local ok, shortName = pcall(function() return gName:match("^([^%-]+)") end)
+                if ok and NamesMatch(shortName, name) and gLevel and gLevel > 0 then
+                    levelCache[name] = gLevel
+                    return gLevel
                 end
             end
         end
