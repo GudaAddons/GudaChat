@@ -152,6 +152,14 @@ local function ApplyChatFont(fontPath)
 end
 ns.ApplyChatFont = ApplyChatFont
 
+local function ApplyChatFontSize(size)
+    ns.ForEachChatWindow(function(cf)
+        local font, _, flags = cf:GetFont()
+        cf:SetFont(font, size, flags)
+    end)
+end
+ns.ApplyChatFontSize = ApplyChatFontSize
+
 local TIMESTAMP_OPTIONS = {
     { label = "None",          value = "none" },
     { label = "03:27",         value = "%I:%M " },

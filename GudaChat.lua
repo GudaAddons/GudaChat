@@ -179,7 +179,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                     cf:SetSize(ChatFrame1:GetSize())
                     if GudaChatDB.chatFont then
                         local _, size, flags = cf:GetFont()
-                        cf:SetFont(GudaChatDB.chatFont, size, flags)
+                        cf:SetFont(GudaChatDB.chatFont, GudaChatDB.chatFontSize or size, flags)
                     end
                     -- Strip realm from tab name
                     local tab = _G[name .. "Tab"]
@@ -307,6 +307,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ChatFrame1:SetFading(GudaChatDB.fading)
         if GudaChatDB.chatFont then
             ns.ApplyChatFont(GudaChatDB.chatFont)
+        end
+        if GudaChatDB.chatFontSize then
+            ns.ApplyChatFontSize(GudaChatDB.chatFontSize)
         end
         ns.ApplyClassColors()
         ns.EnableLevelDisplay()

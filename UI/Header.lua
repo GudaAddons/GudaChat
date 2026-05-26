@@ -252,12 +252,15 @@ local function CreateFontSubMenu()
         btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, yOff)
 
         btn:SetScript("OnClick", function()
-            local id = GetSelectedChatFrameIndex()
-            local cf = _G["ChatFrame" .. id]
-            if cf then
-                if FCF_SetChatWindowFontSize then
-                    FCF_SetChatWindowFontSize(nil, cf, size)
-                else
+            GudaChatDB.chatFontSize = size
+            -- Apply to every chat window instantly (preserves font face/flags),
+            -- matching the reload-time apply path.
+            if ns.ApplyChatFontSize then
+                ns.ApplyChatFontSize(size)
+            else
+                local id = GetSelectedChatFrameIndex()
+                local cf = _G["ChatFrame" .. id]
+                if cf then
                     local fontObj, _, flags = cf:GetFont()
                     cf:SetFont(fontObj, size, flags)
                 end
@@ -1641,7 +1644,7 @@ local function SetupWhisperFrame()
             font = GudaChatDB.chatFont
         end
         if font then
-            cf:SetFont(font, size or 14, flags or "")
+            cf:SetFont(font, GudaChatDB.chatFontSize or size or 14, flags or "")
         end
         cf:SetMaxLines(500)
         cf:SetFading(GudaChatDB.fading or false)
