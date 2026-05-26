@@ -80,11 +80,17 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         bucket = GudaChatDB.history[label]
     end
 
+    -- guid (senderGUID) is a secret string on modern clients (11.0+); comparing it with
+    -- `~= ""` throws. Use a truthiness check only (allowed) and pass it straight into the
+    -- Blizzard API, which accepts secret values. pcall guards a malformed/secret guid.
     local guid = select(10, ...)
     local classFile
-    if guid and guid ~= "" then
-        local _, cls = GetPlayerInfoByGUID(guid)
-        classFile = cls
+    if guid then
+        local ok, cls = pcall(function()
+            local _, c = GetPlayerInfoByGUID(guid)
+            return c
+        end)
+        if ok then classFile = cls end
     end
 
     local senderName = sender and sender:match("^([^%-]+)")
