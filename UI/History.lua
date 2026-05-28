@@ -48,8 +48,15 @@ local function InitHistorySeq()
     local maxSeq = 0
     for _, bucket in pairs(GudaChatDB.history) do
         if type(bucket) == "table" then
-            for _, entry in ipairs(bucket) do
-                if entry.seq and entry.seq > maxSeq then
+            -- Iterate backwards so tremove() is safe; drop entries missing a string
+            -- sender/message (legacy corruption: secret values can't serialize and were
+            -- dropped on save, leaving entries with only seq/time/channel). Such entries
+            -- carry no recoverable content, so we discard them here, before any reader runs.
+            for i = #bucket, 1, -1 do
+                local entry = bucket[i]
+                if type(entry.sender) ~= "string" or type(entry.message) ~= "string" then
+                    tremove(bucket, i)
+                elseif entry.seq and entry.seq > maxSeq then
                     maxSeq = entry.seq
                 end
             end
@@ -106,7 +113,10 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         seq = historySeq,
         channel = label,
         sender = safeSender,
-        message = msg or "",
+        -- msg may also be a secret string on modern clients; storing it raw would let an
+        -- unserializable value reach SavedVariables and get silently dropped on save. Read
+        -- it safely (SafeName forces a pcalled read, returning nil for secret values).
+        message = ns.SafeName(msg) or "",
         class = classFile,
         level = level,
         outgoing = isOutgoing,
