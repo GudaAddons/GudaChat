@@ -13,6 +13,34 @@ local function KillFrame(frame)
 end
 ns.KillFrame = KillFrame
 
+-- On modern clients (11.0+), name-returning APIs and CHAT_MSG `sender`/`name` args can be "secret"
+-- strings while our execution is tainted. Indexing them (:match/:lower) or comparing with `==`
+-- throws ("a secret string value"). These helpers do those ops inside pcall so a secret value
+-- simply yields nil / "no match" instead of erroring the caller. See chat handlers in Filters.lua
+-- and Header.lua.
+local function SafeShortName(name)
+    if not name then return nil end
+    local ok, short = pcall(function() return name:match("^([^%-]+)") or name end)
+    return ok and short or nil
+end
+ns.SafeShortName = SafeShortName
+
+local function NamesMatch(a, b)
+    local ok, equal = pcall(function() return a == b end)
+    return ok and equal
+end
+ns.NamesMatch = NamesMatch
+
+-- Returns the full name as a plain string, or nil if it's a secret value (concatenation forces a
+-- read that throws on secret strings). Use before storing a CHAT_MSG sender into SavedVariables —
+-- a secret string must never be persisted.
+local function SafeName(name)
+    if not name then return nil end
+    local ok, s = pcall(function() return name .. "" end)
+    return ok and s or nil
+end
+ns.SafeName = SafeName
+
 ---------------------------------------------------------------------------
 -- Shared constants
 ---------------------------------------------------------------------------

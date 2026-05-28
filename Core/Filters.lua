@@ -106,7 +106,7 @@ ns.GetLevelDifficultyColor = GetLevelDifficultyColor
 local function FilterAddLevel(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.showLevel then return false end
 
-    local name = sender and sender:match("^([^%-]+)")
+    local name = ns.SafeShortName(sender)
     local level = GetPlayerLevel(name)
     if level then
         local r, g, b = GetLevelDifficultyColor(level)
@@ -205,8 +205,6 @@ local function FilterAddURLLinks(self, event, msg, ...)
 end
 
 function ns.SetupLinkHook()
-    local origSetHyperlink = ItemRefTooltip.SetHyperlink
-
     ns.ForEachChatWindow(function(cf)
         cf:HookScript("OnHyperlinkClick", function(self, link, text, button)
             local url = link:match("^gudachat:url:(.+)$")
@@ -216,10 +214,15 @@ function ns.SetupLinkHook()
         end)
     end)
 
-    ItemRefTooltip.SetHyperlink = function(self, link, ...)
-        if link and link:match("^gudachat:url:") then return end
-        return origSetHyperlink(self, link, ...)
-    end
+    -- Don't REPLACE ItemRefTooltip.SetHyperlink: doing so puts our insecure closure in the call
+    -- stack of every real item-link click, tainting Blizzard's secure tooltip render and crashing
+    -- on "secret" color values. Instead post-hook SetItemRef (taint-free, runs after the secure
+    -- call completes) and just hide any stray tooltip our custom URL links might produce.
+    hooksecurefunc("SetItemRef", function(link)
+        if link and link:match("^gudachat:url:") then
+            if ItemRefTooltip then ItemRefTooltip:Hide() end
+        end
+    end)
 end
 
 function ns.EnableCopyLinks()
@@ -288,8 +291,8 @@ local function FilterHighlightName(self, event, msg, sender, ...)
     if not changed then return false end
 
     -- Sound: skip our own messages; throttle (also dedupes multi-frame display).
-    local senderShort = sender and sender:match("^([^%-]+)")
-    local isSelf = senderShort and senderShort == UnitName("player")
+    local senderShort = ns.SafeShortName(sender)
+    local isSelf = senderShort and ns.NamesMatch(senderShort, UnitName("player"))
     if not isSelf and GudaChatDB.highlightSound and SOUNDKIT and SOUNDKIT.TELL_MESSAGE then
         local now = GetTime()
         if now - lastMentionSound > MENTION_SOUND_THROTTLE then

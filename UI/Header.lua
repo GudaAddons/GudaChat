@@ -871,12 +871,10 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
         if category and not notif[category] then return end
     end
 
-    -- Don't blink for our own messages
+    -- Don't blink for our own messages (sender may be a secret string; use taint-safe helpers)
     local playerName = UnitName("player")
-    if playerName and sender then
-        local senderName = sender:match("^([^%-]+)")
-        if senderName and senderName == playerName then return end
-    end
+    local senderName = ns.SafeShortName(sender)
+    if senderName and ns.NamesMatch(senderName, playerName) then return end
 
     local selectedIdx = GetSelectedChatFrameIndex()
     local changed = false
@@ -906,14 +904,14 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
 
     -- Check temporary whisper windows (match sender to chatTarget)
     if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and CHAT_FRAMES then
-        local senderShort = sender and sender:match("^([^%-]+)") or sender
+        local senderShort = ns.SafeShortName(sender)
         for _, frameName in ipairs(CHAT_FRAMES) do
             local cf = _G[frameName]
             if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                 local idx = cf:GetID()
                 if idx ~= selectedIdx and not cf:IsShown() then
                     local target = cf.chatTarget
-                    local targetShort = target and target:match("^([^%-]+)") or target
+                    local targetShort = ns.SafeShortName(target)
                     if targetShort and senderShort and targetShort:lower() == senderShort:lower() then
                         if not blinkingTabs[idx] then
                             blinkingTabs[idx] = true
@@ -2884,22 +2882,22 @@ local function CreateChatHeader(parentFrame)
         local group = AUTO_SELECT_EVENTS[event]
         if not group then return end
 
-        -- Only react to our own messages
+        -- Only react to our own messages (sender may be a secret string; use taint-safe helpers)
         local playerName = UnitName("player")
-        local senderShort = sender and sender:match("^([^%-]+)") or sender
+        local senderShort = ns.SafeShortName(sender)
         local isOutgoing = (event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM")
-        if not isOutgoing and senderShort ~= playerName then return end
+        if not isOutgoing and not ns.NamesMatch(senderShort, playerName) then return end
 
         -- For outgoing whispers, check temporary windows then dedicated Whispers tab
         if isOutgoing then
-            if sender and CHAT_FRAMES then
-                local targetShort = sender:match("^([^%-]+)") or sender
+            local targetShort = ns.SafeShortName(sender)
+            if targetShort and CHAT_FRAMES then
                 for _, frameName in ipairs(CHAT_FRAMES) do
                     local cf = _G[frameName]
                     if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                         local ct = cf.chatTarget
-                        local ctShort = ct and ct:match("^([^%-]+)") or ct
-                        if ctShort and targetShort and ctShort:lower() == targetShort:lower() then
+                        local ctShort = ns.SafeShortName(ct)
+                        if ctShort and ctShort:lower() == targetShort:lower() then
                             SafeSelectDockFrame(cf)
                             return
                         end

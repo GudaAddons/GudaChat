@@ -93,7 +93,9 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         if ok then classFile = cls end
     end
 
-    local senderName = sender and sender:match("^([^%-]+)")
+    -- sender may be a secret string on modern clients while tainted; extract/read it safely.
+    local safeSender = ns.SafeName(sender) or ""
+    local senderName = ns.SafeShortName(sender)
     local level = ns.GetPlayerLevel(senderName)
 
     local isOutgoing = channelKey == "WHISPER_INFORM" or channelKey == "BN_WHISPER_INFORM"
@@ -103,7 +105,7 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         time = time(),
         seq = historySeq,
         channel = label,
-        sender = sender or "",
+        sender = safeSender,
         message = msg or "",
         class = classFile,
         level = level,

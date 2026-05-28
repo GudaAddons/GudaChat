@@ -336,6 +336,11 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if FCF_DockUpdate then
             hooksecurefunc("FCF_DockUpdate", function()
                 ns.ApplyChatMargins()
+                -- Blizzard's dock update restores each window's own stored color, clobbering our
+                -- global background (same reason ApplyChatMargins is re-applied here). Re-apply it.
+                if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+                    ns.ApplyGlobalBackground()
+                end
                 -- On modern engines, keep ChatFrame2 always "shown" (alpha controls visibility)
                 -- Blizzard dock updates can re-hide it.
                 if ns.IS_MODERN and ChatFrame2 and not ChatFrame2:IsShown() then
@@ -344,6 +349,13 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                     ns.SetCombatLogVisible(sel == ChatFrame2)
                 end
             end)
+        end
+
+        -- The initial ApplyGlobalBackground above runs before our FCF_DockUpdate hook is
+        -- installed, so a dock update during init can recolor after us. Re-apply once more
+        -- after init settles to lock in the saved color on load.
+        if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+            C_Timer.After(0.2, ns.ApplyGlobalBackground)
         end
 
         ns.ReplayHistory()
