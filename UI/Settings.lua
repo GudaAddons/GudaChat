@@ -568,12 +568,12 @@ local function CreateSettingsFrame()
                             bg:SetScript("OnShow", nil)
                             bg:Show()
                             bg:SetAlpha(savedAlpha)
-                            cf.oldAlpha = savedAlpha
+                            cf.gudaBgAlpha = savedAlpha
                         else
                             bg:SetAlpha(0)
                             bg:Hide()
                             bg:SetScript("OnShow", function(self) self:Hide() end)
-                            cf.oldAlpha = 0
+                            cf.gudaBgAlpha = 0
                         end
                     end)
                 end

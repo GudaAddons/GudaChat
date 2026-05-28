@@ -502,7 +502,7 @@ local function ShowContextMenu(anchor, overrideIndex)
     local r, g, b, a = 0, 0, 0, 0.5
     if cf then
         r, g, b = FCF_GetCurrentChatFrameBackgroundColor and FCF_GetCurrentChatFrameBackgroundColor(cf) or 0, 0, 0
-        a = cf.oldAlpha or 0.25
+        a = cf.gudaBgAlpha or 0.25
     end
     swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
 
@@ -522,7 +522,7 @@ local function ShowContextMenu(anchor, overrideIndex)
         if FCF_GetCurrentChatFrameBackgroundColor then
             cr, cg, cb = FCF_GetCurrentChatFrameBackgroundColor(chatFrame)
         end
-        local ca = chatFrame.oldAlpha or 0.25
+        local ca = chatFrame.gudaBgAlpha or 0.25
 
         local info = {}
         info.r = cr
@@ -539,7 +539,7 @@ local function ShowContextMenu(anchor, overrideIndex)
             if bg then
                 bg:SetScript("OnShow", nil)
                 bg:Show()
-                bg:SetAlpha(chatFrame.oldAlpha or 0.25)
+                bg:SetAlpha(chatFrame.gudaBgAlpha or 0.25)
             end
         end
         info.opacityFunc = function()
@@ -547,6 +547,7 @@ local function ShowContextMenu(anchor, overrideIndex)
             if FCF_SetWindowAlpha then
                 FCF_SetWindowAlpha(chatFrame, newAlpha)
             end
+            chatFrame.gudaBgAlpha = newAlpha
             local bg = _G[chatFrame:GetName() .. "Background"]
             if bg then
                 bg:SetScript("OnShow", nil)
@@ -562,6 +563,7 @@ local function ShowContextMenu(anchor, overrideIndex)
             if FCF_SetWindowAlpha then
                 FCF_SetWindowAlpha(chatFrame, prevAlpha)
             end
+            chatFrame.gudaBgAlpha = prevAlpha
             local bg = _G[chatFrame:GetName() .. "Background"]
             if bg then
                 if prevAlpha <= 0 then

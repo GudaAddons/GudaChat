@@ -99,21 +99,26 @@ local function StripChatChrome(index)
         -- When global background is enabled, always start hidden (ApplyGlobalBackground handles it)
         local useGlobal = GudaChatDB and GudaChatDB.useGlobalBg
         local savedAlpha = not useGlobal and (select(6, GetChatWindowInfo(index)) or 0) or 0
+        -- NOTE: store our remembered background alpha in a private `gudaBgAlpha` field, NOT
+        -- Blizzard's `oldAlpha`. Writing Blizzard's `oldAlpha` from addon (insecure) code taints
+        -- that field; Blizzard's window-fade logic reads `self.oldAlpha` when a chat message
+        -- arrives, which taints the whole MessageEventHandler execution and makes the downstream
+        -- ChatHistory_GetToken crash on secret senders (e.g. MONSTER_YELL). Keep it private.
         if savedAlpha and savedAlpha > 0 then
             bg:SetScript("OnShow", nil)
             bg:Show()
             bg:SetAlpha(savedAlpha)
-            cf.oldAlpha = savedAlpha
+            cf.gudaBgAlpha = savedAlpha
         else
             bg:SetAlpha(0)
             if bg.Hide then
                 bg:Hide()
                 bg:SetScript("OnShow", function(self) self:Hide() end)
             end
-            cf.oldAlpha = 0
+            cf.gudaBgAlpha = 0
         end
     else
-        cf.oldAlpha = 0
+        cf.gudaBgAlpha = 0
     end
     local resize = _G["ChatFrame" .. index .. "ResizeButton"]
     if resize then ns.KillFrame(resize) end
@@ -218,12 +223,12 @@ local function ApplyGlobalBackground()
             if FCF_SetWindowColor then
                 FCF_SetWindowColor(cf, color.r, color.g, color.b)
             end
-            cf.oldAlpha = alpha
+            cf.gudaBgAlpha = alpha
         else
             bg:SetAlpha(0)
             bg:Hide()
             bg:SetScript("OnShow", function(self) self:Hide() end)
-            cf.oldAlpha = 0
+            cf.gudaBgAlpha = 0
         end
     end)
 end
