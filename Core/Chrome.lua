@@ -68,9 +68,11 @@ local function StripChatChrome(index)
     end
     ns.KillFrame(_G["ChatFrame" .. index .. "ScrollBar"])
     ns.KillFrame(_G["ChatFrame" .. index .. "OverlayFrame"])
-    -- Retail: prevent Blizzard from re-showing scroll elements
-    if cf.UpdateScrollChildRect then cf.UpdateScrollChildRect = function() end end
-    if cf.SetScrollBarShown then cf.SetScrollBarShown = function() end end
+    -- Do NOT replace `cf.UpdateScrollChildRect` / `cf.SetScrollBarShown` with no-ops here:
+    -- assigning a function to a Blizzard frame method field taints that field, and Blizzard
+    -- reads/calls it on `self` during chat message handling, tainting the whole execution and
+    -- crashing ChatHistory_GetToken on secret senders. The scroll widgets are already kept
+    -- hidden above (Hide + OnShow lock + reparent via KillFrame), so the no-ops were redundant.
     -- Retail: kill the clickable overlay that extends the frame width
     if cf.clickAnywhereButton then ns.KillFrame(cf.clickAnywhereButton) end
     if cf.ResizeBar then ns.KillFrame(cf.ResizeBar) end

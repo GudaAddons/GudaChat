@@ -4,12 +4,25 @@ local addonName, ns = ...
 -- Helpers
 ---------------------------------------------------------------------------
 
+-- Permanently-hidden container. Reparenting a Blizzard frame onto this keeps it from ever
+-- rendering WITHOUT overriding its `:Show` method. Overriding `frame.Show = frame.Hide` from
+-- addon (insecure) code TAINTS the Show field; Blizzard later reads that tainted field when it
+-- tries to show the frame during chat message handling (e.g. the scroll-to-bottom button on a
+-- new message), which taints the whole MessageEventHandler execution and crashes
+-- ChatHistory_GetToken on secret senders (MONSTER_SAY/YELL/EMOTE). Reparenting avoids that.
+local hiddenParent = CreateFrame("Frame")
+hiddenParent:Hide()
+ns.hiddenParent = hiddenParent
+
 local function KillFrame(frame)
     if not frame then return end
     frame:Hide()
     frame:SetAlpha(0)
     frame:SetSize(0.001, 0.001)
-    frame.Show = frame.Hide
+    if frame.SetParent then
+        -- pcall: a few Blizzard frames disallow reparenting; fall back to just staying hidden.
+        pcall(frame.SetParent, frame, hiddenParent)
+    end
 end
 ns.KillFrame = KillFrame
 
