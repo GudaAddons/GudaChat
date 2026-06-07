@@ -19,16 +19,9 @@ local function ApplyLockState()
             end
         end
     end)
-    if locked then
-        if not ns._origStartMoving then
-            ns._origStartMoving = FCF_StartDragging
-        end
-        FCF_StartDragging = function() end
-    else
-        if ns._origStartMoving then
-            FCF_StartDragging = ns._origStartMoving
-        end
-    end
+    -- No FCF_StartDragging global replacement: movement is already blocked by SetMovable(false)
+    -- (StartMoving no-ops on non-movable frames) and the header drag is guarded by GudaChatDB.locked.
+    -- Replacing the global taints it and crashes 12.0 ChatConfig.
 end
 ns.ApplyLockState = ApplyLockState
 

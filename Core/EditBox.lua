@@ -22,6 +22,17 @@ local function PositionEditBox(chatFrame, index, position)
 end
 ns.PositionEditBox = PositionEditBox
 
+-- Recompute the editbox left inset from the header width and apply via the REAL SetTextInsets,
+-- instead of permanently overriding the method (the override taints it).
+local function ApplyEditBoxInset(index)
+    local eb = _G["ChatFrame" .. index .. "EditBox"]
+    if not eb or not eb.SetTextInsets then return end
+    local hdr = _G["ChatFrame" .. index .. "EditBoxHeader"]
+    local left = (hdr and hdr:IsShown()) and (hdr:GetStringWidth() + 8) or 4
+    eb:SetTextInsets(left, 28, 0, 0)
+end
+ns.ApplyEditBoxInset = ApplyEditBoxInset
+
 -- Add margin to chat messages on the side where the input bar sits,
 -- and reserve screen-edge space so the input bar doesn't go off-screen.
 local INPUT_BAR_CLAMP = 34 -- 28px bar + 4px gap + 4px breathing room
@@ -95,18 +106,8 @@ local function StyleEditBox(chatFrame, index)
         header:SetPoint("LEFT", eb, "LEFT", 4, 0)
     end
 
-    -- Override Blizzard's SetTextInsets to always use tight left inset
-    local origSetTextInsets = eb.SetTextInsets
-    eb.SetTextInsets = function(self, left, right, top, bottom)
-        local hdr = _G["ChatFrame" .. index .. "EditBoxHeader"]
-        if hdr and hdr:IsShown() then
-            left = hdr:GetStringWidth() + 8
-        else
-            left = 4
-        end
-        origSetTextInsets(self, left, 28, top or 0, bottom or 0)
-    end
-    eb:SetTextInsets(0, 28, 0, 0)
+    -- Apply tight left inset once (no method replacement).
+    ns.ApplyEditBoxInset(index)
 
     -- Emoji picker button
     local emojiBtn = CreateFrame("Button", nil, eb)
@@ -154,6 +155,7 @@ local function StyleEditBox(chatFrame, index)
     eb:HookScript("OnEditFocusGained", function(self)
         ns.hideHeaderForInput = true
         self:Show()
+        ns.ApplyEditBoxInset(index)
         if self.gudaBg then
             if GudaChatDB and GudaChatDB.transparentInput then
                 self.gudaBg:SetAlpha(0)
@@ -167,6 +169,7 @@ local function StyleEditBox(chatFrame, index)
         if ns.IS_MODERN then
             self:Hide()
         end
+        ns.ApplyEditBoxInset(index)
         if self.gudaBg then
             if GudaChatDB and GudaChatDB.transparentInput then
                 self.gudaBg:SetAlpha(0)

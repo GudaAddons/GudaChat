@@ -259,40 +259,14 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             UIPARENT_MANAGED_FRAME_POSITIONS["ChatFrame1"] = nil
         end
 
-        -- Block Blizzard's UIParentPanelManager from repositioning ChatFrame1.
-        -- We keep the original methods for our own use via ns.CF1_SetPoint / ns.CF1_ClearAllPoints,
-        -- and replace the frame methods with versions that ignore external callers.
-        local origSetPoint = ChatFrame1.SetPoint
-        local origClearAllPoints = ChatFrame1.ClearAllPoints
-        ns.CF1_SetPoint = origSetPoint
-        ns.CF1_ClearAllPoints = origClearAllPoints
+        -- Keep ChatFrame1 pinned WITHOUT replacing any Blizzard method. Replacing a method taints
+        -- the field; Blizzard secure code that later calls it taints the whole execution -> the 12.0
+        -- ChatConfig "secret value" arithmetic crash. ns.CF1_* kept for safety (no readers today).
+        ns.CF1_SetPoint = ChatFrame1.SetPoint
+        ns.CF1_ClearAllPoints = ChatFrame1.ClearAllPoints
+
+        -- Guard: when false, the re-apply hook is inert (user is actively dragging/resizing).
         ns.cf1PositionLocked = false
-
-        ChatFrame1.SetPoint = function(self, ...)
-            if ns.cf1PositionLocked then return end
-            origSetPoint(self, ...)
-        end
-        ChatFrame1.ClearAllPoints = function(self, ...)
-            if ns.cf1PositionLocked then return end
-            origClearAllPoints(self, ...)
-        end
-
-        -- Block Blizzard from resizing ChatFrame1
-        local origSetSize = ChatFrame1.SetSize
-        local origSetWidth = ChatFrame1.SetWidth
-        local origSetHeight = ChatFrame1.SetHeight
-        ChatFrame1.SetSize = function(self, ...)
-            if ns.cf1PositionLocked then return end
-            origSetSize(self, ...)
-        end
-        ChatFrame1.SetWidth = function(self, ...)
-            if ns.cf1PositionLocked then return end
-            origSetWidth(self, ...)
-        end
-        ChatFrame1.SetHeight = function(self, ...)
-            if ns.cf1PositionLocked then return end
-            origSetHeight(self, ...)
-        end
 
         -- Restore saved chat size
         if GudaChatDB.chatSize then
@@ -306,7 +280,27 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ChatFrame1:SetMovable(true)
             ChatFrame1:ClearAllPoints()
             ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
-            ChatFrame1:SetUserPlaced(false)
+            if ChatFrame1.SetUserPlaced then ChatFrame1:SetUserPlaced(false) end
+        end
+
+        -- Re-apply saved geometry whenever Blizzard tries to manage/move the frame.
+        local function ReapplyChatFrame1Geometry()
+            if ns._cf1Reapplying then return end          -- reentrancy guard
+            if not ns.cf1PositionLocked then return end     -- user dragging/resizing; leave it
+            if not GudaChatDB.position then return end
+            ns._cf1Reapplying = true
+            local p = GudaChatDB.position
+            ChatFrame1:ClearAllPoints()
+            ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
+            if GudaChatDB.chatSize then
+                ChatFrame1:SetSize(GudaChatDB.chatSize.w, GudaChatDB.chatSize.h)
+            end
+            ns._cf1Reapplying = false
+        end
+        ns.ReapplyChatFrame1Geometry = ReapplyChatFrame1Geometry
+
+        if UIParent_ManageFramePositions then
+            hooksecurefunc("UIParent_ManageFramePositions", ReapplyChatFrame1Geometry)
         end
 
         -- Lock position after initial setup so UIParentPanelManager can't move it
@@ -344,6 +338,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if FCF_DockUpdate then
             hooksecurefunc("FCF_DockUpdate", function()
                 ns.ApplyChatMargins()
+                ns.ReapplyChatFrame1Geometry()
                 -- Blizzard's dock update restores each window's own stored color, clobbering our
                 -- global background (same reason ApplyChatMargins is re-applied here). Re-apply it.
                 if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
