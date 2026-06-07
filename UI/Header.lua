@@ -1621,6 +1621,45 @@ local function EnforceWhisperGroups(cf, idx)
     end
 end
 
+-- Keep every whisper in the single dedicated Whispers tab instead of letting retail spawn a
+-- separate conversation window per target. The `whisperMode` CVar drives that popout behavior:
+-- "popout"/"popout_and_inline" open a temp window for each whisper, while "inline" keeps whispers
+-- in the frames that registered the WHISPER group (our Whispers frame). We also drop the WHISPER
+-- groups from General so whispers land ONLY in the dedicated tab, not duplicated into General.
+-- The reverse (restore the player's whisperMode, re-add whispers to General) mirrors the cleanup
+-- already done when a whisper window is closed (see RemoveWindow above).
+local function ApplyWhisperRouting()
+    if GudaChatDB.whisperTab then
+        -- Remember the player's original mode once, so disabling the feature can restore it.
+        -- Guard against clobbering it with our own "inline" on later reloads.
+        local cur = GetCVar and GetCVar("whisperMode")
+        if cur and cur ~= "inline" and GudaChatDB.origWhisperMode == nil then
+            GudaChatDB.origWhisperMode = cur
+        end
+        pcall(SetCVar, "whisperMode", "inline")
+        if ChatFrame_RemoveMessageGroup then
+            ChatFrame_RemoveMessageGroup(ChatFrame1, "WHISPER")
+            ChatFrame_RemoveMessageGroup(ChatFrame1, "BN_WHISPER")
+        end
+        if RemoveChatWindowMessages then
+            RemoveChatWindowMessages(1, "WHISPER")
+            RemoveChatWindowMessages(1, "BN_WHISPER")
+        end
+    else
+        if GudaChatDB.origWhisperMode then
+            pcall(SetCVar, "whisperMode", GudaChatDB.origWhisperMode)
+            GudaChatDB.origWhisperMode = nil
+        end
+        ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
+        ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
+        if AddChatWindowMessages then
+            AddChatWindowMessages(1, "WHISPER")
+            AddChatWindowMessages(1, "BN_WHISPER")
+        end
+    end
+end
+ns.ApplyWhisperRouting = ApplyWhisperRouting
+
 local function SetupWhisperFrame()
     local function InitWhisperFrame(cf, idx)
         ns.whisperFrame = cf
@@ -1649,6 +1688,8 @@ local function SetupWhisperFrame()
         cf:SetMaxLines(500)
         cf:SetFading(GudaChatDB.fading or false)
         cf:SetJustifyH("LEFT")
+        -- Route all whispers into this one tab; suppress retail's per-target popout windows.
+        ApplyWhisperRouting()
         SafeSelectDockFrame(ChatFrame1)
     end
 

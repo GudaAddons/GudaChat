@@ -157,7 +157,15 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
 
         if GeneralDockManagerOverflowButton then
-            ns.KillFrame(GeneralDockManagerOverflowButton)
+            -- Hide WITHOUT reparenting. KillFrame reparents onto hiddenParent, but Blizzard's
+            -- GeneralDockManagerOverflowButton_UpdateList reads `self:GetParent().DOCKED_CHAT_FRAMES`
+            -- during FCF_DockFrame; a hiddenParent has no DOCKED_CHAT_FRAMES, so pairs() crashes.
+            -- Keeping it parented to GeneralDockManager (killed/hidden right below) keeps it
+            -- invisible while leaving the dock chain intact.
+            local ofb = GeneralDockManagerOverflowButton
+            ofb:Hide()
+            ofb:SetAlpha(0)
+            ofb:SetScript("OnShow", ofb.Hide)
         end
         if GeneralDockManager then
             ns.KillFrame(GeneralDockManager)

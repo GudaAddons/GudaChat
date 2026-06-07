@@ -467,6 +467,8 @@ local function CreateSettingsFrame()
             if checked then
                 ns.SetupWhisperFrame()
             else
+                -- Restore the player's whisper mode and route whispers back to General.
+                ns.ApplyWhisperRouting()
                 if ns.whisperFrame and ns.whisperFrame:IsShown() then
                     C_Timer.After(0, function() FCF_SelectDockFrame(ChatFrame1) end)
                 end
