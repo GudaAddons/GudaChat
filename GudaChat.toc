@@ -1,8 +1,8 @@
-## Interface: 120001, 110207, 50504, 20505, 11508
+## Interface: 120007, 110207, 50504, 20505, 11508
 ## Title: GudaChat
 ## Notes: Custom chat addon
 ## Author: Vati
-## Version: 1.3.5
+## Version: 1.3.6
 ## SavedVariables: GudaChatDB
 ## IconTexture: Interface\AddOns\GudaChat\Assets\logo.png
 
