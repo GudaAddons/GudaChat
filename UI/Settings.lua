@@ -138,7 +138,7 @@ local ADDON_FONTS = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\"
 -- Blizzard ships these four filenames on every client, with locale-appropriate
 -- glyphs inside, so they are safe everywhere.
 local BLIZZARD_FONTS = {
-    { label = "Default (Friz Quadrata)", value = "Fonts\\FRIZQT__.TTF" },
+    { label = ns.Blizz(DEFAULT, "Default") .. " (Friz Quadrata)", value = "Fonts\\FRIZQT__.TTF" },
     { label = "Arial Narrow",           value = "Fonts\\ARIALN.TTF" },
     { label = "Morpheus",               value = "Fonts\\MORPHEUS.TTF" },
     { label = "Skurri",                 value = "Fonts\\SKURRI.TTF" },
@@ -185,7 +185,7 @@ local function GetFontOptions()
     end
 
     -- The client's own standard font is always correct for this locale
-    add(STANDARD_TEXT_FONT, "Default")
+    add(STANDARD_TEXT_FONT, ns.Blizz(DEFAULT, "Default"))
     for _, f in ipairs(BLIZZARD_FONTS) do add(f.value, f.label) end
     for _, f in ipairs(BUNDLED_FONTS) do
         -- Latin-only faces would render CJK as blocks and Cyrillic as nothing
@@ -195,7 +195,7 @@ local function GetFontOptions()
     end
 
     if #options == 0 then
-        options[1] = { label = "Default", value = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF" }
+        options[1] = { label = ns.Blizz(DEFAULT, "Default"), value = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF" }
     end
     cachedFontOptions = options
     return options
@@ -252,7 +252,7 @@ end
 ns.ApplyChatFontSize = ApplyChatFontSize
 
 local TIMESTAMP_OPTIONS = {
-    { label = "None",          value = "none" },
+    { label = ns.Blizz(NONE, "None"),        value = "none" },
     { label = "03:27",         value = "%I:%M " },
     { label = "03:27:32",      value = "%I:%M:%S " },
     { label = "03:27 PM",      value = "%I:%M %p " },
