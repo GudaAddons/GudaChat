@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local L = ns.L
 
 ---------------------------------------------------------------------------
 -- Slash commands
@@ -51,8 +52,8 @@ SlashCmdList["GUDACHAT"] = function(msg)
             cf:AddMessage("Blizzard_CombatLog_Filters not available")
         end
     else
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r commands:")
-        DEFAULT_CHAT_FRAME:AddMessage("  |cffffd200/gc|r — open settings")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r " .. L["CMD_HEADER"])
+        DEFAULT_CHAT_FRAME:AddMessage("  |cffffd200/gc|r — " .. L["CMD_OPEN_SETTINGS"])
     end
 end
 
@@ -401,8 +402,18 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             C_Timer.After(0.2, ns.ApplyGlobalBackground)
         end
 
+        -- Blizzard restores its own chat window layout during login, and that can
+        -- land after our init has finished, through a path that fires neither
+        -- UIParent_ManageFramePositions nor FCF_DockUpdate. Re-assert the saved
+        -- geometry once things settle so the frame does not end up back at
+        -- Blizzard's default after a reload.
+        if GudaChatDB.position then
+            C_Timer.After(0.5, ns.ReapplyChatFrame1Geometry)
+            C_Timer.After(2.0, ns.ReapplyChatFrame1Geometry)
+        end
+
         ns.ReplayHistory()
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r loaded — type |cffffd200/gc|r for settings")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGudaChat|r " .. L["LOADED"])
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     end
 end)

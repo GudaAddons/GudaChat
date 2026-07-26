@@ -150,15 +150,31 @@ ns.SaveChatPosition = SaveChatPosition
 -- Changing SetClampRectInsets does not reposition a frame that already violates the new
 -- clamp rect; it sits out of bounds until some later event snaps it. Re-apply the saved
 -- anchor to force the engine to re-evaluate clamping now, then persist where it landed.
+-- The furthest a clamp correction can legitimately move the frame: the bottom
+-- input-bar reserve is 34px, so a larger jump than this is not clamping.
+local CLAMP_SETTLE_MAX = 40
+
 local function SettleChatPosition()
     local p = GudaChatDB and GudaChatDB.position
     if not p then return end        -- never moved: leave Blizzard's default layout alone
-    ns.cf1PositionLocked = false    -- keep ReapplyChatFrame1Geometry inert meanwhile
     ChatFrame1:ClearAllPoints()
     ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
+    -- Stays LOCKED on purpose. Blizzard's own chat layout restore can fire inside
+    -- the window below, and ReapplyChatFrame1Geometry is what stops it winning.
+    ns.cf1PositionLocked = true
     C_Timer.After(0, function()
-        SaveChatPosition()          -- record the post-clamp position
-        ns.cf1PositionLocked = true
+        local point, _, relPoint, x, y = ChatFrame1:GetPoint(1)
+        if not point then return end
+        local drift = math.abs((x or 0) - (p.x or 0)) + math.abs((y or 0) - (p.y or 0))
+        if point == p.point and relPoint == p.relPoint and drift <= CLAMP_SETTLE_MAX then
+            -- A genuine clamp nudge: record where it actually landed
+            SaveChatPosition()
+        elseif ns.ReapplyChatFrame1Geometry then
+            -- Something relocated the frame outright (Blizzard restoring its own
+            -- chat layout). Put it back instead of saving over the position the
+            -- user chose — saving here is what made the move look permanent.
+            ns.ReapplyChatFrame1Geometry()
+        end
     end)
 end
 ns.SettleChatPosition = SettleChatPosition
@@ -219,7 +235,7 @@ local function CreateCopyPopupFrame(globalName, width, height, multiLine)
 
     local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -6)
-    label:SetText(multiLine and "Ctrl+C to copy. Escape to close." or "Ctrl+C to copy, Escape to close")
+    label:SetText(multiLine and ns.L["COPY_HINT"] or ns.L["COPY_HINT_SHORT"])
     label:SetTextColor(0.6, 0.6, 0.6)
 
     if multiLine then

@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local L = ns.L
 
 ---------------------------------------------------------------------------
 -- Chat header bar (hover-reveal, icon buttons)
@@ -116,7 +117,7 @@ end
 ---------------------------------------------------------------------------
 
 StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
-    text = "Enter new name for this chat window:",
+    text = L["PROMPT_RENAME_WINDOW"],
     button1 = ACCEPT,
     button2 = CANCEL,
     hasEditBox = true,
@@ -404,7 +405,7 @@ local function ShowContextMenu(anchor, overrideIndex)
     renameBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
     yOff = yOff - 20
 
-    local newWinBtn = CreateContextMenuItem(contextMenu, "Create New Window", function()
+    local newWinBtn = CreateContextMenuItem(contextMenu, L["MENU_NEW_WINDOW"], function()
         if FCF_NewChatWindow then
             FCF_NewChatWindow()
         elseif FCF_OpenNewWindow then
@@ -434,7 +435,7 @@ local function ShowContextMenu(anchor, overrideIndex)
             if tabName and GetChannelName then
                 local chNum = GetChannelName(tabName)
                 if chNum and chNum > 0 then
-                    local leaveBtn = CreateContextMenuItem(contextMenu, "Leave " .. tabName, function()
+                    local leaveBtn = CreateContextMenuItem(contextMenu, L["MENU_LEAVE"]:format(tabName), function()
                         LeaveChannelByName(tabName)
                         RemoveWindow()
                     end)
@@ -1974,7 +1975,7 @@ local function CreateChatHeader(parentFrame)
     header:SetScript("OnEnter", function(self)
         if not GudaChatDB.locked then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText("Drag to move", 0.7, 0.7, 0.7)
+            GameTooltip:SetText(L["TIP_DRAG_TO_MOVE"], 0.7, 0.7, 0.7)
             SetTooltipFontSize(12)
             GameTooltip:Show()
         end
@@ -2096,7 +2097,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Left side: History icon
     -------------------------------------------------------------------
-    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, "History")
+    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, L["TIP_HISTORY"])
     historyBtn:SetPoint("LEFT", combatBtn, "RIGHT", 6, 0)
     ns.historyBtn = historyBtn
 
@@ -2149,7 +2150,7 @@ local function CreateChatHeader(parentFrame)
     tabLabelBtn:SetScript("OnEnter", function(self)
         tabLabel:SetTextColor(1, 0.8, 0, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Click to switch tabs, right-click for options", 0.7, 0.7, 0.7)
+        GameTooltip:SetText(L["TIP_TAB_SWITCH"], 0.7, 0.7, 0.7)
         SetTooltipFontSize(12)
         GameTooltip:Show()
         if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
@@ -2240,7 +2241,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: Chat Channels icon
     -------------------------------------------------------------------
-    local channelsBtn = CreateIconButton(header, ns.ASSET_PATH .. "voice.png", ICON_SIZE - 1, "Chat Channels")
+    local channelsBtn = CreateIconButton(header, ns.ASSET_PATH .. "voice.png", ICON_SIZE - 1, L["TIP_CHAT_CHANNELS"])
     channelsBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
 
     channelsBtn:SetScript("OnClick", function()
@@ -2251,7 +2252,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: Chat Type (emote) icon
     -------------------------------------------------------------------
-    local chatTypeBtn = CreateIconButton(header, ns.ASSET_PATH .. "chat.png", ICON_SIZE - 1, "Chat Type")
+    local chatTypeBtn = CreateIconButton(header, ns.ASSET_PATH .. "chat.png", ICON_SIZE - 1, L["TIP_CHAT_TYPE"])
     chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
 
     if GudaChatDB and not GudaChatDB.historyEnabled then
@@ -2270,31 +2271,57 @@ local function CreateChatHeader(parentFrame)
     ns.ApplyDarkBackdrop(emoteSubMenu)
     emoteSubMenu:Hide()
 
+    -- Resolve a slash command to the token DoEmote actually expects. Upper-casing
+    -- the command is wrong wherever the two differ — "/goodbye" is the BYE token,
+    -- so DoEmote("GOODBYE") silently did nothing. Blizzard's own EMOTE%d_CMD%d ->
+    -- EMOTE%d_TOKEN tables are the authority, and they are localized, so this also
+    -- resolves correctly when the client's emote commands are translated.
+    local emoteTokens
+    local function EmoteToken(cmd)
+        if not emoteTokens then
+            emoteTokens = {}
+            for i = 1, 512 do
+                local token = _G["EMOTE" .. i .. "_TOKEN"]
+                if token then
+                    for j = 1, 8 do
+                        local c = _G["EMOTE" .. i .. "_CMD" .. j]
+                        if not c then break end
+                        emoteTokens[c:lower()] = token
+                    end
+                end
+            end
+        end
+        return emoteTokens[cmd:lower()] or cmd:sub(2):upper()
+    end
+
     local emoteList = {
-        { label = "Wave",     cmd = "/wave" },
-        { label = "Dance",    cmd = "/dance" },
-        { label = "Bow",      cmd = "/bow" },
-        { label = "Cheer",    cmd = "/cheer" },
-        { label = "Clap",     cmd = "/clap" },
-        { label = "Cry",      cmd = "/cry" },
-        { label = "Flex",     cmd = "/flex" },
-        { label = "Goodbye",  cmd = "/goodbye" },
-        { label = "Hello",    cmd = "/hello" },
-        { label = "Kiss",     cmd = "/kiss" },
-        { label = "Laugh",    cmd = "/laugh" },
-        { label = "No",       cmd = "/no" },
-        { label = "Point",    cmd = "/point" },
-        { label = "Rude",     cmd = "/rude" },
-        { label = "Salute",   cmd = "/salute" },
-        { label = "Shy",      cmd = "/shy" },
-        { label = "Sit",      cmd = "/sit" },
-        { label = "Sleep",    cmd = "/sleep" },
-        { label = "Smile",    cmd = "/smile" },
-        { label = "Thank",    cmd = "/thank" },
-        { label = "Yes",      cmd = "/yes" },
-        { label = "Angry",    cmd = "/angry" },
-        { label = "Beg",      cmd = "/beg" },
-        { label = "Applaud",  cmd = "/applaud" },
+        { label = L["EMOTE_WAVE"],     cmd = "/wave" },
+        { label = L["EMOTE_DANCE"],    cmd = "/dance" },
+        { label = L["EMOTE_BOW"],      cmd = "/bow" },
+        { label = L["EMOTE_CHEER"],    cmd = "/cheer" },
+        { label = L["EMOTE_CLAP"],     cmd = "/clap" },
+        { label = L["EMOTE_CRY"],      cmd = "/cry" },
+        { label = L["EMOTE_FLEX"],     cmd = "/flex" },
+        -- "/bye" rather than "/goodbye": both are the same emote, but the token
+        -- is BYE, so this is also correct via the upper-case fallback on a client
+        -- whose localized command table has no English "/goodbye" alias.
+        { label = L["EMOTE_GOODBYE"],  cmd = "/bye" },
+        { label = L["EMOTE_HELLO"],    cmd = "/hello" },
+        { label = L["EMOTE_KISS"],     cmd = "/kiss" },
+        { label = L["EMOTE_LAUGH"],    cmd = "/laugh" },
+        { label = L["EMOTE_NO"],       cmd = "/no" },
+        { label = L["EMOTE_POINT"],    cmd = "/point" },
+        { label = L["EMOTE_RUDE"],     cmd = "/rude" },
+        { label = L["EMOTE_SALUTE"],   cmd = "/salute" },
+        { label = L["EMOTE_SHY"],      cmd = "/shy" },
+        { label = L["EMOTE_SIT"],      cmd = "/sit" },
+        { label = L["EMOTE_SLEEP"],    cmd = "/sleep" },
+        { label = L["EMOTE_SMILE"],    cmd = "/smile" },
+        { label = L["EMOTE_THANK"],    cmd = "/thank" },
+        { label = L["EMOTE_YES"],      cmd = "/yes" },
+        { label = L["EMOTE_ANGRY"],    cmd = "/angry" },
+        { label = L["EMOTE_BEG"],      cmd = "/beg" },
+        { label = L["EMOTE_APPLAUD"],  cmd = "/applaud" },
     }
 
     local emYOff = -4
@@ -2326,7 +2353,7 @@ local function CreateChatHeader(parentFrame)
 
         local slash = entry.cmd
         mb:SetScript("OnClick", function()
-            DoEmote(slash:sub(2):upper())
+            DoEmote(EmoteToken(slash))
             emoteSubMenu:Hide()
             chatTypeDropdown:Hide()
         end)

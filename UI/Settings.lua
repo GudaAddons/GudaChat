@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local L = ns.L
 
 ---------------------------------------------------------------------------
 -- UI control factories
@@ -316,7 +317,7 @@ end
 ---------------------------------------------------------------------------
 
 StaticPopupDialogs["GUDACHAT_CLEAR_HISTORY"] = {
-    text = "Are you sure you want to clear all chat history?",
+    text = L["CONFIRM_CLEAR_HISTORY"],
     button1 = ACCEPT,
     button2 = CANCEL,
     OnAccept = function()
@@ -376,7 +377,7 @@ local function CreateSettingsFrame()
         tabTemplate = "TabButtonTemplate"
     end
 
-    local tabDefs = { "General", "Messages", "History", "Notifications" }
+    local tabDefs = { L["TAB_GENERAL"], L["TAB_MESSAGES"], L["TAB_HISTORY"], L["TAB_NOTIFICATIONS"] }
     local tabPanels = {}
     local tabs = {}
 
@@ -455,26 +456,26 @@ local function CreateSettingsFrame()
     do
         local Add, AddPair = BuildPanel(tabPanels[1])
 
-        Add(CreateSeparator(tabPanels[1], "Chat Window"))
+        Add(CreateSeparator(tabPanels[1], L["SEC_CHAT_WINDOW"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[1], "Lock chat position", GudaChatDB.locked, function(checked)
+            CreateCheckbox(tabPanels[1], L["OPT_LOCK_POSITION"], GudaChatDB.locked, function(checked)
                 GudaChatDB.locked = checked
                 ns.ApplyLockState()
             end),
-            CreateCheckbox(tabPanels[1], "Disable message fading", not GudaChatDB.fading, function(checked)
+            CreateCheckbox(tabPanels[1], L["OPT_DISABLE_FADING"], not GudaChatDB.fading, function(checked)
                 GudaChatDB.fading = not checked
                 ChatFrame1:SetFading(GudaChatDB.fading)
             end)
         )
 
         local currentFont = GudaChatDB.chatFont or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-        Add(CreateDropdown(tabPanels[1], "Font", GetFontOptions(), currentFont, function(value)
+        Add(CreateDropdown(tabPanels[1], L["OPT_FONT"], GetFontOptions(), currentFont, function(value)
             GudaChatDB.chatFont = value
             ApplyChatFont(value)
         end))
 
-        Add(CreateCheckbox(tabPanels[1], "Hide scrollbar", GudaChatDB.hideScrollbar, function(checked)
+        Add(CreateCheckbox(tabPanels[1], L["OPT_HIDE_SCROLLBAR"], GudaChatDB.hideScrollbar, function(checked)
             GudaChatDB.hideScrollbar = checked
             ns.ForEachChatWindow(function(cf)
                 if cf.gudaScrollbar then
@@ -491,27 +492,27 @@ local function CreateSettingsFrame()
         end))
 
         local currentTimestamp = GetCVar("showTimestamps") or "none"
-        Add(CreateDropdown(tabPanels[1], "Timestamps", TIMESTAMP_OPTIONS, currentTimestamp, function(value)
+        Add(CreateDropdown(tabPanels[1], L["OPT_TIMESTAMPS"], TIMESTAMP_OPTIONS, currentTimestamp, function(value)
             SetCVar("showTimestamps", value)
         end))
 
-        Add(CreateSeparator(tabPanels[1], "Input Bar"))
+        Add(CreateSeparator(tabPanels[1], L["SEC_INPUT_BAR"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[1], "Input bar on top", GudaChatDB.inputPosition == "top", function(checked)
+            CreateCheckbox(tabPanels[1], L["OPT_INPUT_BAR_TOP"], GudaChatDB.inputPosition == "top", function(checked)
                 GudaChatDB.inputPosition = checked and "top" or "bottom"
                 ns.ApplyInputBarPosition()
             end),
-            CreateCheckbox(tabPanels[1], "Transparent input bar", GudaChatDB.transparentInput, function(checked)
+            CreateCheckbox(tabPanels[1], L["OPT_TRANSPARENT_INPUT"], GudaChatDB.transparentInput, function(checked)
                 GudaChatDB.transparentInput = checked
                 ns.ApplyTransparentInput()
             end)
         )
 
-        Add(CreateSeparator(tabPanels[1], "Tabs"))
+        Add(CreateSeparator(tabPanels[1], L["SEC_TABS"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[1], "Show tab bar", GudaChatDB.showTabBar, function(checked)
+            CreateCheckbox(tabPanels[1], L["OPT_SHOW_TAB_BAR"], GudaChatDB.showTabBar, function(checked)
                 GudaChatDB.showTabBar = checked
                 if ns.chatSubTabs then
                     if checked then
@@ -523,7 +524,7 @@ local function CreateSettingsFrame()
                     end
                 end
             end),
-            CreateCheckbox(tabPanels[1], "Inline tab bar", GudaChatDB.inlineTabBar, function(checked)
+            CreateCheckbox(tabPanels[1], L["OPT_INLINE_TAB_BAR"], GudaChatDB.inlineTabBar, function(checked)
                 GudaChatDB.inlineTabBar = checked
                 if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
                 if ns.chatSubTabs then
@@ -538,7 +539,7 @@ local function CreateSettingsFrame()
             end)
         )
 
-        Add(CreateCheckbox(tabPanels[1], "Whisper tab", GudaChatDB.whisperTab, function(checked)
+        Add(CreateCheckbox(tabPanels[1], L["OPT_WHISPER_TAB"], GudaChatDB.whisperTab, function(checked)
             GudaChatDB.whisperTab = checked
             if checked then
                 ns.SetupWhisperFrame()
@@ -553,14 +554,14 @@ local function CreateSettingsFrame()
             if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
         end))
 
-        Add(CreateSeparator(tabPanels[1], "Background"))
+        Add(CreateSeparator(tabPanels[1], L["SEC_BACKGROUND"]))
 
         do
             local bgRow = CreateFrame("Frame", nil, tabPanels[1])
             bgRow:SetHeight(36)
 
             local bgAlphaPercent = math.floor((GudaChatDB.globalBgAlpha or 0) * 100)
-            local bgSlider = CreateSlider(bgRow, "Opacity", 0, 100, 5, bgAlphaPercent, function(value)
+            local bgSlider = CreateSlider(bgRow, ns.Blizz(OPACITY, "Opacity"), 0, 100, 5, bgAlphaPercent, function(value)
                 GudaChatDB.globalBgAlpha = value / 100
                 if GudaChatDB.useGlobalBg then
                     ns.ApplyGlobalBackground()
@@ -632,7 +633,7 @@ local function CreateSettingsFrame()
                 end
             end
 
-            Add(CreateCheckbox(tabPanels[1], "Override per-tab backgrounds", GudaChatDB.useGlobalBg, function(checked)
+            Add(CreateCheckbox(tabPanels[1], L["OPT_OVERRIDE_BACKGROUNDS"], GudaChatDB.useGlobalBg, function(checked)
                 GudaChatDB.useGlobalBg = checked
                 UpdateBgControlsVisibility(checked)
                 if checked then
@@ -668,36 +669,36 @@ local function CreateSettingsFrame()
     do
         local Add, AddPair = BuildPanel(tabPanels[2])
 
-        Add(CreateSeparator(tabPanels[2], "Messages"))
+        Add(CreateSeparator(tabPanels[2], L["SEC_MESSAGES"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[2], "Class colored names", GudaChatDB.classColors, function(checked)
+            CreateCheckbox(tabPanels[2], L["OPT_CLASS_COLORS"], GudaChatDB.classColors, function(checked)
                 GudaChatDB.classColors = checked
                 ns.ApplyClassColors()
             end),
-            CreateCheckbox(tabPanels[2], "Show player level", GudaChatDB.showLevel, function(checked)
+            CreateCheckbox(tabPanels[2], L["OPT_SHOW_LEVEL"], GudaChatDB.showLevel, function(checked)
                 GudaChatDB.showLevel = checked
             end)
         )
 
-        Add(CreateCheckbox(tabPanels[2], "Copyable links", GudaChatDB.copyLinks, function(checked)
+        Add(CreateCheckbox(tabPanels[2], L["OPT_COPYABLE_LINKS"], GudaChatDB.copyLinks, function(checked)
             GudaChatDB.copyLinks = checked
         end))
 
-        Add(CreateSeparator(tabPanels[2], "Name Highlight"))
+        Add(CreateSeparator(tabPanels[2], L["SEC_NAME_HIGHLIGHT"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[2], "Highlight my name", GudaChatDB.highlightName, function(checked)
+            CreateCheckbox(tabPanels[2], L["OPT_HIGHLIGHT_NAME"], GudaChatDB.highlightName, function(checked)
                 GudaChatDB.highlightName = checked
             end),
-            CreateCheckbox(tabPanels[2], "Sound on mention", GudaChatDB.highlightSound, function(checked)
+            CreateCheckbox(tabPanels[2], L["OPT_MENTION_SOUND"], GudaChatDB.highlightSound, function(checked)
                 GudaChatDB.highlightSound = checked
             end)
         )
 
-        Add(CreateSeparator(tabPanels[2], "Emojis"))
+        Add(CreateSeparator(tabPanels[2], L["SEC_EMOJIS"]))
 
-        Add(CreateCheckbox(tabPanels[2], "Enable emojis", GudaChatDB.emojis, function(checked)
+        Add(CreateCheckbox(tabPanels[2], L["OPT_ENABLE_EMOJIS"], GudaChatDB.emojis, function(checked)
             GudaChatDB.emojis = checked
             ns.ForEachChatWindow(function(_, i)
                 local eb = _G["ChatFrame" .. i .. "EditBox"]
@@ -711,7 +712,7 @@ local function CreateSettingsFrame()
             end
         end))
 
-        Add(CreateSlider(tabPanels[2], "Emoji size", 10, 32, 1, GudaChatDB.emojiSize or ns.DEFAULT_EMOJI_SIZE, function(value)
+        Add(CreateSlider(tabPanels[2], L["OPT_EMOJI_SIZE"], 10, 32, 1, GudaChatDB.emojiSize or ns.DEFAULT_EMOJI_SIZE, function(value)
             GudaChatDB.emojiSize = value
         end))
     end
@@ -722,9 +723,9 @@ local function CreateSettingsFrame()
     do
         local Add, AddPair = BuildPanel(tabPanels[3])
 
-        Add(CreateSeparator(tabPanels[3], "History"))
+        Add(CreateSeparator(tabPanels[3], L["SEC_HISTORY"]))
 
-        Add(CreateCheckbox(tabPanels[3], "Enable history", GudaChatDB.historyEnabled ~= false, function(checked)
+        Add(CreateCheckbox(tabPanels[3], L["OPT_ENABLE_HISTORY"], GudaChatDB.historyEnabled ~= false, function(checked)
             GudaChatDB.historyEnabled = checked
             if ns.historyBtn then
                 if checked then
@@ -736,19 +737,19 @@ local function CreateSettingsFrame()
         end))
 
         AddPair(
-            CreateCheckbox(tabPanels[3], "Log loot", GudaChatDB.logLoot ~= false, function(checked)
+            CreateCheckbox(tabPanels[3], L["OPT_LOG_LOOT"], GudaChatDB.logLoot ~= false, function(checked)
                 GudaChatDB.logLoot = checked
             end),
-            CreateCheckbox(tabPanels[3], "Log addon messages", GudaChatDB.logAddon ~= false, function(checked)
+            CreateCheckbox(tabPanels[3], L["OPT_LOG_ADDON"], GudaChatDB.logAddon ~= false, function(checked)
                 GudaChatDB.logAddon = checked
             end)
         )
 
-        Add(CreateSlider(tabPanels[3], "Max messages", 500, 4000, 100, GudaChatDB.historyMax or 2000, function(value)
+        Add(CreateSlider(tabPanels[3], L["OPT_MAX_MESSAGES"], 500, 4000, 100, GudaChatDB.historyMax or 2000, function(value)
             GudaChatDB.historyMax = value
         end))
 
-        Add(CreateSlider(tabPanels[3], "Font size", 8, 24, 1, GudaChatDB.historyFontSize or 14, function(value)
+        Add(CreateSlider(tabPanels[3], L["OPT_FONT_SIZE"], 8, 24, 1, GudaChatDB.historyFontSize or 14, function(value)
             GudaChatDB.historyFontSize = value
             local histMsgFrame = _G["GudaChatHistoryMsgFrame"]
             if histMsgFrame then
@@ -759,7 +760,7 @@ local function CreateSettingsFrame()
 
         local clearBtn = CreateFrame("Button", nil, tabPanels[3], "UIPanelButtonTemplate")
         clearBtn:SetSize(120, 24)
-        clearBtn:SetText("Clear History")
+        clearBtn:SetText(L["BTN_CLEAR_HISTORY"])
         local clearContainer = CreateFrame("Frame", nil, tabPanels[3])
         clearContainer:SetHeight(30)
         clearBtn:SetParent(clearContainer)
@@ -776,47 +777,47 @@ local function CreateSettingsFrame()
     do
         local Add, AddPair = BuildPanel(tabPanels[4])
 
-        Add(CreateSeparator(tabPanels[4], "Tab Blink Notifications"))
+        Add(CreateSeparator(tabPanels[4], L["SEC_TAB_BLINK"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[4], "Enable notifications", GudaChatDB.notifications.general, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_ENABLE_NOTIFICATIONS"], GudaChatDB.notifications.general, function(checked)
                 GudaChatDB.notifications.general = checked
             end),
-            CreateCheckbox(tabPanels[4], "General tab", GudaChatDB.notifications.generalTab, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_GENERAL_TAB"], GudaChatDB.notifications.generalTab, function(checked)
                 GudaChatDB.notifications.generalTab = checked
             end)
         )
 
         AddPair(
-            CreateCheckbox(tabPanels[4], "Party", GudaChatDB.notifications.party, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_PARTY"], GudaChatDB.notifications.party, function(checked)
                 GudaChatDB.notifications.party = checked
             end),
-            CreateCheckbox(tabPanels[4], "Raid / Instance", GudaChatDB.notifications.raid, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_RAID"], GudaChatDB.notifications.raid, function(checked)
                 GudaChatDB.notifications.raid = checked
             end)
         )
 
         AddPair(
-            CreateCheckbox(tabPanels[4], "Guild / Officer", GudaChatDB.notifications.guild, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_GUILD"], GudaChatDB.notifications.guild, function(checked)
                 GudaChatDB.notifications.guild = checked
             end),
-            CreateCheckbox(tabPanels[4], "Whispers", GudaChatDB.notifications.whispers, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_WHISPERS"], GudaChatDB.notifications.whispers, function(checked)
                 GudaChatDB.notifications.whispers = checked
             end)
         )
 
-        Add(CreateSeparator(tabPanels[4], "Numbered Channels"))
+        Add(CreateSeparator(tabPanels[4], L["SEC_NUMBERED_CHANNELS"]))
 
         AddPair(
-            CreateCheckbox(tabPanels[4], "Trade", GudaChatDB.notifications.trade, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_TRADE"], GudaChatDB.notifications.trade, function(checked)
                 GudaChatDB.notifications.trade = checked
             end),
-            CreateCheckbox(tabPanels[4], "LookingForGroup", GudaChatDB.notifications.lfg, function(checked)
+            CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_LFG"], GudaChatDB.notifications.lfg, function(checked)
                 GudaChatDB.notifications.lfg = checked
             end)
         )
 
-        Add(CreateCheckbox(tabPanels[4], "Other (custom channels)", GudaChatDB.notifications.other, function(checked)
+        Add(CreateCheckbox(tabPanels[4], L["OPT_NOTIFY_OTHER"], GudaChatDB.notifications.other, function(checked)
             GudaChatDB.notifications.other = checked
         end))
     end

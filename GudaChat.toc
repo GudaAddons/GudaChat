@@ -8,6 +8,10 @@
 
 ## Category: Guda
 
+# Localization (load first)
+Locales.lua
+Core\Locales.lua
+
 Core\Constants.lua
 Core\Emojis.lua
 Core\EditBox.lua

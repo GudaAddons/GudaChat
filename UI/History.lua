@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local L = ns.L
 
 ---------------------------------------------------------------------------
 -- History channel mapping and filter keys
@@ -76,12 +77,17 @@ local CHANNEL_DISPLAY = {
     Whisper  = WHISPER,
     Loot     = LOOT,
     All      = ALL,
-    -- "Log" has no Blizzard equivalent and stays English
 }
+
+-- Buckets with no Blizzard equivalent fall back to the addon's own locale table
+local CHANNEL_LOCALE_KEYS = { Log = "TIP_LOG", Loot = "TIP_LOOT" }
 
 local function ChannelLabel(channel)
     local label = CHANNEL_DISPLAY[channel]
-    return (type(label) == "string" and label ~= "") and label or channel
+    if type(label) == "string" and label ~= "" then return label end
+    local key = CHANNEL_LOCALE_KEYS[channel]
+    if key then return L[key] end
+    return channel
 end
 
 ---------------------------------------------------------------------------
@@ -211,9 +217,9 @@ local function ReplayHistory()
     -- log in Core/Logs.lua would record every replayed line as addon output.
     ns._replayingHistory = true
 
-    ChatFrame1:AddMessage("|cff555555--- previous session ---|r")
+    ChatFrame1:AddMessage("|cff555555" .. L["PREVIOUS_SESSION"] .. "|r")
     if GudaChatDB.whisperTab and ns.whisperFrame then
-        ns.whisperFrame:AddMessage("|cff555555--- previous session ---|r")
+        ns.whisperFrame:AddMessage("|cff555555" .. L["PREVIOUS_SESSION"] .. "|r")
     end
 
     local tsFmt = GetCVar("showTimestamps")
@@ -301,7 +307,7 @@ local function CreateHistoryFrame()
     ButtonFrameTemplate_HideButtonBar(f)
     if f.Inset then f.Inset:Hide() end
 
-    f:SetTitle("GudaChat History")
+    f:SetTitle(L["HISTORY_TITLE"])
 
     ns.CreateDragRegion(f)
 
@@ -703,7 +709,7 @@ local function CreateHistoryFrame()
         local source = entry.source
         if source and source ~= "" then
             -- Drop the sentence terminator so "... [Item]. from Bear" reads right
-            body = TrimTerminator(body) .. " from " .. source
+            body = TrimTerminator(body) .. " " .. L["LOOT_FROM"] .. " " .. source
         end
 
         local info = ChatTypeInfo and ChatTypeInfo["LOOT"]
@@ -760,7 +766,7 @@ local function CreateHistoryFrame()
 
         local label = cf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetPoint("TOPLEFT", cf, "TOPLEFT", 8, -6)
-        label:SetText("Ctrl+C to copy. Escape to close.")
+        label:SetText(L["COPY_HINT"])
         label:SetTextColor(0.6, 0.6, 0.6)
 
         local scrollFrame = CreateFrame("ScrollFrame", "GudaChatHistoryCopyScroll", cf, "UIPanelScrollFrameTemplate")
