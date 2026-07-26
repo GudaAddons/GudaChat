@@ -239,6 +239,8 @@ StaticPopupDialogs["GUDACHAT_CLEAR_HISTORY"] = {
                 wipe(GudaChatDB.history[k])
             end
         end
+        if GudaChatDB and GudaChatDB.lootLog then wipe(GudaChatDB.lootLog) end
+        if GudaChatDB and GudaChatDB.addonLog then wipe(GudaChatDB.addonLog) end
         if ns.historyFrame and ns.historyFrame.RefreshHistory then
             ns.historyFrame:RefreshHistory()
         end
@@ -647,7 +649,16 @@ local function CreateSettingsFrame()
             end
         end))
 
-        Add(CreateSlider(tabPanels[3], "Max messages", 100, 2000, 100, GudaChatDB.historyMax or 500, function(value)
+        AddPair(
+            CreateCheckbox(tabPanels[3], "Log loot", GudaChatDB.logLoot ~= false, function(checked)
+                GudaChatDB.logLoot = checked
+            end),
+            CreateCheckbox(tabPanels[3], "Log addon messages", GudaChatDB.logAddon ~= false, function(checked)
+                GudaChatDB.logAddon = checked
+            end)
+        )
+
+        Add(CreateSlider(tabPanels[3], "Max messages", 500, 4000, 100, GudaChatDB.historyMax or 2000, function(value)
             GudaChatDB.historyMax = value
         end))
 

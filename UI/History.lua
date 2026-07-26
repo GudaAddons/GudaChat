@@ -122,7 +122,7 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         outgoing = isOutgoing,
     })
 
-    local maxPerChannel = math.floor((GudaChatDB.historyMax or 500) / #HISTORY_FILTER_KEYS)
+    local maxPerChannel = math.floor((GudaChatDB.historyMax or 2000) / #HISTORY_FILTER_KEYS)
     while #bucket > maxPerChannel do
         tremove(bucket, 1)
     end
@@ -159,6 +159,10 @@ local function ReplayHistory()
             return a.time < b.time
         end)
     local start = math.max(1, #all - 9)
+
+    -- These AddMessage calls are not chat events; without this guard the addon
+    -- log in Core/Logs.lua would record every replayed line as addon output.
+    ns._replayingHistory = true
 
     ChatFrame1:AddMessage("|cff555555--- previous session ---|r")
     if GudaChatDB.whisperTab and ns.whisperFrame then
@@ -219,6 +223,8 @@ local function ReplayHistory()
             ns.whisperFrame:AddMessage(body, r, g, b)
         end
     end
+
+    ns._replayingHistory = false
 end
 ns.ReplayHistory = ReplayHistory
 
@@ -230,7 +236,7 @@ local historyFrame
 
 local function CreateHistoryFrame()
     local f = CreateFrame("Frame", "GudaChatHistoryPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(500, 500)
+    f:SetSize(560, 500)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -278,6 +284,8 @@ local function CreateHistoryFrame()
         { key = "Party",    short = "P" },
         { key = "Raid",     short = "R" },
         { key = "Instance", short = "I" },
+        { key = "Loot",     short = "L" },
+        { key = "Log",      short = "D" },
     }
 
     local channelTabs = {}
@@ -375,12 +383,15 @@ local function CreateHistoryFrame()
     local msgFrame = CreateFrame("ScrollingMessageFrame", "GudaChatHistoryMsgFrame", content)
     msgFrame:SetPoint("TOPLEFT", searchBox, "BOTTOMLEFT", 0, -4)
     msgFrame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
-    msgFrame:SetFontObject(GameFontNormal)
+    -- GameFontNormal is yellow, which is what uncoloured text (the Log tab) would
+    -- render as. Chat and loot rows carry their own colour codes either way.
+    msgFrame:SetFontObject(GameFontHighlight)
     do
         local chatFont, chatSize, chatFlags = ChatFrame1:GetFont()
         if GudaChatDB.chatFont then chatFont = GudaChatDB.chatFont end
         msgFrame:SetFont(chatFont, chatSize, chatFlags)
     end
+    msgFrame:SetTextColor(1, 1, 1)
     msgFrame:SetJustifyH("LEFT")
     msgFrame:SetFading(false)
     msgFrame:SetMaxLines(2000)
@@ -492,6 +503,29 @@ local function CreateHistoryFrame()
         local historyDB = GudaChatDB and GudaChatDB.history or {}
         local searchText = searchBox:GetText():lower()
 
+        -- Loot and Log live outside GudaChatDB.history and have their own fields
+        if selectedFilter == "Loot" or selectedFilter == "Log" then
+            local isLoot = selectedFilter == "Loot"
+            local list = GudaChatDB and (isLoot and GudaChatDB.lootLog or GudaChatDB.addonLog) or {}
+            for _, entry in ipairs(list) do
+                local matchesSearch = searchText == ""
+                if not matchesSearch then
+                    local haystack
+                    if isLoot then
+                        haystack = (entry.message or entry.item or "") .. " "
+                            .. (entry.looter or "") .. " " .. (entry.source or "")
+                    else
+                        haystack = (entry.tag or "") .. " " .. (entry.message or "")
+                    end
+                    matchesSearch = haystack:lower():find(searchText, 1, true) ~= nil
+                end
+                if matchesSearch then
+                    tinsert(results, entry)
+                end
+            end
+            return results
+        end
+
         if selectedFilter == "All" then
             for _, channelKey in ipairs(HISTORY_FILTER_KEYS) do
                 local bucket = historyDB[channelKey]
@@ -532,9 +566,19 @@ local function CreateHistoryFrame()
         return fmt
     end
 
-    local function FormatColoredEntry(entry)
+    -- History spans several days at the current message cap, so anything that is
+    -- not from today gets a day/month prefix. Today's rows stay time-only.
+    local function FormatTime(entry)
         local tsFmt = GetTimestampFormat()
         local timeStr = tsFmt and date(tsFmt, entry.time) or date("%H:%M ", entry.time)
+        if date("%Y%m%d", entry.time) ~= date("%Y%m%d") then
+            return date("%d/%m ", entry.time) .. timeStr
+        end
+        return timeStr
+    end
+
+    local function FormatColoredEntry(entry)
+        local timeStr = FormatTime(entry)
         local senderName = entry.sender:match("^([^%-]+)") or entry.sender
         local chatType = CHANNEL_TO_CHATTYPE[entry.channel]
         local info = chatType and ChatTypeInfo[chatType]
@@ -577,6 +621,45 @@ local function CreateHistoryFrame()
         return string.format("|cff808080%s|r |cff%s%s|r", timeStr, chanColor, body)
     end
 
+    -- Rendered as the chat line itself, in chat's loot colour (green), with the
+    -- source appended. Item links stay verbatim so the msgFrame hyperlink
+    -- handlers keep giving tooltips and shift-click insertion.
+    local function FormatLootEntry(entry)
+        local body = entry.message
+        if not body then
+            -- Entries stored before the full chat line was kept
+            local count = (entry.count and entry.count > 1) and string.format("x%d", entry.count) or ""
+            body = (entry.item or "") .. count
+        end
+
+        local source = entry.source
+        if source and source ~= "" then
+            -- Drop the sentence-ending period so "... [Item]. from Bear" reads right
+            body = body:gsub("%.%s*$", "") .. " from " .. source
+        end
+
+        local info = ChatTypeInfo and ChatTypeInfo["LOOT"]
+        local r, g, b = 0, 0.67, 0
+        if info then r, g, b = info.r, info.g, info.b end
+        local hex = string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
+
+        return string.format("|cff808080%s|r |cff%s%s|r", FormatTime(entry), hex, body)
+    end
+
+    -- The message keeps its original colouring (most addons colour their own
+    -- [Tag] prefix), so it is shown verbatim. entry.tag exists for searching.
+    local function FormatLogEntry(entry)
+        return string.format("|cff808080%s|r %s", FormatTime(entry), entry.message or "")
+    end
+
+    -- Dispatch on the active tab rather than tagging entries: these tables are
+    -- the live SavedVariables rows, so any field we set on them gets persisted.
+    local function FormatEntry(entry)
+        if selectedFilter == "Loot" then return FormatLootEntry(entry) end
+        if selectedFilter == "Log" then return FormatLogEntry(entry) end
+        return FormatColoredEntry(entry)
+    end
+
     local lastEntries = {}
 
     function f:RefreshHistory()
@@ -584,7 +667,7 @@ local function CreateHistoryFrame()
         local entries = GatherEntries()
         lastEntries = entries
         for _, entry in ipairs(entries) do
-            msgFrame:AddMessage(FormatColoredEntry(entry))
+            msgFrame:AddMessage(FormatEntry(entry))
         end
         msgFrame:ScrollToBottom()
     end
@@ -623,6 +706,9 @@ local function CreateHistoryFrame()
             if GudaChatDB.chatFont then chatFont = GudaChatDB.chatFont end
             eb:SetFont(chatFont, chatSize, chatFlags)
         end
+        -- Match the list: uncoloured text (Log rows) must be white here too,
+        -- otherwise the font object's own colour shows through instead.
+        eb:SetTextColor(1, 1, 1)
         eb:SetMultiLine(true)
         eb:SetAutoFocus(false)
         eb:SetMaxLetters(0)
@@ -658,7 +744,7 @@ local function CreateHistoryFrame()
         eb:SetMaxLetters(0)
         for i = #lastEntries, 1, -1 do
             eb:SetCursorPosition(0)
-            eb:Insert(FormatColoredEntry(lastEntries[i]) .. "\n")
+            eb:Insert(FormatEntry(lastEntries[i]) .. "\n")
         end
         eb:SetText(eb:GetText():gsub("^[\n ]+", ""))
         f.copyFrame.scrollFrame:UpdateScrollChildRect()

@@ -120,9 +120,35 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             -- Reset if old flat-array format or missing
             GudaChatDB.history = {}
         end
-        GudaChatDB.historyMax = GudaChatDB.historyMax or 500
+        GudaChatDB.historyMax = GudaChatDB.historyMax or 2000
+        -- Clamp profiles saved before the slider's range became 500-4000
+        if GudaChatDB.historyMax < 500 then
+            GudaChatDB.historyMax = 500
+        elseif GudaChatDB.historyMax > 4000 then
+            GudaChatDB.historyMax = 4000
+        end
         if GudaChatDB.historyEnabled == nil then
             GudaChatDB.historyEnabled = true
+        end
+        -- Loot log and addon message log (separate from the chat history buckets)
+        if type(GudaChatDB.lootLog) ~= "table" then
+            GudaChatDB.lootLog = {}
+        end
+        if type(GudaChatDB.addonLog) ~= "table" then
+            GudaChatDB.addonLog = {}
+        end
+        if GudaChatDB.logLoot == nil then
+            GudaChatDB.logLoot = true
+        end
+        if GudaChatDB.logAddon == nil then
+            GudaChatDB.logAddon = true
+        end
+        -- One-time reset: entries captured before loot, combat log, joined
+        -- channels and NPC speech were excluded are still sitting in the
+        -- addon log. Bump this whenever the capture rules tighten again.
+        if GudaChatDB.logSchema ~= 3 then
+            wipe(GudaChatDB.addonLog)
+            GudaChatDB.logSchema = 3
         end
         if GudaChatDB.notifications == nil then
             GudaChatDB.notifications = {
@@ -325,6 +351,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.SetupLinkHook()
         ns.InitHistorySeq()
         ns.RegisterHistoryEvents()
+        ns.RegisterLogCapture()
         ns.ForEachChatWindow(function(cf)
             ns.CreateScrollbar(cf)
             if GudaChatDB.hideScrollbar and cf.gudaScrollbar then

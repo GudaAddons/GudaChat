@@ -2,7 +2,7 @@
 ## Title: GudaChat
 ## Notes: Custom chat addon
 ## Author: Vati
-## Version: 1.3.7
+## Version: 1.3.8
 ## SavedVariables: GudaChatDB
 ## IconTexture: Interface\AddOns\GudaChat\Assets\logo.png
 
@@ -12,6 +12,7 @@ Core\Constants.lua
 Core\Emojis.lua
 Core\EditBox.lua
 Core\Filters.lua
+Core\Logs.lua
 Core\Chrome.lua
 UI\Scrollbar.lua
 UI\Header.lua
