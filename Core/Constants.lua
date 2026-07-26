@@ -297,3 +297,72 @@ ns.CHAT_EDGE_PAD = ns.IS_RETAIL and 13 or 0
 
 -- Custom scrollbar width (UI/Scrollbar.lua)
 ns.SCROLLBAR_W = 6
+
+---------------------------------------------------------------------------
+-- Locale helpers
+---------------------------------------------------------------------------
+
+-- Clients whose text needs glyphs the bundled Latin fonts do not carry.
+ns.NON_LATIN_LOCALE = { zhCN = true, zhTW = true, koKR = true, ruRU = true }
+
+-- Blizzard's slash tokens are localized (SLASH_SAY1 is "/s" on enUS but can
+-- differ elsewhere). Index 1 is the primary token; fall back to the English
+-- literal if the global is missing on this flavor.
+function ns.SlashCmd(prefix, fallback)
+    for i = 1, 8 do
+        local token = _G[prefix .. i]
+        if type(token) == "string" and token ~= "" then
+            return token
+        end
+    end
+    return fallback
+end
+
+-- UTF-8 aware lowercase. string.lower only folds A-Z, so on a Russian client a
+-- typed "оружие" never matches "Оружие". Ported from GudaBags/Core/Utils.lua.
+-- Every character needing a fold for the supported locales lives in
+-- U+0080..U+07FF (always 2 bytes in UTF-8), so the table is generated from
+-- codepoint ranges. CJK and Korean need no entries — those scripts have no case.
+local UTF8_LOWER = {}
+do
+    local function Char2(cp)
+        return string.char(192 + math.floor(cp / 64), 128 + (cp % 64))
+    end
+    local function AddRange(fromCp, toCp, delta, skip)
+        for cp = fromCp, toCp do
+            if cp ~= skip then
+                UTF8_LOWER[Char2(cp)] = Char2(cp + delta)
+            end
+        end
+    end
+    -- Latin-1 Supplement À..Þ, skipping × (U+00D7), which is not a letter
+    AddRange(0x00C0, 0x00DE, 0x20, 0x00D7)
+    -- Cyrillic А..Я and the Ѐ..Џ block (ruRU)
+    AddRange(0x0410, 0x042F, 0x20)
+    AddRange(0x0400, 0x040F, 0x50)
+    -- Ÿ (U+0178) is the one frFR capital outside Latin-1 Supplement
+    UTF8_LOWER[Char2(0x0178)] = Char2(0x00FF)
+end
+
+-- A-Z folded by explicit byte range: on some builds the C locale's tolower also
+-- rewrites bytes >= 0x80 and would corrupt the sequences we just folded.
+local ASCII_LOWER = {}
+for b = 65, 90 do
+    ASCII_LOWER[string.char(b)] = string.char(b + 32)
+end
+
+function ns.UTF8Lower(text)
+    if not text or text == "" then return text end
+    -- Pure ASCII (the common case): nothing multi-byte to protect
+    if not text:find("[\128-\255]") then
+        return text:lower()
+    end
+    local folded = text:gsub("[\194-\211][\128-\191]", UTF8_LOWER)
+    return (folded:gsub("[A-Z]", ASCII_LOWER))
+end
+
+-- True when the string contains bytes outside ASCII, i.e. Lua's %w/%a character
+-- classes and frontier patterns cannot be trusted on it.
+function ns.IsNonAscii(text)
+    return text ~= nil and text:find("[\128-\255]") ~= nil
+end

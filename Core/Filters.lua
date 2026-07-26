@@ -265,23 +265,60 @@ local NAME_HIGHLIGHT_CHANNELS = {
     "CHAT_MSG_CHANNEL",
 }
 
-local namePattern, classHex
+local namePattern, plainName, classHex
 local lastMentionSound = 0
 local MENTION_SOUND_THROTTLE = 0.3
 
 local function BuildNameHighlight()
     local name = UnitName("player")
     if not name then return end
-    -- Match the name as a whole word, case-insensitively: "Vati" -> "[Vv][Aa][Tt][Ii]".
-    local body = name:gsub("%a", function(c) return "[" .. c:upper() .. c:lower() .. "]" end)
-    namePattern = "%f[%w]" .. body .. "%f[%W]"
+    namePattern, plainName = nil, nil
+    if ns.IsNonAscii(name) then
+        -- Lua character classes are byte-based and ASCII-only: the first byte of a
+        -- Cyrillic/Hangul/Han name is not %w, so a %f[%w] frontier could never
+        -- match and highlighting was silently dead on those clients. Use a plain
+        -- substring search instead — also correct case-wise, as those scripts have
+        -- no case, and %a below would have expanded nothing anyway.
+        plainName = name
+    else
+        -- Match the name as a whole word, case-insensitively: "Vati" -> "[Vv][Aa][Tt][Ii]".
+        local body = name:gsub("%a", function(c) return "[" .. c:upper() .. c:lower() .. "]" end)
+        namePattern = "%f[%w]" .. body .. "%f[%W]"
+    end
     local _, class = UnitClass("player")
     local c = class and RAID_CLASS_COLORS[class]
     classHex = c and string.format("|cff%02x%02x%02x", c.r * 255, c.g * 255, c.b * 255) or "|cffffd200"
 end
 
--- Public channels (Trade / General / LookingForGroup) are skipped to avoid spam.
-local function IsPublicChannel(channelName)
+-- Wrap every occurrence of the player's name in the class colour.
+-- Returns the new text and the number of replacements.
+local function HighlightIn(text)
+    if namePattern then
+        return text:gsub(namePattern, function(m) return classHex .. m .. "|r" end)
+    end
+    if not plainName then return text, 0 end
+    local out, pos, count = "", 1, 0
+    while true do
+        local s, e = text:find(plainName, pos, true)
+        if not s then break end
+        out = out .. text:sub(pos, s - 1) .. classHex .. text:sub(s, e) .. "|r"
+        pos = e + 1
+        count = count + 1
+    end
+    if count == 0 then return text, 0 end
+    return out .. text:sub(pos), count
+end
+
+-- Public channels (General / Trade / LocalDefense / LookingForGroup) are skipped
+-- to avoid spam. Keyed on the numeric zone channel id, which is locale-independent:
+-- channelBaseName is translated ("交易", "Торговля", "Handel"), so the English
+-- name test below never matched on a non-English client and the guard was dead.
+local PUBLIC_ZONE_CHANNELS = { [1] = true, [2] = true, [22] = true, [26] = true }
+
+local function IsPublicChannel(zoneID, channelName)
+    if zoneID and PUBLIC_ZONE_CHANNELS[zoneID] then return true end
+    -- Custom and community channels report no zone id; keep the English names as
+    -- a secondary test so enUS behaviour is unchanged.
     if not channelName then return false end
     return channelName:find("Trade") ~= nil
         or channelName:find("General") ~= nil
@@ -290,18 +327,19 @@ end
 
 local function FilterHighlightName(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.highlightName then return false end
-    if not namePattern then BuildNameHighlight() end
-    if not namePattern or not msg then return false end
-    if event == "CHAT_MSG_CHANNEL" and IsPublicChannel(select(7, ...)) then return false end
+    if not namePattern and not plainName then BuildNameHighlight() end
+    if (not namePattern and not plainName) or not msg then return false end
+    -- select(5, ...) is arg7 zoneChannelID, select(7, ...) is arg9 channelBaseName
+    if event == "CHAT_MSG_CHANNEL" and IsPublicChannel(select(5, ...), select(7, ...)) then
+        return false
+    end
 
     -- Color only plain text, never inside existing hyperlinks/[brackets].
     local parts = (ns.SplitProtected and ns.SplitProtected(msg)) or { { text = msg, free = true } }
     local changed = false
     for _, part in ipairs(parts) do
         if part.free then
-            local newText, n = part.text:gsub(namePattern, function(m)
-                return classHex .. m .. "|r"
-            end)
+            local newText, n = HighlightIn(part.text)
             if n > 0 then
                 part.text = newText
                 changed = true

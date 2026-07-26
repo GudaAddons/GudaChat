@@ -26,16 +26,57 @@ local CHANNEL_TO_CHATTYPE = {
 }
 ns.CHANNEL_TO_CHATTYPE = CHANNEL_TO_CHATTYPE
 
+-- Resolved from Blizzard's localized SLASH_* globals: the English tokens are not
+-- guaranteed to be registered on every locale, and an unknown token would just
+-- paste literal text into the edit box and send the message to say.
 local CHANNEL_SLASH_COMMANDS = {
-    Say = "/s", Yell = "/y", Guild = "/g", Officer = "/o",
-    Party = "/p", Raid = "/raid", Instance = "/bg", Whisper = "/w",
+    Say      = ns.SlashCmd("SLASH_SAY", "/s"),
+    Yell     = ns.SlashCmd("SLASH_YELL", "/y"),
+    Guild    = ns.SlashCmd("SLASH_GUILD", "/g"),
+    Officer  = ns.SlashCmd("SLASH_OFFICER", "/o"),
+    Party    = ns.SlashCmd("SLASH_PARTY", "/p"),
+    Raid     = ns.SlashCmd("SLASH_RAID", "/raid"),
+    Instance = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg"),
+    Whisper  = ns.SlashCmd("SLASH_WHISPER", "/w"),
 }
 
+-- Chat wording comes from Blizzard's own localized format strings, so replayed
+-- history reads like the client's chat rather than English beside translated text.
+-- The formats are split around the "%s" name placeholder because our own chat
+-- hyperlinks have to be assembled around the player link (links cannot nest).
+local function SplitFormat(fmt, fallbackBefore, fallbackAfter)
+    if type(fmt) == "string" then
+        local before, after = fmt:match("^(.-)%%[%d%$]*s(.*)$")
+        if before then return before, after end
+    end
+    return fallbackBefore, fallbackAfter
+end
+
+local SAY_PRE,        SAY_POST        = SplitFormat(CHAT_SAY_GET, "", " says: ")
+local YELL_PRE,       YELL_POST       = SplitFormat(CHAT_YELL_GET, "", " yells: ")
+local WHISPER_PRE,    WHISPER_POST    = SplitFormat(CHAT_WHISPER_GET, "", " whispers: ")
+local WHISPER_TO_PRE, WHISPER_TO_POST = SplitFormat(CHAT_WHISPER_INFORM_GET, "To ", ": ")
+
 local REPLAY_CHANNEL_FORMATS = {
-    Say = "says",
-    Yell = "yells",
+    Say  = { pre = SAY_PRE,  post = SAY_POST },
+    Yell = { pre = YELL_PRE, post = YELL_POST },
 }
 ns.REPLAY_CHANNEL_FORMATS = REPLAY_CHANNEL_FORMATS
+
+-- Localized display names for the history buckets. The table keys stay English —
+-- they are internal identifiers stored in SavedVariables and compared with ==.
+local CHANNEL_DISPLAY = {
+    Guild    = GUILD,
+    Officer  = OFFICER,
+    Party    = PARTY,
+    Raid     = RAID,
+    Instance = INSTANCE_CHAT,
+}
+
+local function ChannelLabel(channel)
+    local label = CHANNEL_DISPLAY[channel]
+    return (type(label) == "string" and label ~= "") and label or channel
+end
 
 ---------------------------------------------------------------------------
 -- Message capture for chat history
@@ -204,15 +245,15 @@ local function ReplayHistory()
 
         local body
         if entry.channel == "Whisper" and entry.outgoing then
-            body = string.format("To %s: %s%s", nameLink, levelStr, entry.message)
+            body = WHISPER_TO_PRE .. nameLink .. WHISPER_TO_POST .. levelStr .. entry.message
         elseif entry.channel == "Whisper" then
-            body = string.format("%s whispers: %s%s", nameLink, levelStr, entry.message)
+            body = WHISPER_PRE .. nameLink .. WHISPER_POST .. levelStr .. entry.message
         else
-            local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
-            if verb then
-                body = string.format("%s %s: %s%s", nameLink, verb, levelStr, entry.message)
+            local fmt = REPLAY_CHANNEL_FORMATS[entry.channel]
+            if fmt then
+                body = fmt.pre .. nameLink .. fmt.post .. levelStr .. entry.message
             else
-                body = string.format("[%s] %s: %s%s", entry.channel, nameLink, levelStr, entry.message)
+                body = string.format("[%s] %s: %s%s", ChannelLabel(entry.channel), nameLink, levelStr, entry.message)
             end
         end
 
@@ -501,7 +542,9 @@ local function CreateHistoryFrame()
     local function GatherEntries()
         local results = {}
         local historyDB = GudaChatDB and GudaChatDB.history or {}
-        local searchText = searchBox:GetText():lower()
+        -- UTF8Lower, not string.lower: WoW's lower only folds A-Z, so searching
+        -- Cyrillic was case-sensitive. Both sides must fold the same way.
+        local searchText = ns.UTF8Lower(searchBox:GetText())
 
         -- Loot and Log live outside GudaChatDB.history and have their own fields
         if selectedFilter == "Loot" or selectedFilter == "Log" then
@@ -517,7 +560,7 @@ local function CreateHistoryFrame()
                     else
                         haystack = (entry.tag or "") .. " " .. (entry.message or "")
                     end
-                    matchesSearch = haystack:lower():find(searchText, 1, true) ~= nil
+                    matchesSearch = ns.UTF8Lower(haystack):find(searchText, 1, true) ~= nil
                 end
                 if matchesSearch then
                     tinsert(results, entry)
@@ -532,8 +575,8 @@ local function CreateHistoryFrame()
                 if bucket then
                     for _, entry in ipairs(bucket) do
                         local matchesSearch = (searchText == "") or
-                            entry.message:lower():find(searchText, 1, true) or
-                            entry.sender:lower():find(searchText, 1, true)
+                            ns.UTF8Lower(entry.message):find(searchText, 1, true) or
+                            ns.UTF8Lower(entry.sender):find(searchText, 1, true)
                         if matchesSearch then
                             tinsert(results, entry)
                         end
@@ -549,8 +592,8 @@ local function CreateHistoryFrame()
             if bucket then
                 for _, entry in ipairs(bucket) do
                     local matchesSearch = (searchText == "") or
-                        entry.message:lower():find(searchText, 1, true) or
-                        entry.sender:lower():find(searchText, 1, true)
+                        ns.UTF8Lower(entry.message):find(searchText, 1, true) or
+                        ns.UTF8Lower(entry.sender):find(searchText, 1, true)
                     if matchesSearch then
                         tinsert(results, entry)
                     end
@@ -602,23 +645,41 @@ local function CreateHistoryFrame()
         end
 
         local body
+        -- The localized wording is wrapped in our chat hyperlink, but the player
+        -- link has to stay outside it: WoW cannot nest one hyperlink in another.
         if entry.channel == "Whisper" and entry.outgoing then
-            local whisperLink = string.format("|Hgudachat:chat:/w %s|h", entry.sender:match("^([^%-]+)") or entry.sender)
-            body = string.format("%sTo|h %s: %s%s", whisperLink, nameLink, levelStr, entry.message)
+            local whisperLink = string.format("|Hgudachat:chat:%s %s|h",
+                CHANNEL_SLASH_COMMANDS.Whisper, entry.sender:match("^([^%-]+)") or entry.sender)
+            body = whisperLink .. WHISPER_TO_PRE .. "|h" .. nameLink .. WHISPER_TO_POST .. levelStr .. entry.message
         elseif entry.channel == "Whisper" then
-            local whisperLink = string.format("|Hgudachat:chat:/w %s|h", entry.sender:match("^([^%-]+)") or entry.sender)
-            body = string.format("%s %s whispers:|h %s%s", nameLink, whisperLink, levelStr, entry.message)
+            local whisperLink = string.format("|Hgudachat:chat:%s %s|h",
+                CHANNEL_SLASH_COMMANDS.Whisper, entry.sender:match("^([^%-]+)") or entry.sender)
+            body = WHISPER_PRE .. nameLink .. whisperLink .. WHISPER_POST .. "|h" .. levelStr .. entry.message
         else
-            local verb = REPLAY_CHANNEL_FORMATS[entry.channel]
-            if verb then
-                body = string.format("%s %s: %s%s", nameLink, verb, levelStr, entry.message)
+            local fmt = REPLAY_CHANNEL_FORMATS[entry.channel]
+            if fmt then
+                body = fmt.pre .. nameLink .. fmt.post .. levelStr .. entry.message
             else
-                local chanLink = string.format("|Hgudachat:chat:%s|h", CHANNEL_SLASH_COMMANDS[entry.channel] or "/s")
-                body = string.format("|cff%s%s[%s]|h|r %s: %s%s", chanColor, chanLink, entry.channel, nameLink, levelStr, entry.message)
+                local chanLink = string.format("|Hgudachat:chat:%s|h", CHANNEL_SLASH_COMMANDS[entry.channel] or CHANNEL_SLASH_COMMANDS.Say)
+                body = string.format("|cff%s%s[%s]|h|r %s: %s%s", chanColor, chanLink, ChannelLabel(entry.channel), nameLink, levelStr, entry.message)
             end
         end
 
         return string.format("|cff808080%s|r |cff%s%s|r", timeStr, chanColor, body)
+    end
+
+    -- Strip a trailing sentence terminator. Each is matched as a whole sequence,
+    -- not as a byte class: 。 and ．are three bytes each, and removing one byte
+    -- of them would leave broken UTF-8 behind.
+    local SENTENCE_ENDS = { "%.", "\227\128\130", "\239\188\142" }
+
+    local function TrimTerminator(text)
+        text = text:gsub("%s+$", "")
+        for _, pat in ipairs(SENTENCE_ENDS) do
+            local stripped, n = text:gsub(pat .. "$", "")
+            if n > 0 then return stripped end
+        end
+        return text
     end
 
     -- Rendered as the chat line itself, in chat's loot colour (green), with the
@@ -634,8 +695,8 @@ local function CreateHistoryFrame()
 
         local source = entry.source
         if source and source ~= "" then
-            -- Drop the sentence-ending period so "... [Item]. from Bear" reads right
-            body = body:gsub("%.%s*$", "") .. " from " .. source
+            -- Drop the sentence terminator so "... [Item]. from Bear" reads right
+            body = TrimTerminator(body) .. " from " .. source
         end
 
         local info = ChatTypeInfo and ChatTypeInfo["LOOT"]
@@ -727,6 +788,21 @@ local function CreateHistoryFrame()
         return cf
     end
 
+    -- Close any colour a row leaves open. The list renders every row as its own
+    -- line so an unbalanced |cff only affects that row, but the copy window puts
+    -- all rows in a single EditBox, where one unclosed colour recolours every line
+    -- after it. Addon output is the usual source: plenty of addons open a colour
+    -- and never emit the matching |r.
+    local function BalanceColors(line)
+        -- Counts every colour-open form, both |cffRRGGBB and the newer |cnNAME:
+        local opens = select(2, line:gsub("|c", ""))
+        local closes = select(2, line:gsub("|r", ""))
+        if opens > closes then
+            line = line .. string.rep("|r", opens - closes)
+        end
+        return line
+    end
+
     copyBtn:SetScript("OnClick", function()
         if f.copyFrame and f.copyFrame:IsShown() then
             f.copyFrame:Hide()
@@ -744,7 +820,7 @@ local function CreateHistoryFrame()
         eb:SetMaxLetters(0)
         for i = #lastEntries, 1, -1 do
             eb:SetCursorPosition(0)
-            eb:Insert(FormatEntry(lastEntries[i]) .. "\n")
+            eb:Insert(BalanceColors(FormatEntry(lastEntries[i])) .. "\n")
         end
         eb:SetText(eb:GetText():gsub("^[\n ]+", ""))
         f.copyFrame.scrollFrame:UpdateScrollChildRect()

@@ -132,26 +132,112 @@ end
 -- Font options
 ---------------------------------------------------------------------------
 
-local FONT_OPTIONS = {
+local ADDON_FONTS = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\"
+
+-- Blizzard ships these four filenames on every client, with locale-appropriate
+-- glyphs inside, so they are safe everywhere.
+local BLIZZARD_FONTS = {
     { label = "Default (Friz Quadrata)", value = "Fonts\\FRIZQT__.TTF" },
     { label = "Arial Narrow",           value = "Fonts\\ARIALN.TTF" },
     { label = "Morpheus",               value = "Fonts\\MORPHEUS.TTF" },
     { label = "Skurri",                 value = "Fonts\\SKURRI.TTF" },
-    { label = "Fira Sans Medium",       value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\FiraSans-Medium.ttf" },
-    { label = "Ubuntu",                 value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\Ubuntu-Regular.ttf" },
-    { label = "Archivo Black",          value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\ArchivoBlack-Regular.ttf" },
-    { label = "Audiowide",              value = "Interface\\AddOns\\GudaChat\\Assets\\Fonts\\Audiowide-Regular.ttf" },
 }
 
+-- Bundled faces. `cyrillic` marks the ones that actually carry Cyrillic glyphs;
+-- none of them carry CJK, so all four are withheld on zhCN/zhTW/koKR.
+local BUNDLED_FONTS = {
+    { label = "Fira Sans Medium", value = ADDON_FONTS .. "FiraSans-Medium.ttf",       cyrillic = true },
+    { label = "Ubuntu",           value = ADDON_FONTS .. "Ubuntu-Regular.ttf",        cyrillic = true },
+    { label = "Archivo Black",    value = ADDON_FONTS .. "ArchivoBlack-Regular.ttf" },
+    { label = "Audiowide",        value = ADDON_FONTS .. "Audiowide-Regular.ttf" },
+}
+
+-- SetFont fails silently when a file cannot be loaded, and a frame left without a
+-- font makes AddMessage drop every line (see the note in UI/Header.lua). Probe by
+-- applying to a throwaway FontString and reading the path back.
+local fontProbe
+local function FontLoads(path)
+    if not path or path == "" then return false end
+    if not fontProbe then
+        fontProbe = UIParent:CreateFontString(nil, "OVERLAY")
+        fontProbe:Hide()
+    end
+    if not pcall(fontProbe.SetFont, fontProbe, path, 12) then return false end
+    local applied = fontProbe:GetFont()
+    return applied ~= nil and applied:lower() == path:lower()
+end
+ns.FontLoads = FontLoads
+
+local cachedFontOptions
+local function GetFontOptions()
+    if cachedFontOptions then return cachedFontOptions end
+
+    local locale = GetLocale()
+    local nonLatin = ns.NON_LATIN_LOCALE[locale]
+    local options, seen = {}, {}
+
+    local function add(path, label)
+        if path and path ~= "" and not seen[path] and FontLoads(path) then
+            seen[path] = true
+            options[#options + 1] = { label = label, value = path }
+        end
+    end
+
+    -- The client's own standard font is always correct for this locale
+    add(STANDARD_TEXT_FONT, "Default")
+    for _, f in ipairs(BLIZZARD_FONTS) do add(f.value, f.label) end
+    for _, f in ipairs(BUNDLED_FONTS) do
+        -- Latin-only faces would render CJK as blocks and Cyrillic as nothing
+        if not nonLatin or (locale == "ruRU" and f.cyrillic) then
+            add(f.value, f.label)
+        end
+    end
+
+    if #options == 0 then
+        options[1] = { label = "Default", value = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF" }
+    end
+    cachedFontOptions = options
+    return options
+end
+ns.GetFontOptions = GetFontOptions
+
+-- True when the path is offered on this client. Stricter than FontLoads: a
+-- Latin-only bundled face loads fine on zhCN, it just renders blocks.
+function ns.IsFontAllowed(path)
+    if not path then return false end
+    for _, opt in ipairs(GetFontOptions()) do
+        if opt.value == path then return true end
+    end
+    return false
+end
+
+-- Never leave a frame fontless: fall back to the client's standard font.
+local function SafeSetFont(frame, path, size, flags)
+    local fallback = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    -- GetFont can return nil (e.g. after an earlier failed SetFont), and passing
+    -- a nil path to SetFont errors outright
+    if not path or path == "" then
+        frame:SetFont(fallback, size or 14, flags)
+        return false
+    end
+    if frame:SetFont(path, size, flags) ~= false and frame:GetFont() then return true end
+    frame:SetFont(fallback, size or 14, flags)
+    return false
+end
+ns.SafeSetFont = SafeSetFont
+
 local function ApplyChatFont(fontPath)
+    if not FontLoads(fontPath) then
+        fontPath = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    end
     ns.ForEachChatWindow(function(cf)
         local _, size, flags = cf:GetFont()
-        cf:SetFont(fontPath, size, flags)
+        SafeSetFont(cf, fontPath, size, flags)
     end)
     local histMsgFrame = _G["GudaChatHistoryMsgFrame"]
     if histMsgFrame then
         local _, size, flags = histMsgFrame:GetFont()
-        histMsgFrame:SetFont(fontPath, size, flags)
+        SafeSetFont(histMsgFrame, fontPath, size, flags)
     end
 end
 ns.ApplyChatFont = ApplyChatFont
@@ -159,7 +245,7 @@ ns.ApplyChatFont = ApplyChatFont
 local function ApplyChatFontSize(size)
     ns.ForEachChatWindow(function(cf)
         local font, _, flags = cf:GetFont()
-        cf:SetFont(font, size, flags)
+        SafeSetFont(cf, font, size, flags)
     end)
 end
 ns.ApplyChatFontSize = ApplyChatFontSize
@@ -382,8 +468,8 @@ local function CreateSettingsFrame()
             end)
         )
 
-        local currentFont = GudaChatDB.chatFont or "Fonts\\FRIZQT__.TTF"
-        Add(CreateDropdown(tabPanels[1], "Font", FONT_OPTIONS, currentFont, function(value)
+        local currentFont = GudaChatDB.chatFont or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+        Add(CreateDropdown(tabPanels[1], "Font", GetFontOptions(), currentFont, function(value)
             GudaChatDB.chatFont = value
             ApplyChatFont(value)
         end))

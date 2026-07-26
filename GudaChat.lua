@@ -337,6 +337,11 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.cf1PositionLocked = true
 
         ChatFrame1:SetFading(GudaChatDB.fading)
+        -- A profile saved on an English client can carry a Latin-only font that
+        -- renders nothing on zhCN/koKR/ruRU. Drop it so the client default is used.
+        if GudaChatDB.chatFont and ns.IsFontAllowed and not ns.IsFontAllowed(GudaChatDB.chatFont) then
+            GudaChatDB.chatFont = nil
+        end
         if GudaChatDB.chatFont then
             ns.ApplyChatFont(GudaChatDB.chatFont)
         end

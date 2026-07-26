@@ -846,6 +846,10 @@ local EVENT_TO_NOTIFY_CATEGORY = {
     CHAT_MSG_WHISPER = "whispers", CHAT_MSG_BN_WHISPER = "whispers",
 }
 
+-- Numeric zone channel ids, which are the same on every locale (2 = Trade,
+-- 26 = LookingForGroup). channelBaseName is translated and cannot be matched.
+local ZONE_CHANNEL_CATEGORY = { [2] = "trade", [26] = "lfg" }
+
 local blinkListener = CreateFrame("Frame")
 blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not GudaChatDB or not (GudaChatDB.showTabBar or GudaChatDB.inlineTabBar) then return end
@@ -860,14 +864,22 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
 
         local category = EVENT_TO_NOTIFY_CATEGORY[event]
         if event == "CHAT_MSG_CHANNEL" then
-            -- arg9 (channelName) is the 7th vararg after msg, sender
-            local _, _, _, _, _, _, channelName = ...
-            if channelName and channelName:find("Trade") then
-                category = "trade"
-            elseif channelName and channelName:find("LookingForGroup") then
-                category = "lfg"
-            else
-                category = "other"
+            -- arg7 (zoneChannelID) is the 5th vararg after msg, sender; arg9
+            -- (channelBaseName) is the 7th. Classify by the numeric id: the name is
+            -- translated on every non-English client, so matching it against English
+            -- always fell through to "other" and made the Trade/LFG toggles no-ops.
+            local _, _, _, _, zoneID, _, channelName = ...
+            category = ZONE_CHANNEL_CATEGORY[zoneID]
+            if not category then
+                -- Custom channels report no zone id; keep the English test as a
+                -- secondary path so enUS behaviour is unchanged.
+                if channelName and channelName:find("Trade") then
+                    category = "trade"
+                elseif channelName and channelName:find("LookingForGroup") then
+                    category = "lfg"
+                else
+                    category = "other"
+                end
             end
         end
         if category and not notif[category] then return end
@@ -977,7 +989,9 @@ function ns.StopTabBlink(frameIndex)
     blinkingTabs[frameIndex] = nil
 end
 
--- Map common tab names to Blizzard ChatTypeInfo keys
+-- Map common tab names to Blizzard ChatTypeInfo keys. GetChatWindowInfo returns
+-- the name translated, so the localized globals are registered alongside the
+-- English defaults — without them non-English tabs fell through to the default tint.
 local TAB_NAME_TO_CHATTYPE = {
     ["Guild"]    = "GUILD",
     ["Party"]    = "PARTY",
@@ -987,11 +1001,28 @@ local TAB_NAME_TO_CHATTYPE = {
     ["Say"]      = "SAY",
     ["Yell"]     = "YELL",
 }
+do
+    -- Positional pairs, not a keyed table: a missing global would be a nil key
+    -- and "table index is nil" is a load-time error. Several of these are absent
+    -- on older flavors.
+    local localized = {
+        { GUILD, "GUILD" }, { PARTY, "PARTY" }, { RAID, "RAID" },
+        { OFFICER, "OFFICER" }, { SAY, "SAY" }, { YELL, "YELL" },
+        { WHISPER, "WHISPER" }, { WHISPERS, "WHISPER" },
+    }
+    for _, pair in ipairs(localized) do
+        local name, chatType = pair[1], pair[2]
+        if type(name) == "string" and name ~= "" and not TAB_NAME_TO_CHATTYPE[name] then
+            TAB_NAME_TO_CHATTYPE[name] = chatType
+        end
+    end
+end
 local TAB_COLOR_DEFAULT = { 0.8, 0.6, 0.0 }
 local TAB_COLOR_GENERAL = { 1.0, 1.0, 0.0 }
 
 local function GetTabColor(name, frameIndex)
-    if name == "General" then return TAB_COLOR_GENERAL end
+    -- GENERAL is the localized global; the literal keeps enUS behaviour if it is missing
+    if name == "General" or (GENERAL and name == GENERAL) then return TAB_COLOR_GENERAL end
 
     -- Direct name → ChatTypeInfo lookup (Guild, Party, Raid, etc.)
     local chatType = TAB_NAME_TO_CHATTYPE[name]
@@ -2289,17 +2320,19 @@ local function CreateChatHeader(parentFrame)
     end
     emoteSubMenu:SetSize(emMaxW + 8, math.abs(emYOff) + 4)
 
-    -- Main chat type entries
+    -- Main chat type entries. Commands come from Blizzard's localized SLASH_*
+    -- globals — a hardcoded "/bg" is not registered on every locale and would be
+    -- pasted as literal text, sending the message to say instead.
     local chatTypeEntries = {
-        { label = "Say",          cmd = "/s" },
-        { label = "Party Chat",   cmd = "/p" },
-        { label = "Raid",         cmd = "/raid" },
-        { label = "Battleground", cmd = "/bg" },
-        { label = "Guild Chat",   cmd = "/g" },
-        { label = "Yell",         cmd = "/y" },
-        { label = "Whisper",      cmd = "/w" },
-        { label = "Emote",        cmd = "/e",  hasArrow = true },
-        { label = "Reply",        cmd = "/r" },
+        { label = "Say",          cmd = ns.SlashCmd("SLASH_SAY", "/s") },
+        { label = "Party Chat",   cmd = ns.SlashCmd("SLASH_PARTY", "/p") },
+        { label = "Raid",         cmd = ns.SlashCmd("SLASH_RAID", "/raid") },
+        { label = "Battleground", cmd = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg") },
+        { label = "Guild Chat",   cmd = ns.SlashCmd("SLASH_GUILD", "/g") },
+        { label = "Yell",         cmd = ns.SlashCmd("SLASH_YELL", "/y") },
+        { label = "Whisper",      cmd = ns.SlashCmd("SLASH_WHISPER", "/w") },
+        { label = "Emote",        cmd = ns.SlashCmd("SLASH_EMOTE", "/e"), hasArrow = true },
+        { label = "Reply",        cmd = ns.SlashCmd("SLASH_REPLY", "/r") },
     }
 
     local ctYOff = -4

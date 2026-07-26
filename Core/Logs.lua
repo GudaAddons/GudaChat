@@ -96,11 +96,14 @@ lootFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     local link = text:match("(|c%x+|Hitem:.-|h.-|h|r)") or text:match("(|Hitem:.-|h.-|h)")
     if not link then return end
 
-    -- LOOT_ITEM_*_MULTIPLE is "...%sx%d." — the count trails the link, with or
-    -- without a space depending on locale. No match means a single item.
-    local count = tonumber(text:match("|rx(%d+)")
-        or text:match("|r%s*x(%d+)")
-        or text:match("x(%d+)%.?%s*$")) or 1
+    -- Read the count from whatever follows the item link rather than assuming the
+    -- enUS "x%d" shape: zhCN ends the sentence with the full-width 。 and koKR
+    -- puts the count in a separate "%d개" group, which no x%d pattern can match.
+    -- Safe because the item name and its numeric itemString are inside the link
+    -- we skip past, so the first number in the tail is the quantity.
+    local _, linkEnd = text:find(link, 1, true)
+    local tail = linkEnd and text:sub(linkEnd + 1) or ""
+    local count = tonumber(tail:match("%d+")) or 1
 
     Push(GudaChatDB.lootLog, {
         time = time(),
@@ -188,9 +191,12 @@ local function LooksLikeChatLine(text)
     for _, marker in ipairs(CHAT_LINK_MARKERS) do
         if text:find(marker, 1, true) then return true end
     end
-    -- Bare channel prefix, e.g. "[4. LookingForGroup]", when links are stripped
+    -- Bare channel prefix, e.g. "[4. LookingForGroup]", when links are stripped.
+    -- Matches any non-alphanumeric after the number so the ASCII period, the
+    -- full-width ．and a plain space all count. Addon tags like [GudaBags] never
+    -- start with a digit, so nothing legitimate is caught here.
     local plain = StripColors(text) or text
-    if plain:match("^%s*%[%d+%.%s") then return true end
+    if plain:match("^%s*%[%d+[^%w]") then return true end
     return false
 end
 
