@@ -202,6 +202,8 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                     end
                 end
             end
+            -- StripChatChrome above leaves the new window without our clamp insets
+            ns.ApplyChatMargins()
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         end)
 
@@ -295,6 +297,8 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             if GudaChatDB.chatSize then
                 ChatFrame1:SetSize(GudaChatDB.chatSize.w, GudaChatDB.chatSize.h)
             end
+            -- Docked/temporary frames must follow, or they stay behind at the old spot
+            ns.SyncDockedFrames()
             ns._cf1Reapplying = false
         end
         ns.ReapplyChatFrame1Geometry = ReapplyChatFrame1Geometry
@@ -333,6 +337,10 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.CreateChatHeader(ChatFrame1)
         ns.ApplyLockState()
         ns.ApplyChatMargins()
+        -- The saved position is restored above, before the clamp insets exist. If it no
+        -- longer fits (resolution / UI-scale change), settle it now and re-save so
+        -- SavedVariables matches what's actually on screen instead of snapping later.
+        ns.SettleChatPosition()
 
         -- Reapply clamp insets after Blizzard dock updates reset them
         if FCF_DockUpdate then

@@ -76,14 +76,13 @@ local function StripChatChrome(index)
         tab:EnableMouse(false)
     end
 
-    cf:SetClampRectInsets(0, 0, 0, 0)
+    -- Clamp insets are owned solely by ns.ApplyChatMargins (they reserve screen-edge space
+    -- for the input bar). Resetting them here would wipe that reserve every time a chat
+    -- window is stripped, including temporary whisper windows created mid-session.
     cf:SetClampedToScreen(true)
 
-    if cf.SetTextInsets then
-        cf:SetTextInsets(0, 0, 0, 0)
-    elseif cf.SetInsertMode then
-        -- fallback
-    end
+    -- Text insets (incl. the scrollbar gutter on the right) are owned by ns.ApplyFrameInsets
+    ns.ApplyFrameInsets(cf)
 
     if cf.SetIndentedWordWrap then
         cf:SetIndentedWordWrap(false)
@@ -168,14 +167,9 @@ local function StripChatChrome(index)
             -- Save size
             local w, h = cf:GetSize()
             GudaChatDB.chatSize = { w = w, h = h }
-            -- Save position (may shift during resize)
-            local point, _, relPoint, x, y = cf:GetPoint(1)
-            if point then
-                GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
-            end
             cf:SetUserPlaced(false)
-            -- Sync all docked frames to new size/position
-            ns.SyncDockedFrames()
+            -- Save position (may shift during resize) and sync docked frames to it
+            ns.SaveChatPosition()
         end)
 
         cf.gudaResizeHandle = handle

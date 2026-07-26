@@ -11,7 +11,7 @@ local function PositionEditBox(chatFrame, index, position)
     local eb = _G["ChatFrame" .. index .. "EditBox"]
     if not eb then return end
     eb:ClearAllPoints()
-    local extraR = ns.IS_MODERN and 13 or 0
+    local extraR = ns.CHAT_EDGE_PAD
     if position == "top" then
         eb:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -4, -2)
         eb:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 4 + extraR, -2)
@@ -38,22 +38,50 @@ ns.ApplyEditBoxInset = ApplyEditBoxInset
 local INPUT_BAR_CLAMP = 34 -- 28px bar + 4px gap + 4px breathing room
 ns.INPUT_BAR_CLAMP = INPUT_BAR_CLAMP
 
-local function ApplyChatMargins()
+-- How much of the chat frame's own width the scrollbar covers, so the message text can
+-- stop where the bar begins. On retail the bar sits outside the frame (CHAT_EDGE_PAD is
+-- wider than the bar) so nothing needs reserving; hiding the bar returns the column too.
+local function ScrollbarTextInset()
+    if GudaChatDB and GudaChatDB.hideScrollbar then return 0 end
+    return math.max(0, ns.SCROLLBAR_W + 2 - ns.CHAT_EDGE_PAD)
+end
+ns.ScrollbarTextInset = ScrollbarTextInset
+
+-- Text insets for one chat frame: input-bar margin top/bottom, scrollbar gutter on the right.
+-- Every writer of a chat frame's text insets must go through here, or it wipes the gutter.
+local function ApplyFrameInsets(cf)
+    if not cf or not cf.SetTextInsets then return end
     local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
     local topPad = (pos == "top") and INPUT_BAR_MARGIN or 0
     local botPad = (pos == "bottom") and INPUT_BAR_MARGIN or 0
+    cf:SetTextInsets(0, ScrollbarTextInset(), topPad, botPad)
+end
+ns.ApplyFrameInsets = ApplyFrameInsets
+
+local function ApplyChatMargins()
+    local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
     local topClamp = (pos == "top") and 32 or 4
     local botClamp = (pos == "bottom") and INPUT_BAR_CLAMP or 4
 
     ns.ForEachChatWindow(function(cf)
-        if cf.SetTextInsets then
-            cf:SetTextInsets(0, 0, topPad, botPad)
-        end
+        ApplyFrameInsets(cf)
         cf:SetClampRectInsets(-4, 4, topClamp, -botClamp)
         cf:SetClampedToScreen(true)
     end)
 end
 ns.ApplyChatMargins = ApplyChatMargins
+
+-- Flip the input bar between top and bottom. The chat window itself does not move; only the
+-- clamp reserve changes sides. If the new reserve genuinely pushes the frame (the bar would
+-- land off-screen), SettleChatPosition persists that correction so nothing snaps it later.
+local function ApplyInputBarPosition()
+    ns.ForEachChatWindow(function(cf, i)
+        ns.PositionEditBox(cf, i, GudaChatDB and GudaChatDB.inputPosition or "bottom")
+    end)
+    ApplyChatMargins()
+    ns.SettleChatPosition()
+end
+ns.ApplyInputBarPosition = ApplyInputBarPosition
 
 ---------------------------------------------------------------------------
 -- Edit box styling
@@ -203,11 +231,6 @@ end
 -- Prevent Blizzard's FCF_UpdateButtonSide from re-adding button side spacing
 if FCF_UpdateButtonSide then
     hooksecurefunc("FCF_UpdateButtonSide", function(cf)
-        if cf and cf.SetTextInsets then
-            local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
-            local topPad = (pos == "top") and INPUT_BAR_MARGIN or 0
-            local botPad = (pos == "bottom") and INPUT_BAR_MARGIN or 0
-            cf:SetTextInsets(0, 0, topPad, botPad)
-        end
+        ns.ApplyFrameInsets(cf)
     end)
 end

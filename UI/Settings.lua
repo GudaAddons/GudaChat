@@ -398,6 +398,8 @@ local function CreateSettingsFrame()
                     end
                 end
             end)
+            -- Give the reserved scrollbar column back to (or take it from) the message text
+            ns.ApplyChatMargins()
         end))
 
         local currentTimestamp = GetCVar("showTimestamps") or "none"
@@ -409,22 +411,8 @@ local function CreateSettingsFrame()
 
         AddPair(
             CreateCheckbox(tabPanels[1], "Input bar on top", GudaChatDB.inputPosition == "top", function(checked)
-                local wasTop = GudaChatDB.inputPosition == "top"
                 GudaChatDB.inputPosition = checked and "top" or "bottom"
-                ns.ForEachChatWindow(function(cf, i)
-                    ns.PositionEditBox(cf, i, GudaChatDB.inputPosition)
-                end)
-                local point, rel, relPoint, x, y = ChatFrame1:GetPoint(1)
-                if point and rel then
-                    ns.cf1PositionLocked = false
-                    if wasTop and not checked then
-                        ChatFrame1:SetPoint(point, rel, relPoint, x, y + ns.INPUT_BAR_CLAMP)
-                    elseif not wasTop and checked then
-                        ChatFrame1:SetPoint(point, rel, relPoint, x, y - ns.INPUT_BAR_CLAMP)
-                    end
-                    ns.cf1PositionLocked = true
-                end
-                ns.ApplyChatMargins()
+                ns.ApplyInputBarPosition()
             end),
             CreateCheckbox(tabPanels[1], "Transparent input bar", GudaChatDB.transparentInput, function(checked)
                 GudaChatDB.transparentInput = checked

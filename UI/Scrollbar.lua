@@ -8,10 +8,12 @@ local function CreateScrollbar(chatFrame)
     if chatFrame.gudaScrollbar then return end
     local slider = CreateFrame("Slider", nil, chatFrame, "BackdropTemplate")
     chatFrame.gudaScrollbar = slider
-    slider:SetWidth(6)
-    local scrollOffR = ns.IS_MODERN and 12 or 0
-    slider:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", -2 + scrollOffR, -2)
-    slider:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2 + scrollOffR, 2)
+    slider:SetWidth(ns.SCROLLBAR_W)
+    -- Sit just inside the right edge of the message area (which extends CHAT_EDGE_PAD past
+    -- the frame's own right edge on retail). ApplyFrameInsets reserves the matching gutter.
+    local rightEdge = ns.CHAT_EDGE_PAD - 2
+    slider:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", rightEdge, -2)
+    slider:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", rightEdge, 2)
     slider:SetOrientation("VERTICAL")
     slider:SetMinMaxValues(0, 1)
     slider:SetValue(0)
@@ -24,7 +26,7 @@ local function CreateScrollbar(chatFrame)
     local thumb = slider:CreateTexture(nil, "OVERLAY")
     thumb:SetTexture("Interface\\Buttons\\WHITE8x8")
     thumb:SetVertexColor(1, 1, 1, 0.4)
-    thumb:SetSize(6, 30)
+    thumb:SetSize(ns.SCROLLBAR_W, 30)
     slider:SetThumbTexture(thumb)
 
     slider:SetScript("OnEnter", function()
@@ -101,7 +103,7 @@ local function CreateScrollbar(chatFrame)
     -- Scroll to bottom button
     local scrollDown = CreateFrame("Button", nil, chatFrame)
     scrollDown:SetSize(20, 20)
-    scrollDown:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -2 + scrollOffR, 2)
+    scrollDown:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", rightEdge, 2)
     scrollDown:SetFrameStrata("DIALOG")
 
     local sdBg = scrollDown:CreateTexture(nil, "BACKGROUND")

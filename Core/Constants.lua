@@ -135,6 +135,34 @@ local function SyncDockedFrames()
 end
 ns.SyncDockedFrames = SyncDockedFrames
 
+-- Single writer for GudaChatDB.position. ReapplyChatFrame1Geometry treats that table as the
+-- source of truth, so anything that moves ChatFrame1 must go through here — otherwise the
+-- next dock update / UIParent_ManageFramePositions snaps the frame back to stale coords.
+local function SaveChatPosition()
+    if not GudaChatDB then return end
+    local point, _, relPoint, x, y = ChatFrame1:GetPoint(1)
+    if not point then return end
+    GudaChatDB.position = { point = point, relPoint = relPoint or point, x = x or 0, y = y or 0 }
+    SyncDockedFrames()
+end
+ns.SaveChatPosition = SaveChatPosition
+
+-- Changing SetClampRectInsets does not reposition a frame that already violates the new
+-- clamp rect; it sits out of bounds until some later event snaps it. Re-apply the saved
+-- anchor to force the engine to re-evaluate clamping now, then persist where it landed.
+local function SettleChatPosition()
+    local p = GudaChatDB and GudaChatDB.position
+    if not p then return end        -- never moved: leave Blizzard's default layout alone
+    ns.cf1PositionLocked = false    -- keep ReapplyChatFrame1Geometry inert meanwhile
+    ChatFrame1:ClearAllPoints()
+    ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
+    C_Timer.After(0, function()
+        SaveChatPosition()          -- record the post-clamp position
+        ns.cf1PositionLocked = true
+    end)
+end
+ns.SettleChatPosition = SettleChatPosition
+
 local function CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(12, 12)
@@ -258,3 +286,14 @@ ns.IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 110000
 -- which shipped in 10.0 alongside the modern chat frame and is absent on the 1.15/legacy
 -- engine; this self-corrects for whichever engine the TBC/Anniversary client happens to run.
 ns.IS_MODERN = ns.IS_RETAIL or (Settings ~= nil) or false
+
+-- Right-edge gutter of the chat frame's message area. The retail chat frame reserves a
+-- column on the right that classic engines do not have, so chrome anchored to the frame
+-- must reach further right there to line up with the text.
+-- Deliberately NOT gated on IS_MODERN: that is also true on MoP Classic and Classic Era
+-- (both expose the Settings API) while they run legacy chat-frame geometry with no gutter,
+-- which made the header/tab bar/input bar render 13px wider than the chat window there.
+ns.CHAT_EDGE_PAD = ns.IS_RETAIL and 13 or 0
+
+-- Custom scrollbar width (UI/Scrollbar.lua)
+ns.SCROLLBAR_W = 6

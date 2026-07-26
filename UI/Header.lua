@@ -1763,7 +1763,7 @@ end
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
     header:SetHeight(HEADER_HEIGHT)
-    local extraR = ns.IS_MODERN and 13 or 0
+    local extraR = ns.CHAT_EDGE_PAD
     header:SetPoint("BOTTOMLEFT", parentFrame, "TOPLEFT", -4, 0)
     header:SetPoint("BOTTOMRIGHT", parentFrame, "TOPRIGHT", 4 + extraR, 0)
     header:SetFrameStrata("MEDIUM")
@@ -1775,7 +1775,7 @@ local function CreateChatHeader(parentFrame)
     -- Hover detection zone
     local hoverZone = CreateFrame("Frame", nil, UIParent)
     hoverZone:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
-    hoverZone:SetPoint("BOTTOMRIGHT", parentFrame, "BOTTOMRIGHT", 0, 0)
+    hoverZone:SetPoint("BOTTOMRIGHT", parentFrame, "BOTTOMRIGHT", 4 + extraR, 0)
     hoverZone:SetFrameStrata("BACKGROUND")
     hoverZone:EnableMouse(false)
 
@@ -1897,12 +1897,10 @@ local function CreateChatHeader(parentFrame)
         parentFrame:SetUserPlaced(false)
         self.isDragging = false
         self:SetScript("OnUpdate", nil)
-        local point, _, relPoint, x, y = parentFrame:GetPoint(1)
-        GudaChatDB.position = { point = point, relPoint = relPoint, x = x, y = y }
+        -- Save position and sync all docked frames to it
+        ns.SaveChatPosition()
         -- Re-lock position against UIParentPanelManager
         ns.cf1PositionLocked = true
-        -- Sync all docked frames to new position
-        ns.SyncDockedFrames()
     end
 
     header:SetScript("OnDragStart", function(self)
