@@ -116,10 +116,43 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.showTabBar == nil then
             GudaChatDB.showTabBar = true
         end
+        ---------------------------------------------------------------
+        -- Per-character storage
+        --
+        -- Chat history, the loot log and the addon log are recorded per
+        -- character; settings stay account-wide so preferences follow
+        -- you across alts.
+        ---------------------------------------------------------------
+        GudaChatCharDB = GudaChatCharDB or {}
+        local charDB = GudaChatCharDB
+
+        -- One-time migration from the account-wide tables. Whichever character
+        -- logs in first inherits the existing history, then the old copy is
+        -- cleared so it is not duplicated onto every alt.
+        if type(GudaChatDB.history) == "table" then
+            if type(charDB.history) ~= "table" or next(charDB.history) == nil then
+                charDB.history = GudaChatDB.history
+            end
+            GudaChatDB.history = nil
+        end
+        if type(GudaChatDB.lootLog) == "table" then
+            if type(charDB.lootLog) ~= "table" or #charDB.lootLog == 0 then
+                charDB.lootLog = GudaChatDB.lootLog
+            end
+            GudaChatDB.lootLog = nil
+        end
+        if type(GudaChatDB.addonLog) == "table" then
+            if type(charDB.addonLog) ~= "table" or #charDB.addonLog == 0 then
+                charDB.addonLog = GudaChatDB.addonLog
+            end
+            GudaChatDB.addonLog = nil
+        end
+        GudaChatDB.logSchema = nil  -- moved to the per-character table
+
         -- History: per-channel buckets
-        if type(GudaChatDB.history) ~= "table" or GudaChatDB.history[1] ~= nil then
+        if type(charDB.history) ~= "table" or charDB.history[1] ~= nil then
             -- Reset if old flat-array format or missing
-            GudaChatDB.history = {}
+            charDB.history = {}
         end
         GudaChatDB.historyMax = GudaChatDB.historyMax or 2000
         -- Clamp profiles saved before the slider's range became 500-4000
@@ -132,11 +165,11 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             GudaChatDB.historyEnabled = true
         end
         -- Loot log and addon message log (separate from the chat history buckets)
-        if type(GudaChatDB.lootLog) ~= "table" then
-            GudaChatDB.lootLog = {}
+        if type(charDB.lootLog) ~= "table" then
+            charDB.lootLog = {}
         end
-        if type(GudaChatDB.addonLog) ~= "table" then
-            GudaChatDB.addonLog = {}
+        if type(charDB.addonLog) ~= "table" then
+            charDB.addonLog = {}
         end
         if GudaChatDB.logLoot == nil then
             GudaChatDB.logLoot = true
@@ -147,9 +180,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         -- One-time reset: entries captured before loot, combat log, joined
         -- channels and NPC speech were excluded are still sitting in the
         -- addon log. Bump this whenever the capture rules tighten again.
-        if GudaChatDB.logSchema ~= 3 then
-            wipe(GudaChatDB.addonLog)
-            GudaChatDB.logSchema = 3
+        if charDB.logSchema ~= 3 then
+            wipe(charDB.addonLog)
+            charDB.logSchema = 3
         end
         if GudaChatDB.notifications == nil then
             GudaChatDB.notifications = {

@@ -4,6 +4,7 @@
 ## Author: Vati
 ## Version: 1.3.8
 ## SavedVariables: GudaChatDB
+## SavedVariablesPerCharacter: GudaChatCharDB
 ## IconTexture: Interface\AddOns\GudaChat\Assets\logo.png
 
 ## Category: Guda

@@ -321,13 +321,13 @@ StaticPopupDialogs["GUDACHAT_CLEAR_HISTORY"] = {
     button1 = ACCEPT,
     button2 = CANCEL,
     OnAccept = function()
-        if GudaChatDB and GudaChatDB.history then
-            for k in pairs(GudaChatDB.history) do
-                wipe(GudaChatDB.history[k])
+        if GudaChatCharDB and GudaChatCharDB.history then
+            for k in pairs(GudaChatCharDB.history) do
+                wipe(GudaChatCharDB.history[k])
             end
         end
-        if GudaChatDB and GudaChatDB.lootLog then wipe(GudaChatDB.lootLog) end
-        if GudaChatDB and GudaChatDB.addonLog then wipe(GudaChatDB.addonLog) end
+        if GudaChatCharDB and GudaChatCharDB.lootLog then wipe(GudaChatCharDB.lootLog) end
+        if GudaChatCharDB and GudaChatCharDB.addonLog then wipe(GudaChatCharDB.addonLog) end
         if ns.historyFrame and ns.historyFrame.RefreshHistory then
             ns.historyFrame:RefreshHistory()
         end
@@ -345,7 +345,7 @@ local settingsFrame
 
 local function CreateSettingsFrame()
     local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(400, 520)
+    f:SetSize(480, 520)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)

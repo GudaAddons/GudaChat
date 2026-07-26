@@ -3,8 +3,8 @@ local addonName, ns = ...
 ---------------------------------------------------------------------------
 -- Loot log and addon message log
 --
--- Both are stored as top-level GudaChatDB arrays, deliberately NOT inside
--- GudaChatDB.history: InitHistorySeq deletes any history entry without string
+-- Both are stored as top-level GudaChatCharDB arrays (per character), deliberately NOT inside
+-- GudaChatCharDB.history: InitHistorySeq deletes any history entry without string
 -- sender/message fields, and #HISTORY_FILTER_KEYS is the per-channel prune
 -- divisor, so adding buckets there would shrink every chat channel's cap.
 ---------------------------------------------------------------------------
@@ -105,7 +105,8 @@ lootFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     local tail = linkEnd and text:sub(linkEnd + 1) or ""
     local count = tonumber(tail:match("%d+")) or 1
 
-    Push(GudaChatDB.lootLog, {
+    if not GudaChatCharDB then return end
+    Push(GudaChatCharDB.lootLog, {
         time = time(),
         -- The event's message is already the finished, localized chat line
         -- ("You receive loot: [Item]x2.", "Vieta receives loot: [Item]."), so
@@ -220,7 +221,8 @@ local function OnAddMessage(frame, msg)
     local plain = StripColors(text) or text
     local tag = plain:match("^%s*%[(.-)%]")
 
-    Push(GudaChatDB.addonLog, {
+    if not GudaChatCharDB then return end
+    Push(GudaChatCharDB.addonLog, {
         time = time(),
         tag = tag,
         message = text,

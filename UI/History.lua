@@ -97,9 +97,9 @@ end
 local historySeq = 0
 
 local function InitHistorySeq()
-    if not GudaChatDB or not GudaChatDB.history then return end
+    if not GudaChatCharDB or not GudaChatCharDB.history then return end
     local maxSeq = 0
-    for _, bucket in pairs(GudaChatDB.history) do
+    for _, bucket in pairs(GudaChatCharDB.history) do
         if type(bucket) == "table" then
             -- Iterate backwards so tremove() is safe; drop entries missing a string
             -- sender/message (legacy corruption: secret values can't serialize and were
@@ -130,14 +130,15 @@ local HISTORY_EVENTS = {
 }
 historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.historyEnabled then return end
+    if not GudaChatCharDB or not GudaChatCharDB.history then return end
     local channelKey = event:gsub("CHAT_MSG_", "")
     local label = HISTORY_CHANNEL_LABELS[channelKey]
     if not label then return end
 
-    local bucket = GudaChatDB.history[label]
+    local bucket = GudaChatCharDB.history[label]
     if not bucket then
-        GudaChatDB.history[label] = {}
-        bucket = GudaChatDB.history[label]
+        GudaChatCharDB.history[label] = {}
+        bucket = GudaChatCharDB.history[label]
     end
 
     -- guid (senderGUID) is a secret string on modern clients (11.0+); comparing it with
@@ -193,7 +194,7 @@ end
 
 local function ReplayHistory()
     if not GudaChatDB or not GudaChatDB.historyEnabled then return end
-    local history = GudaChatDB.history
+    local history = GudaChatCharDB and GudaChatCharDB.history
     if not history then return end
 
     local all = {}
@@ -554,15 +555,15 @@ local function CreateHistoryFrame()
     -- Gather and format entries
     local function GatherEntries()
         local results = {}
-        local historyDB = GudaChatDB and GudaChatDB.history or {}
+        local historyDB = GudaChatCharDB and GudaChatCharDB.history or {}
         -- UTF8Lower, not string.lower: WoW's lower only folds A-Z, so searching
         -- Cyrillic was case-sensitive. Both sides must fold the same way.
         local searchText = ns.UTF8Lower(searchBox:GetText())
 
-        -- Loot and Log live outside GudaChatDB.history and have their own fields
+        -- Loot and Log live outside GudaChatCharDB.history and have their own fields
         if selectedFilter == "Loot" or selectedFilter == "Log" then
             local isLoot = selectedFilter == "Loot"
-            local list = GudaChatDB and (isLoot and GudaChatDB.lootLog or GudaChatDB.addonLog) or {}
+            local list = GudaChatCharDB and (isLoot and GudaChatCharDB.lootLog or GudaChatCharDB.addonLog) or {}
             for _, entry in ipairs(list) do
                 local matchesSearch = searchText == ""
                 if not matchesSearch then
