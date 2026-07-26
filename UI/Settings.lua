@@ -362,7 +362,7 @@ local function CreateSettingsFrame()
     ButtonFrameTemplate_HideButtonBar(f)
     if f.Inset then f.Inset:Hide() end
 
-    f:SetTitle("GudaChat Settings")
+    f:SetTitle("GudaChat " .. ns.Blizz(SETTINGS, "Settings"))
 
     ns.CreateDragRegion(f)
 

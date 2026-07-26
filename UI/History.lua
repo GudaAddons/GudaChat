@@ -71,6 +71,12 @@ local CHANNEL_DISPLAY = {
     Party    = PARTY,
     Raid     = RAID,
     Instance = INSTANCE_CHAT,
+    Say      = SAY,
+    Yell     = YELL,
+    Whisper  = WHISPER,
+    Loot     = LOOT,
+    All      = ALL,
+    -- "Log" has no Blizzard equivalent and stays English
 }
 
 local function ChannelLabel(channel)
@@ -346,7 +352,8 @@ local function CreateHistoryFrame()
 
         tab:HookScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-            GameTooltip:SetText(def.key, 1, 1, 1)
+            -- def.key stays the English filter identity; only the tooltip is localized
+            GameTooltip:SetText(ChannelLabel(def.key), 1, 1, 1)
             GameTooltip:Show()
         end)
         tab:HookScript("OnLeave", function()
@@ -389,7 +396,7 @@ local function CreateHistoryFrame()
 
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     placeholder:SetPoint("LEFT", searchBox, "LEFT", 22, 0)
-    placeholder:SetText("Search...")
+    placeholder:SetText(ns.Blizz(SEARCH, "Search") .. "...")
     searchBox:SetScript("OnEditFocusGained", function(self)
         placeholder:Hide()
         self:SetBackdropBorderColor(unpack(ns.COLOR_GOLDEN_A))
@@ -414,7 +421,7 @@ local function CreateHistoryFrame()
     local copyBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     copyBtn:SetSize(50, 22)
     copyBtn:SetPoint("LEFT", searchBox, "RIGHT", 4, 0)
-    copyBtn:SetText("Copy")
+    copyBtn:SetText(ns.Blizz(COPY, "Copy"))
     local copyNt = copyBtn:GetNormalTexture()
     if copyNt then copyNt:SetVertexColor(0.6, 0.1, 0.1) end
     local copyPt = copyBtn:GetPushedTexture()

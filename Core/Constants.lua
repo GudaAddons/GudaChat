@@ -305,6 +305,15 @@ ns.SCROLLBAR_W = 6
 -- Clients whose text needs glyphs the bundled Latin fonts do not carry.
 ns.NON_LATIN_LOCALE = { zhCN = true, zhTW = true, koKR = true, ruRU = true }
 
+-- Use a Blizzard global string when the client defines one, else the English
+-- literal. Blizzard's own globals are already translated for every locale, so
+-- labels that have an exact equivalent come out localized for free — and a
+-- global that is missing on an older flavor simply degrades to English.
+function ns.Blizz(value, fallback)
+    if type(value) == "string" and value ~= "" then return value end
+    return fallback
+end
+
 -- Blizzard's slash tokens are localized (SLASH_SAY1 is "/s" on enUS but can
 -- differ elsewhere). Index 1 is the primary token; fall back to the English
 -- literal if the global is missing on this flavor.

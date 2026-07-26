@@ -391,7 +391,7 @@ local function ShowContextMenu(anchor, overrideIndex)
     -------------------------------------------------------------------
     -- Actions
     -------------------------------------------------------------------
-    local renameBtn = CreateContextMenuItem(contextMenu, "Rename Window", function()
+    local renameBtn = CreateContextMenuItem(contextMenu, ns.Blizz(RENAME, "Rename Window"), function()
         local chatFrame = _G["ChatFrame" .. id]
         if chatFrame then
             ns._renamingFrame = chatFrame
@@ -419,7 +419,8 @@ local function ShowContextMenu(anchor, overrideIndex)
     if id ~= 1 then
         -- Use "Close Whisper Window" for temp whisper tabs, "Remove Window" otherwise
         local isTemp = cf and cf.isTemporary
-        local removeLabel = isTemp and "Close Whisper Window" or "Remove Window"
+        local removeLabel = isTemp and ns.Blizz(CLOSE, "Close Whisper Window")
+            or ns.Blizz(REMOVE, "Remove Window")
         local removeBtn = CreateContextMenuItem(contextMenu, removeLabel, function()
             RemoveWindow()
         end)
@@ -448,12 +449,12 @@ local function ShowContextMenu(anchor, overrideIndex)
     -------------------------------------------------------------------
     -- Display section
     -------------------------------------------------------------------
-    local displaySep = CreateContextMenuItem(contextMenu, "Display", nil, true)
+    local displaySep = CreateContextMenuItem(contextMenu, ns.Blizz(DISPLAY, "Display"), nil, true)
     displaySep:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
     displaySep:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
     yOff = yOff - 20
 
-    local fontBtn = CreateContextMenuItem(contextMenu, "Font Size", nil, false, true)
+    local fontBtn = CreateContextMenuItem(contextMenu, ns.Blizz(FONT_SIZE, "Font Size"), nil, false, true)
     fontBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
     fontBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
     yOff = yOff - 20
@@ -489,7 +490,7 @@ local function ShowContextMenu(anchor, overrideIndex)
         end)
     end)
 
-    local bgBtn = CreateContextMenuItem(contextMenu, "Background")
+    local bgBtn = CreateContextMenuItem(contextMenu, ns.Blizz(BACKGROUND, "Background"))
     bgBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
     bgBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
     yOff = yOff - 20
@@ -599,7 +600,7 @@ local function ShowContextMenu(anchor, overrideIndex)
     -------------------------------------------------------------------
     -- Settings
     -------------------------------------------------------------------
-    local settBtn = CreateContextMenuItem(contextMenu, "Settings", function()
+    local settBtn = CreateContextMenuItem(contextMenu, ns.Blizz(SETTINGS, "Settings"), function()
         if ChatConfigFrame and ChatConfigFrame.Show then
             ShowUIPanel(ChatConfigFrame)
         end
@@ -753,8 +754,10 @@ local function CreateCombatSubTabs(header)
 
     local tabs = {}
     local tabDefs = {
-        { key = "mine", label = "My Actions" },
-        { key = "tome", label = "What Happened to Me?" },
+        -- These are Blizzard's own combat-log filter names, already localized and
+        -- read a few lines up for the filter lookup itself
+        { key = "mine", label = ns.Blizz(QUICKBUTTON_NAME_SELF, "My Actions") },
+        { key = "tome", label = ns.Blizz(QUICKBUTTON_NAME_ME, "What Happened to Me?") },
     }
 
     local xOff = 6
@@ -926,7 +929,10 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
                 if idx ~= selectedIdx and not cf:IsShown() then
                     local target = cf.chatTarget
                     local targetShort = ns.SafeShortName(target)
-                    if targetShort and senderShort and targetShort:lower() == senderShort:lower() then
+                    -- UTF8Lower: string.lower folds only A-Z, so a Cyrillic name
+                    -- whose case differed never matched and the tab never blinked
+                    if targetShort and senderShort
+                        and ns.UTF8Lower(targetShort) == ns.UTF8Lower(senderShort) then
                         if not blinkingTabs[idx] then
                             blinkingTabs[idx] = true
                             changed = true
@@ -1724,11 +1730,22 @@ local function SetupWhisperFrame()
         SafeSelectDockFrame(ChatFrame1)
     end
 
+    -- Name the window in the client's language, but keep matching the old English
+    -- literal so windows created by earlier versions are still found instead of a
+    -- second one being spawned alongside them.
+    local whisperName = (type(WHISPERS) == "string" and WHISPERS ~= "" and WHISPERS)
+        or (type(WHISPER) == "string" and WHISPER ~= "" and WHISPER)
+        or "Whispers"
+
+    local function IsWhisperWindowName(name)
+        return name == whisperName or name == "Whispers"
+    end
+
     local idx = GudaChatDB.whisperFrameIndex
     if idx then
         local cf = _G["ChatFrame" .. idx]
         local name = cf and GetChatWindowInfo(idx)
-        if cf and name == "Whispers" then
+        if cf and IsWhisperWindowName(name) then
             InitWhisperFrame(cf, idx)
             return
         end
@@ -1737,7 +1754,7 @@ local function SetupWhisperFrame()
 
     for i = 3, NUM_CHAT_WINDOWS do
         local name = GetChatWindowInfo(i)
-        if name == "Whispers" then
+        if IsWhisperWindowName(name) then
             local cf = _G["ChatFrame" .. i]
             InitWhisperFrame(cf, i)
             return
@@ -1745,7 +1762,7 @@ local function SetupWhisperFrame()
     end
 
     if FCF_OpenNewWindow then
-        FCF_OpenNewWindow("Whispers")
+        FCF_OpenNewWindow(whisperName)
         for i = NUM_CHAT_WINDOWS, 1, -1 do
             local cf = _G["ChatFrame" .. i]
             if cf then
@@ -2046,7 +2063,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Left side: Logo icon (General tab)
     -------------------------------------------------------------------
-    local logoBtn = CreateIconButton(header, ns.ASSET_PATH .. "logo.png", ICON_SIZE + 2, "General")
+    local logoBtn = CreateIconButton(header, ns.ASSET_PATH .. "logo.png", ICON_SIZE + 2, ns.Blizz(GENERAL, "General"))
     logoBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
     logoBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
@@ -2062,7 +2079,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Left side: Combat log icon
     -------------------------------------------------------------------
-    local combatBtn = CreateIconButton(header, ns.ASSET_PATH .. "combat.png", ICON_SIZE, "Combat Log")
+    local combatBtn = CreateIconButton(header, ns.ASSET_PATH .. "combat.png", ICON_SIZE, ns.Blizz(COMBAT_LOG, "Combat Log"))
     combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", 6, 0)
 
     combatBtn:SetScript("OnClick", function()
@@ -2212,7 +2229,7 @@ local function CreateChatHeader(parentFrame)
     -------------------------------------------------------------------
     -- Right side: Settings icon
     -------------------------------------------------------------------
-    local settingsBtn = CreateIconButton(header, ns.ASSET_PATH .. "cog.png", ICON_SIZE, "Settings")
+    local settingsBtn = CreateIconButton(header, ns.ASSET_PATH .. "cog.png", ICON_SIZE, ns.Blizz(SETTINGS, "Settings"))
     settingsBtn:SetPoint("RIGHT", header, "RIGHT", -4, 0)
 
     settingsBtn:SetScript("OnClick", function()
@@ -2324,15 +2341,15 @@ local function CreateChatHeader(parentFrame)
     -- globals — a hardcoded "/bg" is not registered on every locale and would be
     -- pasted as literal text, sending the message to say instead.
     local chatTypeEntries = {
-        { label = "Say",          cmd = ns.SlashCmd("SLASH_SAY", "/s") },
-        { label = "Party Chat",   cmd = ns.SlashCmd("SLASH_PARTY", "/p") },
-        { label = "Raid",         cmd = ns.SlashCmd("SLASH_RAID", "/raid") },
-        { label = "Battleground", cmd = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg") },
-        { label = "Guild Chat",   cmd = ns.SlashCmd("SLASH_GUILD", "/g") },
-        { label = "Yell",         cmd = ns.SlashCmd("SLASH_YELL", "/y") },
-        { label = "Whisper",      cmd = ns.SlashCmd("SLASH_WHISPER", "/w") },
-        { label = "Emote",        cmd = ns.SlashCmd("SLASH_EMOTE", "/e"), hasArrow = true },
-        { label = "Reply",        cmd = ns.SlashCmd("SLASH_REPLY", "/r") },
+        { label = ns.Blizz(SAY, "Say"),                   cmd = ns.SlashCmd("SLASH_SAY", "/s") },
+        { label = ns.Blizz(PARTY, "Party Chat"),          cmd = ns.SlashCmd("SLASH_PARTY", "/p") },
+        { label = ns.Blizz(RAID, "Raid"),                 cmd = ns.SlashCmd("SLASH_RAID", "/raid") },
+        { label = ns.Blizz(BATTLEGROUND, "Battleground"), cmd = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg") },
+        { label = ns.Blizz(GUILD, "Guild Chat"),          cmd = ns.SlashCmd("SLASH_GUILD", "/g") },
+        { label = ns.Blizz(YELL, "Yell"),                 cmd = ns.SlashCmd("SLASH_YELL", "/y") },
+        { label = ns.Blizz(WHISPER, "Whisper"),           cmd = ns.SlashCmd("SLASH_WHISPER", "/w") },
+        { label = ns.Blizz(EMOTE, "Emote"),               cmd = ns.SlashCmd("SLASH_EMOTE", "/e"), hasArrow = true },
+        { label = ns.Blizz(REPLY, "Reply"),               cmd = ns.SlashCmd("SLASH_REPLY", "/r") },
     }
 
     local ctYOff = -4
@@ -2971,7 +2988,8 @@ local function CreateChatHeader(parentFrame)
                     if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                         local ct = cf.chatTarget
                         local ctShort = ns.SafeShortName(ct)
-                        if ctShort and ctShort:lower() == targetShort:lower() then
+                        -- UTF8Lower, not string.lower, which folds only A-Z
+                        if ctShort and ns.UTF8Lower(ctShort) == ns.UTF8Lower(targetShort) then
                             SafeSelectDockFrame(cf)
                             return
                         end
