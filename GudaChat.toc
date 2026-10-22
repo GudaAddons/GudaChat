@@ -2,7 +2,7 @@
 ## Title: GudaChat
 ## Notes: Custom chat addon
 ## Author: Vati
-## Version: 1.3.9
+## Version: 1.4.0
 ## SavedVariables: GudaChatDB
 ## SavedVariablesPerCharacter: GudaChatCharDB
 ## IconTexture: Interface\AddOns\GudaChat\Assets\logo.png
