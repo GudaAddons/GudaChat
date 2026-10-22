@@ -65,26 +65,31 @@ local function AddHeaderHoverFade(header, parentFrame)
         if ns.combatSubTabs then ns.combatSubTabs:SetAlpha(0) end
     end)
     local isHovering = false
+    local hidePending = false
     local hideTimerGen = 0
 
     local function ShowHeader()
         if ns.hideHeaderForInput then return end
         if isHovering then return end
         isHovering = true
+        hidePending = false
         hideTimerGen = hideTimerGen + 1
         fadeOut:Stop()
         fadeIn:PlayFromCurrent()
         SetCombatSubTabsAlpha(header:GetAlpha())
         ns.FadeInScrollbar()
     end
+    ns.ShowChatHeader = ShowHeader
 
     local function HideHeader()
         if not isHovering then return end
         isHovering = false
+        hidePending = true
         hideTimerGen = hideTimerGen + 1
         local gen = hideTimerGen
         C_Timer.After(HEADER_HIDE_DELAY, function()
             if gen ~= hideTimerGen then return end
+            hidePending = false
             if isHovering then return end
             if IsOverChatUI(header, parentFrame)
                 or (GudaChatDB.inlineTabBar and ns.HasBlinkingTabs()) then
@@ -96,6 +101,16 @@ local function AddHeaderHoverFade(header, parentFrame)
             SetCombatSubTabsAlpha(header:GetAlpha())
             ns.FadeOutScrollbar()
         end)
+    end
+
+    -- Safety net for a header left visible while the hover state says hidden (anything
+    -- that set its alpha outside ShowHeader): treat it as hovered so the normal delayed
+    -- fade-out runs.
+    local function HideStrayHeader()
+        if isHovering or hidePending or fadeOut:IsPlaying() then return end
+        if header:GetAlpha() <= 0 then return end
+        isHovering = true
+        HideHeader()
     end
 
     local monitor = CreateFrame("Frame", nil, header)
@@ -120,6 +135,7 @@ local function AddHeaderHoverFade(header, parentFrame)
             ShowHeader()
         else
             HideHeader()
+            HideStrayHeader()
         end
     end)
 end

@@ -120,8 +120,8 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if changed then
         ns.RequestTabRefresh()
         if ns.ShowTabBar then ns.ShowTabBar() end
-        if GudaChatDB.inlineTabBar and ns.chatHeader then
-            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
+        if GudaChatDB.inlineTabBar then
+            ns.RevealHeader()
         end
     end
 end)

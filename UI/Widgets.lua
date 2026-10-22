@@ -24,9 +24,13 @@ local function SetTooltipFontSize(size)
 end
 ns.SetTooltipFontSize = SetTooltipFontSize
 
--- Keeps the chat header visible while the mouse is over one of its controls
+-- Shows the chat header at once (mouse over one of its controls, a tab starting to blink).
+-- Goes through the header's hover state (ns.ShowChatHeader) so the normal fade-out still
+-- runs when the mouse leaves; setting the alpha alone left the header stuck visible.
 local function RevealHeader()
-    if ns.chatHeader and not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
+    if not ns.chatHeader or ns.hideHeaderForInput then return end
+    if ns.ShowChatHeader then ns.ShowChatHeader() end
+    ns.chatHeader:SetAlpha(1)
 end
 ns.RevealHeader = RevealHeader
 

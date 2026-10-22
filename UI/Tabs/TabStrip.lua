@@ -529,6 +529,7 @@ local function AddTabBarHoverFade(bar)
         externalStrip:HideOverflow()
     end)
     local tabBarHideGen = 0
+    local tabBarHidePending = false
 
     local function IsOverTabBarUI()
         return bar:IsMouseOver()
@@ -540,6 +541,7 @@ local function AddTabBarHoverFade(bar)
         if ns.hideHeaderForInput then return end
         if tabBarHovering then return end
         tabBarHovering = true
+        tabBarHidePending = false
         tabBarHideGen = tabBarHideGen + 1
         tabBarFadeOut:Stop()
         tabBarFadeIn:PlayFromCurrent()
@@ -548,10 +550,12 @@ local function AddTabBarHoverFade(bar)
     local function HideTabBar()
         if not tabBarHovering then return end
         tabBarHovering = false
+        tabBarHidePending = true
         tabBarHideGen = tabBarHideGen + 1
         local gen = tabBarHideGen
         C_Timer.After(TAB_BAR_HIDE_DELAY, function()
             if gen ~= tabBarHideGen then return end
+            tabBarHidePending = false
             if tabBarHovering then return end
             if ns.HasBlinkingTabs() or ns.IsContextMenuShown() or IsOverTabBarUI() then
                 tabBarHovering = true
@@ -560,6 +564,15 @@ local function AddTabBarHoverFade(bar)
             tabBarFadeIn:Stop()
             tabBarFadeOut:PlayFromCurrent()
         end)
+    end
+
+    -- Safety net for a bar left visible while the hover state says hidden: treat it as
+    -- hovered so the normal delayed fade-out runs (blinking tabs still keep it up).
+    local function HideStrayTabBar()
+        if tabBarHovering or tabBarHidePending or tabBarFadeOut:IsPlaying() then return end
+        if bar:GetAlpha() <= 0 then return end
+        tabBarHovering = true
+        HideTabBar()
     end
 
     local tabBarMonitor = CreateFrame("Frame", nil, bar)
@@ -579,6 +592,7 @@ local function AddTabBarHoverFade(bar)
             ShowTabBar()
         else
             HideTabBar()
+            HideStrayTabBar()
         end
     end)
 
