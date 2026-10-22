@@ -450,7 +450,7 @@ AddCard("appearance", 10, function(page)
     local choices = {}
     for i, name in ipairs(ns.Theme.ORDER) do
         local choice = CreateThemeChoice(row, name, function(picked)
-            ns.Theme.Set(picked)
+            ns.Theme.Choose(picked)
             page:Relayout()
         end)
         choices[i] = choice

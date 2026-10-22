@@ -95,21 +95,28 @@ return function(T, H)
         T.eq(gb, 0, "gold b")
     end)
 
-    T.case("fresh installs start Modern Dark, 1.x profiles stay Classic", function()
+    T.case("Blizzard is the default unless the player picked a theme", function()
         GudaChatDB = {}
-        Theme.Init(true)
-        T.eq(GudaChatDB.theme, "modern", "fresh")
+        Theme.Init()
+        T.eq(GudaChatDB.theme, "blizzard", "fresh")
         T.eq(GudaChatDB.accent, "class", "fresh accent")
-        T.eq(Theme.Current(), "modern", "applied")
+        T.eq(Theme.Current(), "blizzard", "applied")
         GudaChatDB = { copyLinks = true }
-        Theme.Init(false)
-        T.eq(GudaChatDB.theme, "classic", "existing profile")
-        GudaChatDB = { theme = "blizzard" }
-        Theme.Init(false)
-        T.eq(GudaChatDB.theme, "blizzard", "saved choice kept")
-        GudaChatDB = { theme = "nonsense" }
-        Theme.Init(true)
-        T.eq(GudaChatDB.theme, "modern", "unknown theme replaced")
+        Theme.Init()
+        T.eq(GudaChatDB.theme, "blizzard", "1.x profile")
+        GudaChatDB = { theme = "classic" }
+        Theme.Init()
+        T.eq(GudaChatDB.theme, "blizzard", "test-build value not chosen by the player")
+        GudaChatDB = { theme = "modern", themeUserSet = true }
+        Theme.Init()
+        T.eq(GudaChatDB.theme, "modern", "player's choice kept")
+        GudaChatDB = { theme = "nonsense", themeUserSet = true }
+        Theme.Init()
+        T.eq(GudaChatDB.theme, "blizzard", "unknown theme replaced")
+        GudaChatDB = {}
+        Theme.Choose("classic")
+        T.eq(GudaChatDB.themeUserSet, true, "Choose marks the choice")
+        T.eq(GudaChatDB.theme, "classic", "Choose applies")
     end)
 
     T.case("Paint keeps regions themed across switches", function()

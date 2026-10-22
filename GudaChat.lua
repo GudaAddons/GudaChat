@@ -284,7 +284,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             GudaChatDB.bgFromTheme = isFreshInstall
         end
         GudaChatDB.whisperIcon = ns.ApplyWhisperIconDefaults(GudaChatDB.whisperIcon)
-        ns.Theme.Init(isFreshInstall)
+        ns.Theme.Init()
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_LOGOUT" then

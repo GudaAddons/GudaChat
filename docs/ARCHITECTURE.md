@@ -120,7 +120,7 @@ Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were
 - **Fonts.** UI text uses GudaChat's font objects (`GudaChatFontNormalSmall`, `GudaChatFontHighlightSmall`, `GudaChatFontHighlight`, `GudaChatFontDisableSmall`), copies of the game's. A theme with a `uiFont` swaps their font file; FontStrings follow live. The chat message font option is separate.
 - **Accent.** `GudaChatDB.accent` is `"class"` (default) or `{ r, g, b }`. Only Modern Dark uses it; Classic and Blizzard keep their gold.
 - **Live switching.** `ns.Theme.Set(name)` and `ns.Theme.SetAccent(value)` refill the palette, restyle every remembered panel and painted region, update the fonts and run the `Theme.OnChange` listeners (the tab strips rebuild, the chat background follows the theme). Nothing runs per frame.
-- **Defaults.** Fresh installs start with `modern`; profiles from 1.x (no `theme` field) get `classic`, so nothing changes for existing players.
+- **Defaults.** Every profile uses `blizzard` until the player picks a theme on the Appearance page. `Theme.Choose` sets `GudaChatDB.themeUserSet`; only a theme picked that way is kept when the default changes.
 - **Chat background.** Each theme has a default (`Theme.chatBg`). It is used while `GudaChatDB.bgFromTheme` is set (fresh installs); the first time the player changes the opacity or colour, `ns.TakeOverChatBackground` copies the shown values into `globalBgColor` / `globalBgAlpha` and the player's own values win from then on. `ns.GetChatBackground` returns what is in use.
 
 ## Settings window

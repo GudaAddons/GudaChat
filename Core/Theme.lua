@@ -25,8 +25,8 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- Clients whose own letters FiraSans lacks; their themes keep the game's font
 local NO_FIRA_LOCALE = { zhCN = true, zhTW = true, koKR = true }
 
-local DEFAULT_THEME = "modern"
-local LEGACY_THEME = "classic"
+local DEFAULT_THEME = "blizzard"
+local INITIAL_PALETTE_THEME = "classic"
 
 local function Accent(alpha)
     return { accent = true, a = alpha }
@@ -320,7 +320,7 @@ end
 Theme.chatBg = { r = 0.08, g = 0.08, b = 0.08, a = 0 }
 
 local current = Theme.THEMES.classic
-local currentName = LEGACY_THEME
+local currentName = INITIAL_PALETTE_THEME
 local accentColor = { 1, 0.82, 0 }
 
 local panels = setmetatable({}, { __mode = "k" })
@@ -655,16 +655,18 @@ function Theme.SetAccent(setting)
     Refresh()
 end
 
--- The theme a profile starts with: fresh installs get Modern Dark, profiles saved by
--- GudaChat 1.x (no theme field yet) keep the 1.x look
-function Theme.DefaultFor(isFreshInstall)
-    return isFreshInstall and DEFAULT_THEME or LEGACY_THEME
+-- A theme the player picked in Settings. Only these choices are kept across a change of
+-- the default theme; anything else (fresh installs, 1.x profiles, the value written by
+-- earlier 2.0 test builds) follows DEFAULT_THEME.
+function Theme.Choose(name)
+    if GudaChatDB then GudaChatDB.themeUserSet = true end
+    Theme.Set(name)
 end
 
 -- Called once GudaChatDB exists. Fills the theme and accent defaults, then applies.
-function Theme.Init(isFreshInstall)
-    if GudaChatDB.theme == nil or not Theme.THEMES[GudaChatDB.theme] then
-        GudaChatDB.theme = Theme.DefaultFor(isFreshInstall)
+function Theme.Init()
+    if not GudaChatDB.themeUserSet or not Theme.THEMES[GudaChatDB.theme] then
+        GudaChatDB.theme = DEFAULT_THEME
     end
     if GudaChatDB.accent == nil then
         GudaChatDB.accent = "class"
