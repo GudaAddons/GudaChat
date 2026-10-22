@@ -328,28 +328,7 @@ local historyFrame
 local SEARCH_DELAY = 0.2
 
 local function CreateHistoryFrame()
-    local f = CreateFrame("Frame", "GudaChatHistoryPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(560, 500)
-    f:SetPoint("CENTER")
-    f:SetMovable(true)
-    f:SetClampedToScreen(true)
-    f:SetFrameStrata("DIALOG")
-    f:SetToplevel(true)
-    f:EnableMouse(true)
-
-    tinsert(UISpecialFrames, "GudaChatHistoryPopup")
-
-    -- Close on entering combat
-    f:RegisterEvent("PLAYER_REGEN_DISABLED")
-    f:SetScript("OnEvent", function(self) self:Hide() end)
-
-    ButtonFrameTemplate_HidePortrait(f)
-    ButtonFrameTemplate_HideButtonBar(f)
-    if f.Inset then f.Inset:Hide() end
-
-    f:SetTitle(L["HISTORY_TITLE"])
-
-    ns.CreateDragRegion(f)
+    local f = ns.CreateButtonFramePopup("GudaChatHistoryPopup", 560, 500, L["HISTORY_TITLE"])
 
     local content = CreateFrame("Frame", nil, f)
     content:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -60)

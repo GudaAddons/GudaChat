@@ -18,8 +18,16 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `Core/Filters.lua` | Class colours, player level, copyable URL links, own-name highlight and mention sound. Link click handling. |
 | `Core/Logs.lua` | Loot log and addon message log (ring buffers), loot line parsing. |
 | `Core/Chrome.lua` | Hides Blizzard's chat chrome (tabs, buttons, dock manager), lock state, window colours. |
+| `UI/Widgets.lua` | Shared widgets: icon buttons, menu items (`ns.CreateMenuItem`, reusable `ns.GetMenuItem`), click-outside closers, `ns.ShowColorPicker` (both picker generations), `ns.CreateButtonFramePopup` (History and Settings windows), fade and hover timings. |
+| `UI/Selection.lua` | Which chat window is selected: `ns.SafeSelectDockFrame`, `ns.GetSelectedChatFrame(Index)`, `ns.OnFrameSelected`, `ns.SetCombatLogVisible`, `ns.GetChatTabName`, `ns.RequestTabRefresh`. |
+| `UI/Tabs/Model.lua` | Tab data: which windows get a tab (`ns.CollectChatTabs`), tab colours, saved tab order and drag moves, unread blink state with its one event listener. |
+| `UI/Tabs/TabStrip.lua` | One tab strip renderer (fit, overflow menu, drag to reorder, blink, button pools) used twice: the bar above the header (created here) and the inline tabs (created by the header). |
+| `UI/ContextMenu.lua` | Right-click window menu: rename, new window, remove or leave, font size, background colour. `ns.RemoveWindow`. |
+| `UI/CombatLogTabs.lua` | Combat log sub-tabs (My Actions / What Happened to Me?) and Blizzard filter switching. |
+| `UI/Whisper.lua` | Whispers window, whisper routing and its logout undo, switching to the right tab when the player sends a message. |
+| `UI/ChatTypeMenu.lua` | Chat type and emote menus on the header's chat icon. |
 | `UI/Scrollbar.lua` | Thin scrollbar and scroll-to-bottom button per chat frame. |
-| `UI/Header.lua` | Hover header bar, tab bars (separate and inline), context menu, chat type and emote menus, whisper tab, combat log sub-tabs, tab blink. The biggest file; a split into smaller files is planned for 1.5.0. |
+| `UI/Header.lua` | The header bar itself: hover fade, drag to move, icon buttons, tab label and window dropdown, inline tab setup. |
 | `UI/History.lua` | History capture, the history viewer (search, channel tabs, copy), replay at login. |
 | `UI/Settings.lua` | Settings window (General, Messages, History, Notifications). |
 | `GudaChat.lua` | Slash command, saved data defaults and migrations, login setup, logout handling. |
@@ -83,7 +91,7 @@ Taint is what happens when addon code touches something Blizzard's protected cod
 
 ## Whisper tab and routing
 
-With the Whispers tab on, `ApplyWhisperRouting` (UI/Header.lua):
+With the Whispers tab on, `ApplyWhisperRouting` (UI/Whisper.lua):
 
 - saves the player's `whisperMode` CVar once in `origWhisperMode` and sets it to `inline`, so whispers do not pop out into their own windows;
 - removes the `WHISPER` and `BN_WHISPER` groups from General, so whispers show only in the Whispers tab.

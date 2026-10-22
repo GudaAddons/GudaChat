@@ -19,6 +19,14 @@ Core\EditBox.lua
 Core\Filters.lua
 Core\Logs.lua
 Core\Chrome.lua
+UI\Widgets.lua
+UI\Selection.lua
+UI\Tabs\Model.lua
+UI\Tabs\TabStrip.lua
+UI\ContextMenu.lua
+UI\CombatLogTabs.lua
+UI\Whisper.lua
+UI\ChatTypeMenu.lua
 UI\Scrollbar.lua
 UI\Header.lua
 UI\History.lua

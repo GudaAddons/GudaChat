@@ -398,28 +398,7 @@ StaticPopupDialogs["GUDACHAT_CLEAR_HISTORY"] = {
 local settingsFrame
 
 local function CreateSettingsFrame()
-    local f = CreateFrame("Frame", "GudaChatSettingsPopup", UIParent, "ButtonFrameTemplate")
-    f:SetSize(480, 520)
-    f:SetPoint("CENTER")
-    f:SetMovable(true)
-    f:SetClampedToScreen(true)
-    f:SetFrameStrata("DIALOG")
-    f:SetToplevel(true)
-    f:EnableMouse(true)
-
-    tinsert(UISpecialFrames, "GudaChatSettingsPopup")
-
-    -- Close on entering combat
-    f:RegisterEvent("PLAYER_REGEN_DISABLED")
-    f:SetScript("OnEvent", function(self) self:Hide() end)
-
-    ButtonFrameTemplate_HidePortrait(f)
-    ButtonFrameTemplate_HideButtonBar(f)
-    if f.Inset then f.Inset:Hide() end
-
-    f:SetTitle("GudaChat " .. ns.Blizz(SETTINGS, "Settings"))
-
-    ns.CreateDragRegion(f)
+    local f = ns.CreateButtonFramePopup("GudaChatSettingsPopup", 480, 520, "GudaChat " .. ns.Blizz(SETTINGS, "Settings"))
 
     -------------------------------------------------------------------
     -- Tabs (Blizzard style)
@@ -666,17 +645,7 @@ local function CreateSettingsFrame()
                         ns.ApplyGlobalBackground()
                     end
                 end
-                if ColorPickerFrame.SetupColorPickerAndShow then
-                    ColorPickerFrame:SetupColorPickerAndShow(info)
-                else
-                    ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
-                    ColorPickerFrame.hasOpacity = false
-                    ColorPickerFrame.func = info.swatchFunc
-                    ColorPickerFrame.cancelFunc = info.cancelFunc
-                    ColorPickerFrame.previousValues = { r = info.r, g = info.g, b = info.b }
-                    ColorPickerFrame:Hide()
-                    ColorPickerFrame:Show()
-                end
+                ns.ShowColorPicker(info)
             end)
 
             local function UpdateBgControlsVisibility(enabled)

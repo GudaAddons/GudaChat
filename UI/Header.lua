@@ -2,1919 +2,463 @@ local addonName, ns = ...
 local L = ns.L
 
 ---------------------------------------------------------------------------
--- Chat header bar (hover-reveal, icon buttons)
+-- Chat header bar: hover-reveal, drag to move, icon buttons, the tab label with its
+-- window dropdown, and the inline tabs. The tab bars, menus and selection logic live in
+-- their own files (UI/Tabs, ContextMenu, ChatTypeMenu, CombatLogTabs, Selection).
 ---------------------------------------------------------------------------
 
 local ICON_SIZE = 16
 local HEADER_HEIGHT = 22
-local chatHeader
-local UpdateSubTabsForFrame  -- forward-declared; assigned after subtabs are created
+local ICON_GAP = 6
+local HEADER_HIDE_DELAY = 0.3
+local INLINE_FIRST_GAP = 8
+local INLINE_MIN_SPACE = 60
+local TAB_LABEL_MIN_WIDTH = 40
+local DROPDOWN_ITEM_HEIGHT = 20
+local DROPDOWN_MIN_WIDTH = 60
 
--- Direct frame-switch that avoids FCF_SelectDockFrame entirely.
--- FCF_SelectDockFrame → FCFDock_UpdateTabs → FCF_CheckShowChatFrame calls
--- SetShown on combat-log quick buttons, which triggers the protected
--- ClearEventFilters() in Blizzard_CombatLogProcessor and causes
--- ADDON_ACTION_FORBIDDEN on retail 12.x+.
--- We manage dock state + frame visibility ourselves instead.
-local userSelectedFrame  -- tracks the frame the user (or GudaChat) intentionally selected
+local ICON_ACTIVE = { 1, 1, 1, 1 }
+local ICON_INACTIVE = { 0.7, 0.7, 0.7, 0.9 }
+local TAB_LABEL_COLOR = { 0.6, 0.45, 0.0, 0.8 }
+local TAB_LABEL_HOVER_COLOR = { 1, 0.8, 0, 1 }
 
--- ChatFrame2 is kept Show()n on modern clients (alpha-toggled) to avoid combat taint.
--- While transparent it overlaps the visible frame, so it must not intercept mouse input
--- (a SetAlpha(0) frame still receives mouse wheel/clicks) — tie its mouse to its visibility.
-local function SetCombatLogVisible(visible)
-    if not ChatFrame2 then return end
-    ChatFrame2:SetAlpha(visible and 1 or 0)
-    ChatFrame2:EnableMouseWheel(visible)
-    ChatFrame2:EnableMouse(visible)
-end
-ns.SetCombatLogVisible = SetCombatLogVisible
-
-local function IsDocked(dock, cf)
-    for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
-        if frame == cf then return true end
+-- True when the mouse is over the scrollbar of a visible chat frame
+local function IsOverScrollbar()
+    for i = 1, NUM_CHAT_WINDOWS do
+        local cf = _G["ChatFrame" .. i]
+        if cf and cf.gudaScrollbar and cf:IsVisible() and cf.gudaScrollbar:IsMouseOver() then
+            return true
+        end
     end
     return false
 end
 
-local frameSelectedCallbacks = {}
-
--- Runs fn(cf) after every frame switch, whether it came from GudaChat or from Blizzard's
--- FCF_SelectDockFrame (hooked further down). Keeps the header label, icon highlights and
--- tab blink state in one place instead of only on Blizzard's path.
-function ns.OnFrameSelected(fn)
-    tinsert(frameSelectedCallbacks, fn)
+-- True while the cursor is anywhere in the chat UI: header, chat frame, tab bars,
+-- scrollbars, or one of the open menus
+local function IsOverChatUI(header, parentFrame)
+    local combatSubTabs, chatSubTabs = ns.combatSubTabs, ns.chatSubTabs
+    if header:IsMouseOver() or parentFrame:IsMouseOver() then return true end
+    if combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver() then return true end
+    if chatSubTabs and chatSubTabs:IsShown() and chatSubTabs:GetAlpha() > 0 and chatSubTabs:IsMouseOver() then return true end
+    if IsOverScrollbar() then return true end
+    if GudaChatTabDropdown and GudaChatTabDropdown:IsShown() then return true end
+    if GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown() then return true end
+    if GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown() then return true end
+    if DropDownList1 and DropDownList1:IsShown() then return true end
+    if ns.IsContextMenuShown() or ns.IsFontSubMenuShown() then return true end
+    if GudaChatInlineTabOverflow and GudaChatInlineTabOverflow:IsShown() and GudaChatInlineTabOverflow:IsMouseOver() then return true end
+    return false
 end
 
-local function NotifyFrameSelected(cf)
-    for _, fn in ipairs(frameSelectedCallbacks) do
-        fn(cf)
+local function SetCombatSubTabsAlpha(alpha)
+    local combatSubTabs = ns.combatSubTabs
+    if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(alpha) end
+end
+
+-- Fades the header in while the mouse is over the chat UI and out 0.3 s after it leaves
+-- (unless an inline tab is blinking). The monitor is a child of the header and polls every
+-- HOVER_CHECK_INTERVAL; a generation counter drops stale hide timers.
+local function AddHeaderHoverFade(header, parentFrame)
+    local fadeIn = ns.CreateFade(header, 1, ns.FADE_IN_DURATION)
+    fadeIn:HookScript("OnFinished", function()
+        SetCombatSubTabsAlpha(1)
+    end)
+    local fadeOut = ns.CreateFade(header, 0, ns.FADE_OUT_DURATION)
+    fadeOut:HookScript("OnFinished", function()
+        if ns.combatSubTabs then ns.combatSubTabs:SetAlpha(0) end
+    end)
+    local isHovering = false
+    local hideTimerGen = 0
+
+    local function ShowHeader()
+        if ns.hideHeaderForInput then return end
+        if isHovering then return end
+        isHovering = true
+        hideTimerGen = hideTimerGen + 1
+        fadeOut:Stop()
+        fadeIn:PlayFromCurrent()
+        SetCombatSubTabsAlpha(header:GetAlpha())
+        ns.FadeInScrollbar()
     end
-end
-ns.NotifyFrameSelected = NotifyFrameSelected
 
--- Shows cf and hides the other docked frames without FCF_SelectDockFrame (see above).
--- Two Blizzard writes stay on purpose, and they are the only ones: dock.selected, so
--- Blizzard's own dock updates keep cf on top instead of switching back, and
--- SELECTED_CHAT_FRAME, which Blizzard's chat input and window options read to know the
--- current window. GudaChat itself reads userSelectedFrame instead of those globals.
--- A frame that is not docked (popped out, or closed) is left alone: hiding every docked
--- frame without showing it would leave the chat area empty.
-local function SafeSelectDockFrame(cf)
-    local dock = GENERAL_CHAT_DOCK
-    if not cf or not (dock and dock.DOCKED_CHAT_FRAMES) or not IsDocked(dock, cf) then return end
-    userSelectedFrame = cf
-    C_Timer.After(0, function()
-        if not IsDocked(dock, cf) then return end
-        dock.selected = cf
-        for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
-            if frame == ChatFrame2 then
-                SetCombatLogVisible(frame == cf)
-            elseif frame == cf then
-                frame:Show()
-            else
-                frame:Hide()
+    local function HideHeader()
+        if not isHovering then return end
+        isHovering = false
+        hideTimerGen = hideTimerGen + 1
+        local gen = hideTimerGen
+        C_Timer.After(HEADER_HIDE_DELAY, function()
+            if gen ~= hideTimerGen then return end
+            if isHovering then return end
+            if IsOverChatUI(header, parentFrame)
+                or (GudaChatDB.inlineTabBar and ns.HasBlinkingTabs()) then
+                isHovering = true
+                return
             end
+            fadeIn:Stop()
+            fadeOut:PlayFromCurrent()
+            SetCombatSubTabsAlpha(header:GetAlpha())
+            ns.FadeOutScrollbar()
+        end)
+    end
+
+    local monitor = CreateFrame("Frame", nil, header)
+    local sinceHoverCheck = 0
+    monitor:SetScript("OnUpdate", function(self, elapsed)
+        sinceHoverCheck = sinceHoverCheck + elapsed
+        if sinceHoverCheck < ns.HOVER_CHECK_INTERVAL then return end
+        sinceHoverCheck = 0
+        if ns.hideHeaderForInput then
+            if isHovering then
+                isHovering = false
+                fadeIn:Stop()
+                header:SetAlpha(0)
+                if ns.combatSubTabs then ns.combatSubTabs:SetAlpha(0) end
+                ns.FadeOutScrollbar()
+            end
+            return
         end
-        SELECTED_CHAT_FRAME = cf
-        if UpdateSubTabsForFrame then UpdateSubTabsForFrame(cf) end
-        NotifyFrameSelected(cf)
+        if IsOverChatUI(header, parentFrame) then
+            ShowHeader()
+        else
+            HideHeader()
+        end
     end)
 end
-ns.SafeSelectDockFrame = SafeSelectDockFrame
 
-function ns.GetUserSelectedFrame()
-    return userSelectedFrame
-end
+-- Dragging the header moves the chat (unless locked). An OnUpdate catches interrupted
+-- drags (e.g. targeting a unit mid-drag) and keeps docked frames in step; the position is
+-- saved and locked against UIParentPanelManager when the drag ends.
+local function AddHeaderDrag(header, parentFrame)
+    header:RegisterForDrag("LeftButton")
 
-local function GetChatTabName(index)
-    -- Prefer server-stored name (persists across reloads, even with hidden tabs)
-    if GetChatWindowInfo then
-        local name = GetChatWindowInfo(index)
-        if name and name ~= "" then return name end
+    local function FinishDrag(self)
+        if not self.isDragging then return end
+        parentFrame:StopMovingOrSizing()
+        parentFrame:SetUserPlaced(false)
+        self.isDragging = false
+        self:SetScript("OnUpdate", nil)
+        ns.SaveChatPosition()
+        ns.cf1PositionLocked = true
     end
-    local tab = _G["ChatFrame" .. index .. "Tab"]
-    if tab then
-        local name = tab.Text and tab.Text:GetText() or tab:GetText()
-        if name and name ~= "" then return name end
-    end
-    return string.format(L["CHAT_WINDOW_NUMBER"], index)
-end
 
-local function SetTooltipFontSize(size)
-    if GameTooltipTextLeft1 then
-        local font, _, flags = GameTooltipTextLeft1:GetFont()
-        if font then GameTooltipTextLeft1:SetFont(font, size, flags) end
-    end
-end
+    header:SetScript("OnDragStart", function(self)
+        if GudaChatDB.locked then return end
+        ns.cf1PositionLocked = false
+        parentFrame:SetMovable(true)
+        parentFrame:StartMoving()
+        self.isDragging = true
+        self:SetScript("OnUpdate", function(self)
+            if not IsMouseButtonDown("LeftButton") then
+                FinishDrag(self)
+            else
+                ns.SyncDockedFrames()
+            end
+        end)
+    end)
+    header:SetScript("OnDragStop", FinishDrag)
 
--- Small icon button helper
-local function CreateIconButton(parent, texturePath, size, tooltip)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(size, size)
-
-    local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexture(texturePath)
-    icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
-    btn.icon = icon
-
-    btn:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
-        if tooltip then
+    header:SetScript("OnEnter", function(self)
+        if not GudaChatDB.locked then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(tooltip, 1, 1, 1)
-            SetTooltipFontSize(12)
+            GameTooltip:SetText(L["TIP_DRAG_TO_MOVE"], 0.7, 0.7, 0.7)
+            ns.SetTooltipFontSize(12)
             GameTooltip:Show()
         end
-        if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
     end)
-    btn:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(0.7, 0.7, 0.7, 0.9)
+    header:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-
-    return btn
 end
 
----------------------------------------------------------------------------
--- Rename window popup
----------------------------------------------------------------------------
-
-StaticPopupDialogs["GUDACHAT_RENAME_WINDOW"] = {
-    text = L["PROMPT_RENAME_WINDOW"],
-    button1 = ACCEPT,
-    button2 = CANCEL,
-    hasEditBox = true,
-    OnShow = function(self)
-        local id = ns._renamingIndex or 1
-        self.EditBox:SetText(GetChatTabName(id))
-        self.EditBox:HighlightText()
-        self.EditBox:SetFocus()
-    end,
-    OnAccept = function(self)
-        local name = self.EditBox:GetText()
-        local chatFrame = ns._renamingFrame
-        local id = ns._renamingIndex
-        if chatFrame and name and name ~= "" and id then
-            FCF_SetWindowName(chatFrame, name)
-            SafeSelectDockFrame(chatFrame)
-        end
-    end,
-    EditBoxOnEnterPressed = function(self)
-        local parent = self:GetParent()
-        local name = parent.EditBox:GetText()
-        local chatFrame = ns._renamingFrame
-        local id = ns._renamingIndex
-        if chatFrame and name and name ~= "" and id then
-            FCF_SetWindowName(chatFrame, name)
-            SafeSelectDockFrame(chatFrame)
-        end
-        parent:Hide()
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-}
-
----------------------------------------------------------------------------
--- Custom chat context menu
----------------------------------------------------------------------------
-
-local FONT_SIZES = { 12, 14, 16, 18, 20, 24, 27 }
-
-local contextMenu, fontSubMenu
-
--- The window the player is looking at. GudaChat's own selection comes first because
--- SafeSelectDockFrame does not go through Blizzard's selection code.
-local function GetSelectedChatFrame()
-    return userSelectedFrame
-        or (FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame())
-        or ChatFrame1
-end
-ns.GetSelectedChatFrame = GetSelectedChatFrame
-
-local function GetSelectedChatFrameIndex()
-    local selected = GetSelectedChatFrame()
-    return selected and selected.GetID and selected:GetID() or 1
-end
-
-local function CreateContextMenuItem(parent, label, onClick, isSeparator, hasArrow, isCheckbox)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetHeight(20)
-
-    if isSeparator then
-        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        text:SetPoint("LEFT", btn, "LEFT", 8, 0)
-        text:SetText(label)
-        text:SetTextColor(0.9, 0.75, 0.3)
-        btn:EnableMouse(false)
-        btn.label = text
-        return btn
-    end
-
-    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    text:SetPoint("LEFT", btn, "LEFT", 8, 0)
-    text:SetText(label)
-    btn.label = text
-
-    if isCheckbox then
-        local check = btn:CreateTexture(nil, "ARTWORK")
-        check:SetSize(12, 12)
-        check:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
-        check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-        check:Hide()
-        btn.check = check
-    end
-
-    if hasArrow then
-        local arrow = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        arrow:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
-        arrow:SetText(">")
-        arrow:SetTextColor(0.7, 0.7, 0.7)
-    end
-
-    local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetAllPoints()
-    highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
-    highlight:SetVertexColor(1, 1, 1, 0.1)
-
-    btn:SetScript("OnClick", function(self)
-        if onClick then onClick(self) end
-    end)
-
-    return btn
-end
-
-local function CreateFontSubMenu()
-    local f = CreateFrame("Frame", "GudaChatFontSubMenu", UIParent, "BackdropTemplate")
-    f:SetFrameStrata("TOOLTIP")
-    f:SetFrameLevel(210)
-    ns.ApplyDarkBackdrop(f)
-    f:Hide()
-
+-- The window list shown when the tab label is clicked: every docked window except the
+-- combat log, active one bright
+local function RefreshTabDropdown(dropdown, onPicked)
     local yOff = -4
-    for _, size in ipairs(FONT_SIZES) do
-        local btn = CreateContextMenuItem(f, string.format(L["FONT_SIZE_POINTS"], size), nil, false, false, true)
-        btn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, yOff)
-        btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, yOff)
-
-        btn:SetScript("OnClick", function()
-            GudaChatDB.chatFontSize = size
-            -- Apply to every chat window instantly (preserves font face/flags),
-            -- matching the reload-time apply path.
-            if ns.ApplyChatFontSize then
-                ns.ApplyChatFontSize(size)
-            else
-                local id = GetSelectedChatFrameIndex()
-                local cf = _G["ChatFrame" .. id]
-                if cf then
-                    local fontObj, _, flags = cf:GetFont()
-                    cf:SetFont(fontObj, size, flags)
-                end
-            end
-            if contextMenu then contextMenu:Hide() end
-            f:Hide()
-        end)
-
-        btn:SetScript("OnEnter", function(self)
-            local id = GetSelectedChatFrameIndex()
-            local cf = _G["ChatFrame" .. id]
-            if cf then
-                local _, curSize = cf:GetFont()
-                curSize = math.floor(curSize + 0.5)
-                for _, child in ipairs({f:GetChildren()}) do
-                    if child.check then
-                        child.check:Hide()
-                    end
-                end
-                if math.floor(size + 0.5) == curSize and self.check then
-                    self.check:Show()
-                end
-            end
-        end)
-
-        yOff = yOff - 20
-    end
-
-    f:SetSize(80, math.abs(yOff) + 4)
-    fontSubMenu = f
-    return f
-end
-
-local CONTEXT_MENU_WIDTH = 160
-local MENU_ITEM_HEIGHT = 20
-
--- The context menu's items are built once; each ShowContextMenu only re-labels, shows or
--- hides and re-stacks them (building ~10 new buttons per right-click leaked every one of
--- them for the rest of the session). contextIndex is the chat window the menu acts on.
-local contextIndex = 1
-local contextItems
-local CONTEXT_LAYOUT = { "rename", "newWindow", "remove", "leave", "display", "font", "background", "settings" }
-
--- Closes chat window id and routes its content back to General. Temporary whisper windows
--- are popped back in (clearing their exclusion lists, so whispers reach General or the
--- Whispers window again; the manual fallback clears those lists itself). Permanent windows
--- first hand their message groups and channels to General. Whispers are re-added to
--- General only while the Whispers tab is off.
-local function RemoveWindow(id)
-    local chatFrame = _G["ChatFrame" .. id]
-    if chatFrame then
-        if chatFrame.isTemporary then
-            local target = chatFrame.chatTarget
-            if FCF_PopInWindow then
-                FCF_PopInWindow(chatFrame)
-            elseif FCF_RestoreChatsToFrame then
-                FCF_RestoreChatsToFrame(ChatFrame1, chatFrame)
-                FCF_Close(chatFrame)
-            else
-                if target then
-                    ns.ForEachChatWindow(function(cf)
-                        if cf.excludePrivateMessageList then
-                            cf.excludePrivateMessageList[strlower(target)] = nil
-                        end
-                        if cf.excludeBNPrivateMessageList then
-                            cf.excludeBNPrivateMessageList[strlower(target)] = nil
-                        end
-                    end)
-                end
-                FCF_Close(chatFrame)
-            end
-            if not GudaChatDB.whisperTab then
-                ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
-                ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
-            end
-        else
-            if GetChatWindowMessages then
-                local msgs = { GetChatWindowMessages(id) }
-                for _, msgGroup in ipairs(msgs) do
-                    ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
-                    if AddChatWindowMessages then
-                        AddChatWindowMessages(1, msgGroup)
-                    end
-                end
-            end
-            if GetChatWindowChannels then
-                local channels = { GetChatWindowChannels(id) }
-                for i = 1, #channels, 2 do
-                    local chName = channels[i]
-                    if type(chName) == "string" then
-                        if AddChatWindowChannel then
-                            AddChatWindowChannel(1, chName)
-                        end
-                        if ChatFrame1.channelList and not tContains(ChatFrame1.channelList, chName) then
-                            tinsert(ChatFrame1.channelList, chName)
-                        end
-                        if ChatFrame1.zoneChannelList and not tContains(ChatFrame1.zoneChannelList, chName) then
-                            tinsert(ChatFrame1.zoneChannelList, chName)
-                        end
-                    end
-                end
-            end
-            FCF_Close(chatFrame)
-        end
-    end
-    contextMenu:Hide()
-    SafeSelectDockFrame(ChatFrame1)
-end
-
--- The channel a channel-based window can leave, or nil
-local function LeaveableChannel(id)
-    local tabName = GetChatTabName(id)
-    if not (tabName and GetChannelName) then return nil end
-    local chNum = GetChannelName(tabName)
-    if chNum and chNum > 0 then return tabName end
-    return nil
-end
-
-local function ShowFrameBackground(chatFrame, alpha)
-    local bg = _G[chatFrame:GetName() .. "Background"]
-    if not bg then return end
-    bg:SetScript("OnShow", nil)
-    bg:Show()
-    bg:SetAlpha(alpha)
-end
-
--- Like ShowFrameBackground, but an alpha of 0 hides the background and keeps it hidden
-local function RestoreFrameBackground(chatFrame, alpha)
-    if alpha > 0 then
-        ShowFrameBackground(chatFrame, alpha)
-        return
-    end
-    local bg = _G[chatFrame:GetName() .. "Background"]
-    if not bg then return end
-    bg:Hide()
-    bg:SetScript("OnShow", function(self) self:Hide() end)
-end
-
--- Opens the color picker for one window's background. The modern picker
--- (SetupColorPickerAndShow) works in alpha; the old one in opacity, which is 1 - alpha.
-local function OpenBackgroundPicker(chatFrame)
-    local cr, cg, cb = 0, 0, 0
-    if FCF_GetCurrentChatFrameBackgroundColor then
-        cr, cg, cb = FCF_GetCurrentChatFrameBackgroundColor(chatFrame)
-    end
-    local ca = chatFrame.gudaBgAlpha or 0.25
-
-    local modernPicker = ColorPickerFrame.SetupColorPickerAndShow ~= nil
-    local info = {}
-    info.r = cr
-    info.g = cg
-    info.b = cb
-    info.opacity = modernPicker and ca or (1 - ca)
-    info.hasOpacity = true
-    info.swatchFunc = function()
-        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-        if FCF_SetWindowColor then
-            FCF_SetWindowColor(chatFrame, nr, ng, nb)
-        end
-        ShowFrameBackground(chatFrame, chatFrame.gudaBgAlpha or 0.25)
-    end
-    info.opacityFunc = function()
-        local newAlpha
-        if modernPicker then
-            newAlpha = ColorPickerFrame:GetColorAlpha() or ca
-        else
-            newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or 0)
-        end
-        if FCF_SetWindowAlpha then
-            FCF_SetWindowAlpha(chatFrame, newAlpha)
-        end
-        chatFrame.gudaBgAlpha = newAlpha
-        ShowFrameBackground(chatFrame, newAlpha)
-    end
-    info.cancelFunc = function(prev)
-        if FCF_SetWindowColor then
-            FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
-        end
-        local prevAlpha = ca
-        if modernPicker and prev.a then
-            prevAlpha = prev.a
-        elseif not modernPicker and prev.opacity then
-            prevAlpha = 1 - prev.opacity
-        end
-        if FCF_SetWindowAlpha then
-            FCF_SetWindowAlpha(chatFrame, prevAlpha)
-        end
-        chatFrame.gudaBgAlpha = prevAlpha
-        RestoreFrameBackground(chatFrame, prevAlpha)
-    end
-
-    if ColorPickerFrame.SetupColorPickerAndShow then
-        ColorPickerFrame:SetupColorPickerAndShow(info)
-    else
-        ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
-        ColorPickerFrame.hasOpacity = info.hasOpacity
-        ColorPickerFrame.opacity = info.opacity
-        ColorPickerFrame.func = info.swatchFunc
-        ColorPickerFrame.opacityFunc = info.opacityFunc
-        ColorPickerFrame.cancelFunc = info.cancelFunc
-        ColorPickerFrame.previousValues = { r = info.r, g = info.g, b = info.b, opacity = info.opacity }
-        ColorPickerFrame:Hide()
-        ColorPickerFrame:Show()
-    end
-end
-
-local function AddContextItem(key, label, onClick, isSeparator, hasArrow)
-    local item = CreateContextMenuItem(contextMenu, label, onClick, isSeparator, hasArrow)
-    contextItems[key] = item
-    return item
-end
-
-local function BuildFontItem()
-    local fsm = fontSubMenu or CreateFontSubMenu()
-    local fontBtn = AddContextItem("font", ns.Blizz(FONT_SIZE, "Font Size"), nil, false, true)
-    fontBtn:SetScript("OnEnter", function(self)
-        local curCf = _G["ChatFrame" .. contextIndex]
-        if curCf then
-            local _, curSize = curCf:GetFont()
-            curSize = math.floor(curSize + 0.5)
-            for _, child in ipairs({ fsm:GetChildren() }) do
-                if child.check then
-                    local sizeStr = child.label and child.label:GetText()
-                    local sz = sizeStr and tonumber(sizeStr:match("(%d+)"))
-                    child.check:SetShown(sz == curSize)
-                end
-            end
-        end
-        fsm:ClearAllPoints()
-        fsm:SetPoint("TOPLEFT", self, "TOPRIGHT", 2, 4)
-        fsm:Show()
-    end)
-    fontBtn:SetScript("OnLeave", function(self)
-        C_Timer.After(0.2, function()
-            if fsm and not fsm:IsMouseOver() and not self:IsMouseOver() then
-                fsm:Hide()
-            end
-        end)
-    end)
-end
-
-local function BuildBackgroundItem()
-    local bgBtn = AddContextItem("background", ns.Blizz(BACKGROUND, "Background"), function()
-        local chatFrame = _G["ChatFrame" .. contextIndex]
-        if not chatFrame then return end
-        contextMenu:Hide()
-        OpenBackgroundPicker(chatFrame)
-    end)
-
-    local swatch = bgBtn:CreateTexture(nil, "ARTWORK")
-    swatch:SetSize(14, 14)
-    swatch:SetPoint("RIGHT", bgBtn, "RIGHT", -8, 0)
-    swatch:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bgBtn.swatch = swatch
-
-    local swatchBorder = bgBtn:CreateTexture(nil, "OVERLAY")
-    swatchBorder:SetSize(16, 16)
-    swatchBorder:SetPoint("CENTER", swatch, "CENTER", 0, 0)
-    swatchBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
-    swatchBorder:SetVertexColor(0.5, 0.5, 0.5, 0.8)
-    swatchBorder:SetDrawLayer("ARTWORK", -1)
-
-    bgBtn:SetScript("OnEnter", function()
-        if fontSubMenu then fontSubMenu:Hide() end
-    end)
-end
-
-local function UpdateBackgroundSwatch(cf)
-    local r, g, b, a = 0, 0, 0, 0.5
-    if cf then
-        if FCF_GetCurrentChatFrameBackgroundColor then
-            r, g, b = FCF_GetCurrentChatFrameBackgroundColor(cf)
-        end
-        a = cf.gudaBgAlpha or 0.25
-    end
-    contextItems.background.swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
-end
-
--- Clicking anywhere outside the menu (and its font submenu) closes both. The watcher is a
--- child of the menu, so it only runs while the menu is open.
-local function CreateContextCloser(menu)
-    local closer = CreateFrame("Frame", nil, menu)
-    closer:SetScript("OnUpdate", function()
-        local overMenu = menu:IsMouseOver()
-        local overFont = fontSubMenu and fontSubMenu:IsShown() and fontSubMenu:IsMouseOver()
-        if not overMenu and not overFont and IsMouseButtonDown("LeftButton") then
-            menu:Hide()
-            if fontSubMenu then fontSubMenu:Hide() end
-        end
-    end)
-end
-
-local function BuildContextMenu()
-    local f = CreateFrame("Frame", "GudaChatContextMenu", UIParent, "BackdropTemplate")
-    f:SetFrameStrata("TOOLTIP")
-    f:SetFrameLevel(205)
-    ns.ApplyDarkBackdrop(f)
-    f:Hide()
-    tinsert(UISpecialFrames, "GudaChatContextMenu")
-    f:SetScript("OnHide", function()
-        if fontSubMenu then fontSubMenu:Hide() end
-        local iod = _G["GudaChatInlineTabOverflow"]
-        if iod and iod:IsShown() then iod:Hide() end
-        local eod = _G["GudaChatTabOverflow"]
-        if eod and eod:IsShown() then eod:Hide() end
-    end)
-    contextMenu = f
-    contextItems = {}
-    CreateContextCloser(f)
-
-    AddContextItem("rename", ns.Blizz(RENAME, "Rename Window"), function()
-        local chatFrame = _G["ChatFrame" .. contextIndex]
-        if chatFrame then
-            ns._renamingFrame = chatFrame
-            ns._renamingIndex = contextIndex
-            StaticPopup_Show("GUDACHAT_RENAME_WINDOW")
-        end
-        contextMenu:Hide()
-    end)
-    AddContextItem("newWindow", L["MENU_NEW_WINDOW"], function()
-        if FCF_NewChatWindow then
-            FCF_NewChatWindow()
-        elseif FCF_OpenNewWindow then
-            FCF_OpenNewWindow()
-        end
-        contextMenu:Hide()
-    end)
-    AddContextItem("remove", "", function()
-        RemoveWindow(contextIndex)
-    end)
-    AddContextItem("leave", "", function(self)
-        LeaveChannelByName(self.channelName)
-        RemoveWindow(contextIndex)
-    end)
-    AddContextItem("display", ns.Blizz(DISPLAY, "Display"), nil, true)
-    BuildFontItem()
-    BuildBackgroundItem()
-    AddContextItem("settings", ns.Blizz(SETTINGS, "Settings"), function()
-        if ChatConfigFrame and ChatConfigFrame.Show then
-            ShowUIPanel(ChatConfigFrame)
-        end
-        contextMenu:Hide()
-    end)
-end
-
--- "Close Whisper Window" for temporary whisper tabs, "Remove Window" otherwise; General
--- (window 1) can't be removed, and only channel windows get "Leave".
-local function ShowContextMenu(anchor, overrideIndex)
-    if not contextMenu then BuildContextMenu() end
-
-    local id = overrideIndex or GetSelectedChatFrameIndex()
-    contextIndex = id
-    local cf = _G["ChatFrame" .. id]
-    local isTemp = cf and cf.isTemporary
-    local channelName = id ~= 1 and not isTemp and LeaveableChannel(id) or nil
-
-    local visible = {
-        rename = true, newWindow = true, display = true, font = true, background = true, settings = true,
-        remove = id ~= 1,
-        leave = channelName ~= nil,
-    }
-    contextItems.remove.label:SetText(isTemp and ns.Blizz(CLOSE, "Close Whisper Window")
-        or ns.Blizz(REMOVE, "Remove Window"))
-    contextItems.leave.channelName = channelName
-    if channelName then
-        contextItems.leave.label:SetText(L["MENU_LEAVE"]:format(channelName))
-    end
-    UpdateBackgroundSwatch(cf)
-
-    local yOff = -4
-    for _, key in ipairs(CONTEXT_LAYOUT) do
-        local item = contextItems[key]
-        item:SetShown(visible[key])
-        if visible[key] then
-            item:ClearAllPoints()
-            item:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-            item:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-            yOff = yOff - MENU_ITEM_HEIGHT
-        end
-    end
-
-    contextMenu:SetSize(CONTEXT_MENU_WIDTH, math.abs(yOff) + 4)
-    contextMenu:ClearAllPoints()
-    contextMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
-    contextMenu:Show()
-end
-
----------------------------------------------------------------------------
--- Combat log filtering (My Actions / What Happened to Me?)
--- Uses Blizzard's native Blizzard_CombatLog filter system:
---   Filter 1 = Self (My Actions)
---   Filter 2 = Everything
---   Filter 3 = What Happened to Me?
---   Filter 4 = Kills
----------------------------------------------------------------------------
-
-local combatLogFilter = "mine"
-
--- Subtab bar UI
-local combatSubTabs
-local combatSubTabList = {}
-
--- White for the active filter's subtab, grey for the other
-local function UpdateCombatSubTabColors()
-    for _, t in ipairs(combatSubTabList) do
-        if t.key == combatLogFilter then
-            t.btn.text:SetTextColor(1, 1, 1, 1)
-        else
-            t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
-        end
-    end
-end
-
--- Switches the combat log to "mine" (My Actions) or "tome" (What Happened to Me?). Only
--- called when the player picks a subtab and once at login: refiltering rebuilds the whole
--- combat log, and the player's choice must survive switching to other tabs.
-local function SwitchCombatLogFilter(key)
-    combatLogFilter = key
-    UpdateCombatSubTabColors()
-    if not Blizzard_CombatLog_Filters then return end
-    local filters = Blizzard_CombatLog_Filters.filters
-    if not filters then return end
-
-    local idx
-
-    -- 1) Search by Blizzard quick-button name globals
-    local targetName
-    if key == "mine" then
-        targetName = type(QUICKBUTTON_NAME_SELF) == "string" and QUICKBUTTON_NAME_SELF or nil
-    elseif key == "tome" then
-        targetName = type(QUICKBUTTON_NAME_ME) == "string" and QUICKBUTTON_NAME_ME or nil
-    end
-    if targetName then
-        for i, filter in ipairs(filters) do
-            if filter.name == targetName then
-                idx = i
-                break
-            end
-        end
-    end
-
-    -- 2) Search by hasQuickButton text (retail uses this)
-    if not idx and targetName then
-        for i, filter in ipairs(filters) do
-            if filter.hasQuickButton and filter.quickButtonName == targetName then
-                idx = i
-                break
-            end
-        end
-    end
-
-    -- 3) Search by filter settings (sourceFlags/destFlags with COMBATLOG_FILTER_ME)
-    if not idx and COMBATLOG_FILTER_ME then
-        for i, filter in ipairs(filters) do
-            local settings = filter.settings or filter
-            if key == "mine" and settings.sourceFlags then
-                local flags = settings.sourceFlags
-                if type(flags) == "table" then flags = flags[1] or 0 end
-                if type(flags) == "number" and bit.band(flags, COMBATLOG_FILTER_ME) > 0 then
-                    -- Check it's not also a dest filter (that would be "What happened to me")
-                    local dFlags = settings.destFlags
-                    if type(dFlags) == "table" then dFlags = dFlags[1] or 0 end
-                    if not dFlags or dFlags == 0 or type(dFlags) ~= "number" then
-                        idx = i
-                        break
-                    end
-                end
-            elseif key == "tome" and settings.destFlags then
-                local flags = settings.destFlags
-                if type(flags) == "table" then flags = flags[1] or 0 end
-                if type(flags) == "number" and bit.band(flags, COMBATLOG_FILTER_ME) > 0 then
-                    idx = i
-                    break
-                end
-            end
-        end
-    end
-
-    -- 4) Last resort: index-based fallback
-    if not idx then
-        local total = #filters
-        if key == "mine" then
-            idx = 1
-        elseif key == "tome" then
-            if total >= 4 then idx = 3 else idx = total end
-        end
-    end
-
-    if not idx or not filters[idx] then return end
-
-    -- Switch via Blizzard's supported API. CombatLog_SwitchToFilter (present on modern
-    -- and Classic clients) updates the CombatLogProcessor's filterSettings correctly and
-    -- refreshes the window. Assigning combatLogProcessor.filterSettings ourselves corrupts
-    -- the processor's state and makes Blizzard_CombatLogProcessor throw on every combat event.
-    if CombatLog_SwitchToFilter then
-        CombatLog_SwitchToFilter(idx)
-    elseif Blizzard_CombatLog_ApplyFilters then
-        -- Legacy fallback (older clients without CombatLog_SwitchToFilter)
-        Blizzard_CombatLog_CurrentSettings = filters[idx]
-        Blizzard_CombatLog_Filters.currentFilter = idx
-        Blizzard_CombatLog_ApplyFilters(filters[idx])
-        if Blizzard_CombatLog_Refilter then
-            Blizzard_CombatLog_Refilter()
-        end
-    end
-end
-
-local function CreateCombatSubTabs(header)
-    local bar = CreateFrame("Frame", "GudaChatCombatSubTabs", UIParent, "BackdropTemplate")
-    bar:SetHeight(20)
-    bar:SetPoint("BOTTOMLEFT", header, "TOPLEFT", 0, -1)
-    bar:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT", 0, -1)
-    bar:SetFrameStrata("MEDIUM")
-    bar:SetFrameLevel(101)
-
-    ns.ApplyDarkBackdrop(bar, { 0.05, 0.05, 0.05, 0.75 }, { 0.25, 0.25, 0.25, 0.5 })
-    bar:EnableMouse(true)
-    bar:SetAlpha(0)
-    bar:Hide()
-
-    local tabDefs = {
-        -- These are Blizzard's own combat-log filter names, already localized and
-        -- read a few lines up for the filter lookup itself
-        { key = "mine", label = ns.Blizz(QUICKBUTTON_NAME_SELF, "My Actions") },
-        { key = "tome", label = ns.Blizz(QUICKBUTTON_NAME_ME, "What Happened to Me?") },
-    }
-
-    local xOff = 6
-    for _, def in ipairs(tabDefs) do
-        local btn = CreateFrame("Button", nil, bar)
-        btn:SetHeight(16)
-
-        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        text:SetPoint("LEFT", btn, "LEFT", 0, 0)
-        text:SetText(def.label)
-        btn.text = text
-
-        btn:SetWidth(text:GetStringWidth() + 8)
-        btn:SetPoint("LEFT", bar, "LEFT", xOff, 0)
-        xOff = xOff + btn:GetWidth() + 8
-
-        btn:SetScript("OnClick", function()
-            SwitchCombatLogFilter(def.key)
-        end)
-
-        btn:SetScript("OnEnter", function(self)
-            self.text:SetTextColor(0.9, 0.9, 0.9, 1)
-            if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-        end)
-        btn:SetScript("OnLeave", UpdateCombatSubTabColors)
-
-        tinsert(combatSubTabList, { key = def.key, btn = btn })
-    end
-
-    UpdateCombatSubTabColors()
-    combatSubTabs = bar
-
-    -- Apply the default filter so combat log shows messages on login
-    SwitchCombatLogFilter("mine")
-    if not Blizzard_CombatLog_Filters then
-        C_Timer.After(1, function() SwitchCombatLogFilter(combatLogFilter) end)
-    end
-
-    return bar
-end
-
----------------------------------------------------------------------------
--- Chat window subtab bar (below header, like combat subtabs)
----------------------------------------------------------------------------
-
-local chatSubTabs
-local chatSubTabButtons = {}
-
--- Header and tab bar fade timings, and how often their hover monitors poll the mouse.
--- The monitors are children of the bar they watch, so they stop while it is hidden.
-local FADE_IN_DURATION = 0.15
-local FADE_OUT_DURATION = 0.25
-local HOVER_CHECK_INTERVAL = 0.05
-
--- Tab blink state: tracks which frameIndex values have unread messages
-local blinkingTabs = {}
-
--- One tab switch reaches both tab strips through several paths (the dock hook, the
--- frame-selected notifier and UpdateSubTabsForFrame), and a burst of chat can blink
--- several tabs in one frame. Requests are collected and both strips rebuilt once, on the
--- next frame. Drag-and-drop and settings changes still refresh directly.
-local tabRefreshQueued = false
-
-local function FlushTabRefresh()
-    tabRefreshQueued = false
-    if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
-    if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-end
-
-local function RequestTabRefresh()
-    if tabRefreshQueued then return end
-    tabRefreshQueued = true
-    C_Timer.After(0, FlushTabRefresh)
-end
-ns.RequestTabRefresh = RequestTabRefresh
-
--- Chat events that should trigger tab blink notifications
-local BLINK_EVENTS = {
-    CHAT_MSG_SAY = "SAY", CHAT_MSG_YELL = "YELL", CHAT_MSG_EMOTE = "EMOTE",
-    CHAT_MSG_GUILD = "GUILD", CHAT_MSG_OFFICER = "OFFICER",
-    CHAT_MSG_PARTY = "PARTY", CHAT_MSG_PARTY_LEADER = "PARTY",
-    CHAT_MSG_RAID = "RAID", CHAT_MSG_RAID_LEADER = "RAID",
-    CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT", CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
-    CHAT_MSG_WHISPER = "WHISPER", CHAT_MSG_BN_WHISPER = "BN_WHISPER",
-    CHAT_MSG_CHANNEL = "CHANNEL",
-}
-
--- Map events to notification category keys in GudaChatDB.notifications
-local EVENT_TO_NOTIFY_CATEGORY = {
-    CHAT_MSG_PARTY = "party", CHAT_MSG_PARTY_LEADER = "party",
-    CHAT_MSG_RAID = "raid", CHAT_MSG_RAID_LEADER = "raid", CHAT_MSG_RAID_WARNING = "raid",
-    CHAT_MSG_INSTANCE_CHAT = "raid", CHAT_MSG_INSTANCE_CHAT_LEADER = "raid",
-    CHAT_MSG_GUILD = "guild", CHAT_MSG_OFFICER = "guild",
-    CHAT_MSG_WHISPER = "whispers", CHAT_MSG_BN_WHISPER = "whispers",
-}
-
--- Numeric zone channel ids, which are the same on every locale (2 = Trade,
--- 26 = LookingForGroup). channelBaseName is translated and cannot be matched.
-local ZONE_CHANNEL_CATEGORY = { [2] = "trade", [26] = "lfg" }
-
-local blinkListener = CreateFrame("Frame")
-blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
-    if not GudaChatDB or not (GudaChatDB.showTabBar or GudaChatDB.inlineTabBar) then return end
-    local msgGroup = BLINK_EVENTS[event]
-    if not msgGroup then return end
-
-    -- Check notification category setting
-    local notif = GudaChatDB.notifications
-    if notif then
-        -- General acts as master toggle
-        if not notif.general then return end
-
-        local category = EVENT_TO_NOTIFY_CATEGORY[event]
-        if event == "CHAT_MSG_CHANNEL" then
-            -- arg7 (zoneChannelID) is the 5th vararg after msg, sender; arg9
-            -- (channelBaseName) is the 7th. Classify by the numeric id: the name is
-            -- translated on every non-English client, so matching it against English
-            -- always fell through to "other" and made the Trade/LFG toggles no-ops.
-            local _, _, _, _, zoneID, _, channelName = ...
-            category = ZONE_CHANNEL_CATEGORY[zoneID]
-            if not category then
-                -- Custom channels report no zone id; keep the English test as a
-                -- secondary path so enUS behaviour is unchanged.
-                if channelName and channelName:find("Trade") then
-                    category = "trade"
-                elseif channelName and channelName:find("LookingForGroup") then
-                    category = "lfg"
-                else
-                    category = "other"
-                end
-            end
-        end
-        if category and not notif[category] then return end
-    end
-
-    -- Don't blink for our own messages (sender may be a secret string; use taint-safe helpers)
-    if ns.SameCharacter(sender, ns.UnitFullName("player")) then return end
-
-    local selectedIdx = GetSelectedChatFrameIndex()
-    local changed = false
-
-    -- Check permanent windows
-    for i = 1, NUM_CHAT_WINDOWS do
-        if i ~= selectedIdx and i ~= 2 then
-            -- Skip General tab if notifications for it are disabled
-            if i == 1 and notif and not notif.generalTab then
-                -- Don't blink General tab
-            else
-                local cf = _G["ChatFrame" .. i]
-                if cf and (cf.isDocked or i == 1) and not cf:IsShown() then
-                    local msgs = { GetChatWindowMessages(i) }
-                    for _, grp in ipairs(msgs) do
-                        if grp == msgGroup or grp == event:gsub("CHAT_MSG_", "") then
-                            if not blinkingTabs[i] then
-                                blinkingTabs[i] = true
-                                changed = true
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- Check temporary whisper windows (match sender to chatTarget)
-    if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and CHAT_FRAMES then
-        for _, frameName in ipairs(CHAT_FRAMES) do
-            local cf = _G[frameName]
-            if cf and cf.isTemporary and cf.inUse and cf.isDocked then
-                local idx = cf:GetID()
-                if idx ~= selectedIdx and not cf:IsShown() then
-                    if ns.SameCharacter(cf.chatTarget, sender) then
-                        if not blinkingTabs[idx] then
-                            blinkingTabs[idx] = true
-                            changed = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    if changed then
-        RequestTabRefresh()
-        if ns.ShowTabBar then ns.ShowTabBar() end
-        if GudaChatDB.inlineTabBar and ns.chatHeader then
-            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
-        end
-    end
-end)
-
-for ev in pairs(BLINK_EVENTS) do
-    blinkListener:RegisterEvent(ev)
-end
-
--- Selecting a tab marks it read, on Blizzard's path and on GudaChat's own
-local function ClearBlinkFor(cf)
-    if cf and cf.GetID then
-        blinkingTabs[cf:GetID()] = nil
-    end
-end
-hooksecurefunc("FCF_SelectDockFrame", ClearBlinkFor)
-ns.OnFrameSelected(ClearBlinkFor)
-
--- Drops unread marks for tabs that are no longer shown in the tab bar (closed windows,
--- the Whispers window after the Whispers tab is turned off), so they cannot keep the
--- tab bar and the header pinned visible with nothing to click.
-local function PruneBlinkingTabs(renderedIndexes)
-    for idx in pairs(blinkingTabs) do
-        if not renderedIndexes[idx] then
-            blinkingTabs[idx] = nil
-        end
-    end
-end
-
-function ns.HasBlinkingTabs()
-    return next(blinkingTabs) ~= nil
-end
-
--- Map common tab names to Blizzard ChatTypeInfo keys. GetChatWindowInfo returns
--- the name translated, so the localized globals are registered alongside the
--- English defaults — without them non-English tabs fell through to the default tint.
-local TAB_NAME_TO_CHATTYPE = {
-    ["Guild"]    = "GUILD",
-    ["Party"]    = "PARTY",
-    ["Raid"]     = "RAID",
-    ["Whispers"] = "WHISPER",
-    ["Officer"]  = "OFFICER",
-    ["Say"]      = "SAY",
-    ["Yell"]     = "YELL",
-}
-do
-    -- Positional pairs, not a keyed table: a missing global would be a nil key
-    -- and "table index is nil" is a load-time error. Several of these are absent
-    -- on older flavors.
-    local localized = {
-        { GUILD, "GUILD" }, { PARTY, "PARTY" }, { RAID, "RAID" },
-        { OFFICER, "OFFICER" }, { SAY, "SAY" }, { YELL, "YELL" },
-        { WHISPER, "WHISPER" }, { WHISPERS, "WHISPER" },
-    }
-    for _, pair in ipairs(localized) do
-        local name, chatType = pair[1], pair[2]
-        if type(name) == "string" and name ~= "" and not TAB_NAME_TO_CHATTYPE[name] then
-            TAB_NAME_TO_CHATTYPE[name] = chatType
-        end
-    end
-end
-local TAB_COLOR_DEFAULT = { 0.8, 0.6, 0.0 }
-local TAB_COLOR_GENERAL = { 1.0, 1.0, 0.0 }
-
-local function GetTabColor(name, frameIndex)
-    -- GENERAL is the localized global; the literal keeps enUS behaviour if it is missing
-    if name == "General" or (GENERAL and name == GENERAL) then return TAB_COLOR_GENERAL end
-
-    -- Direct name → ChatTypeInfo lookup (Guild, Party, Raid, etc.)
-    local chatType = TAB_NAME_TO_CHATTYPE[name]
-    if chatType and ChatTypeInfo[chatType] then
-        local info = ChatTypeInfo[chatType]
-        return { info.r, info.g, info.b }
-    end
-
-    -- Channel-based windows (Trade, LFG, custom channels, etc.)
-    -- GetChatWindowChannels returns channel names; resolve number via GetChannelName
-    if frameIndex and GetChatWindowChannels and GetChannelName then
-        local channels = { GetChatWindowChannels(frameIndex) }
-        for i = 1, #channels do
-            local chName = channels[i]
-            if type(chName) == "string" then
-                local chNum = GetChannelName(chName)
-                if chNum and chNum > 0 then
-                    local info = ChatTypeInfo["CHANNEL" .. chNum]
-                    if info then return { info.r, info.g, info.b } end
-                end
-            end
-        end
-    end
-
-    -- Windows with message groups — use the first group's color
-    if frameIndex and GetChatWindowMessages then
-        local msgs = { GetChatWindowMessages(frameIndex) }
-        if #msgs > 0 and ChatTypeInfo[msgs[1]] then
-            local info = ChatTypeInfo[msgs[1]]
-            return { info.r, info.g, info.b }
-        end
-    end
-
-    return TAB_COLOR_DEFAULT
-end
-
-local overflowDropdown  -- persistent overflow menu frame
-
-
--- Drag state for tab reordering
-local dragState = {
-    dragging = false,
-    sourceIdx = nil,   -- index in allTabs being dragged
-    sourceBtn = nil,   -- the button frame being dragged
-    insertIdx = nil,   -- insertion point (drop before this index)
-}
-
--- Persistent insertion indicator line
-local dragIndicator
-
-local function ApplySavedTabOrder(allTabs)
-    local saved = GudaChatDB.tabOrder
-    if not saved or #saved == 0 then return end
-    -- Build lookup: frameIndex → position in saved order
-    local orderMap = {}
-    for pos, frameIdx in ipairs(saved) do
-        orderMap[frameIdx] = pos
-    end
-    local nextPos = #saved + 1
-    table.sort(allTabs, function(a, b)
-        local posA = orderMap[a.frameIndex] or nextPos
-        local posB = orderMap[b.frameIndex] or nextPos
-        if posA == posB then
-            return a.frameIndex < b.frameIndex
-        end
-        return posA < posB
-    end)
-end
-
-local function SaveTabOrder(allTabs)
-    local order = {}
-    for _, def in ipairs(allTabs) do
-        tinsert(order, def.frameIndex)
-    end
-    GudaChatDB.tabOrder = order
-end
-
--- Saves a drag-and-drop move. allTabs is the order on screen, which can differ from the
--- saved order: the selected tab is swapped into the last visible slot when it would
--- otherwise sit in the overflow menu. The move is applied to baseOrder (the order before
--- that swap), so the temporary swap is never saved.
-local function SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
-    local moved = allTabs[srcIdx]
-    if not moved then return end
-    local before = insertIdx <= fitCount and allTabs[insertIdx] or nil
-    local after = not before and allTabs[fitCount] or nil
-    local order = {}
-    for _, def in ipairs(baseOrder) do
-        if def ~= moved then tinsert(order, def) end
-    end
-    local pos = #order + 1
-    for i, def in ipairs(order) do
-        if def == before then
-            pos = i
-            break
-        elseif def == after then
-            pos = i + 1
-            break
-        end
-    end
-    tinsert(order, pos, moved)
-    SaveTabOrder(order)
-end
-
----------------------------------------------------------------------------
--- Widget reuse for the tab strips and their overflow menus
---
--- Tab strips are rebuilt on every tab switch, blink and window change. Frames can never
--- be freed in WoW, so the old SetParent(nil)-and-recreate approach leaked every button,
--- FontString and animation it ever made. Buttons now go back to a pool and are
--- reconfigured on the next refresh; each strip keeps one "more" button and its overflow
--- menu keeps its item buttons.
----------------------------------------------------------------------------
-
-local measureFont
-
--- Width of a tab label in GameFontNormalSmall, measured with one shared FontString
-local function MeasureTabText(text)
-    if not measureFont then
-        measureFont = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        measureFont:SetAlpha(0)
-    end
-    measureFont:SetText(text)
-    return measureFont:GetStringWidth()
-end
-
-local function NewButtonPool()
-    return { free = {} }
-end
-
--- A tab button with its label and its looping unread-blink animation, created once
-local function AcquireTabButton(pool, parent)
-    local btn = tremove(pool.free)
-    if btn then
-        btn:SetParent(parent)
-        btn:Show()
-        return btn
-    end
-    btn = CreateFrame("Button", nil, parent)
-    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    text:SetPoint("LEFT", btn, "LEFT", 0, 0)
-    btn.text = text
-    local blinkAG = text:CreateAnimationGroup()
-    blinkAG:SetLooping("BOUNCE")
-    local fade = blinkAG:CreateAnimation("Alpha")
-    fade:SetFromAlpha(1)
-    fade:SetToAlpha(0.2)
-    fade:SetDuration(0.5)
-    fade:SetSmoothing("IN_OUT")
-    btn.blinkAG = blinkAG
-    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    return btn
-end
-
-local function ReleaseTabButtons(pool, list)
-    for _, btn in ipairs(list) do
-        btn:Hide()
-        btn:ClearAllPoints()
-        btn:SetScript("OnUpdate", nil)
-        btn.blinkAG:Stop()
-        btn.blinking = nil
-        btn.tabIdx = nil
-        tinsert(pool.free, btn)
-    end
-    wipe(list)
-end
-
--- The menu's idx-th item button (label at btn.text), created the first time it is needed
-local function GetMenuItem(menu, idx, height)
-    menu.items = menu.items or {}
-    local item = menu.items[idx]
-    if not item then
-        item = CreateFrame("Button", nil, menu)
-        local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        text:SetPoint("LEFT", item, "LEFT", 8, 0)
-        item.text = text
-        item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        menu.items[idx] = item
-    end
-    item:SetHeight(height)
-    return item
-end
-
--- Hides the menu's item buttons from idx on
-local function HideMenuItemsFrom(menu, idx)
-    if not menu.items then return end
-    for i = idx, #menu.items do
-        menu.items[i]:Hide()
-    end
-end
-
-local subTabPool = NewButtonPool()
-local subTabMoreBtn
-
-local function PruneBlinksToTabs(allTabs)
-    local rendered = {}
-    for _, def in ipairs(allTabs) do
-        rendered[def.frameIndex] = true
-    end
-    PruneBlinkingTabs(rendered)
-end
-
-local function RefreshChatSubTabs(header)
-    if not chatSubTabs then return end
-    if not GudaChatDB.showTabBar or GudaChatDB.inlineTabBar then
-        chatSubTabs:Hide()
-        return
-    end
-
-    ReleaseTabButtons(subTabPool, chatSubTabButtons)
-    if subTabMoreBtn then subTabMoreBtn:Hide() end
-    if overflowDropdown then overflowDropdown:Hide() end
-
-    local selectedIndex = GetSelectedChatFrameIndex()
-
-    -- 1) Collect all tab definitions: { name, col, frameIndex, cf, isTemp }
-    local allTabs = {}
+    local maxW = DROPDOWN_MIN_WIDTH
+    local count = 0
+    local selectedIdx = ns.GetSelectedChatFrameIndex()
 
     for i = 1, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
         local tab = _G["ChatFrame" .. i .. "Tab"]
-        if cf and tab then
-            local isDocked = cf.isDocked or (i == 1)
-            local shown = (i == 1) or tab:IsShown()
-            if isDocked and shown and i ~= 2 then
-                -- Hide whisper tab from tab bar when setting is disabled
-                if not GudaChatDB.whisperTab and ns.whisperFrame and cf == ns.whisperFrame then
-                    -- skip
-                else
-                    local name = GetChatTabName(i)
-                    local col = GetTabColor(name, i)
-                    tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
-                end
-            end
-        end
-    end
+        if cf and tab and (cf.isDocked or i == 1) and i ~= 2 then
+            local name = ns.GetChatTabName(i)
+            count = count + 1
+            local mb = ns.GetMenuItem(dropdown, count, DROPDOWN_ITEM_HEIGHT)
+            mb:RegisterForClicks("LeftButtonUp")
+            mb:ClearAllPoints()
+            mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
+            mb:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -4, yOff)
+            mb:Show()
 
-    if CHAT_FRAMES then
-        for _, frameName in ipairs(CHAT_FRAMES) do
-            local cf = _G[frameName]
-            if cf and cf.isTemporary and cf.inUse and cf.isDocked then
-                local idx = cf:GetID()
-                local tab = _G[frameName .. "Tab"]
-                local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or string.format(L["CHAT_WINDOW_NUMBER"], idx)
-                local whisperInfo = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and ChatTypeInfo["WHISPER"]
-                local col = whisperInfo and { whisperInfo.r, whisperInfo.g, whisperInfo.b } or GetTabColor(name, idx)
-                tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
-            end
-        end
-    end
+            local mbText = mb.text
+            mbText:ClearAllPoints()
+            mbText:SetPoint("LEFT", mb, "LEFT", 6, 0)
+            mbText:SetText(name)
 
-    -- 1b) Apply saved tab order
-    ApplySavedTabOrder(allTabs)
-    PruneBlinksToTabs(allTabs)
-    local baseOrder = { unpack(allTabs) }
-
-    -- 2) Measure which tabs fit; reserve space for overflow button
-    local barWidth = chatSubTabs:GetWidth() or 300
-    local EXT_TAB_GAP = 6
-    local EXT_FIRST_GAP = 6
-    local EXT_MARGIN_RIGHT = 6
-    local EXT_OVERFLOW_EXTRA = EXT_TAB_GAP + 12  -- gap + button width
-    local xOff = EXT_FIRST_GAP
-    local fitCount = #allTabs  -- assume all fit
-
-    local widths = {}
-    for idx, def in ipairs(allTabs) do
-        widths[idx] = MeasureTabText(def.name) + 8
-    end
-
-    -- Find which tab is selected
-    local selectedTabIdx
-    for idx, def in ipairs(allTabs) do
-        if def.cf and def.cf:IsShown() then
-            selectedTabIdx = idx
-            break
-        end
-    end
-
-    -- Find how many fit
-    local totalW = EXT_FIRST_GAP
-    for idx = 1, #allTabs do
-        totalW = totalW + widths[idx] + (idx > 1 and EXT_TAB_GAP or 0)
-    end
-    if totalW + EXT_MARGIN_RIGHT > barWidth then
-        -- Not all fit — recalculate with reserved space for overflow icon
-        local maxUsable = barWidth - EXT_OVERFLOW_EXTRA - EXT_MARGIN_RIGHT
-        totalW = EXT_FIRST_GAP
-        fitCount = 0
-        for idx = 1, #allTabs do
-            totalW = totalW + widths[idx] + (idx > 1 and EXT_TAB_GAP or 0)
-            if totalW > maxUsable then
-                break
-            end
-            fitCount = idx
-        end
-        -- If selected tab is in overflow, swap it with the last visible tab
-        if selectedTabIdx and selectedTabIdx > fitCount and fitCount > 0 then
-            local swapIdx = fitCount
-            allTabs[swapIdx], allTabs[selectedTabIdx] = allTabs[selectedTabIdx], allTabs[swapIdx]
-            widths[swapIdx], widths[selectedTabIdx] = widths[selectedTabIdx], widths[swapIdx]
-            -- Recalculate fitCount since widths changed
-            totalW = EXT_FIRST_GAP
-            fitCount = 0
-            for idx = 1, #allTabs do
-                totalW = totalW + widths[idx] + (idx > 1 and EXT_TAB_GAP or 0)
-                if totalW > maxUsable then
-                    break
-                end
-                fitCount = idx
-            end
-        end
-    end
-
-    -- 3) Create visible tab buttons
-    local function IsSelectedFrame(cf)
-        return cf and cf:IsShown()
-    end
-
-    local DRAG_THRESHOLD = 5  -- pixels before a click becomes a drag
-
-    -- Create / fetch the insertion indicator (thin vertical golden line)
-    if not dragIndicator then
-        dragIndicator = chatSubTabs:CreateTexture(nil, "OVERLAY")
-        dragIndicator:SetTexture("Interface\\Buttons\\WHITE8x8")
-        dragIndicator:SetVertexColor(0.8, 0.6, 0.0, 1)
-        dragIndicator:SetSize(2, 14)
-        dragIndicator:Hide()
-    end
-
-    -- Compute insertion index from cursor X position
-    -- Returns the index in allTabs *before which* the dragged tab should be inserted
-    local function GetInsertIndex(srcIdx)
-        local scale = chatSubTabs:GetEffectiveScale()
-        local cursorX = GetCursorPosition() / scale
-        -- Walk visible tab buttons and find the gap the cursor falls into
-        for _, tabBtn in ipairs(chatSubTabButtons) do
-            if tabBtn.tabIdx then
-                local left = tabBtn:GetLeft()
-                local right = tabBtn:GetRight()
-                if left and right then
-                    local mid = (left + right) / 2
-                    if cursorX < mid then
-                        return tabBtn.tabIdx
-                    end
-                end
-            end
-        end
-        -- Past the last tab → insert at end
-        return fitCount + 1
-    end
-
-    -- Position the indicator line at the gap before `insertIdx`
-    local function UpdateIndicator(insertIdx, srcIdx)
-        if not insertIdx or insertIdx == srcIdx or insertIdx == srcIdx + 1 then
-            -- No-op position (would result in no move)
-            dragIndicator:Hide()
-            dragState.insertIdx = nil
-            return
-        end
-        dragState.insertIdx = insertIdx
-        -- Find anchor: the left edge of the button at insertIdx, or right edge of last button
-        local anchorBtn
-        if insertIdx <= fitCount then
-            for _, tabBtn in ipairs(chatSubTabButtons) do
-                if tabBtn.tabIdx == insertIdx then
-                    anchorBtn = tabBtn
-                    break
-                end
-            end
-        end
-        dragIndicator:ClearAllPoints()
-        if anchorBtn then
-            dragIndicator:SetPoint("RIGHT", anchorBtn, "LEFT", -3, 0)
-        else
-            -- After last visible tab
-            local lastBtn
-            for _, tabBtn in ipairs(chatSubTabButtons) do
-                if tabBtn.tabIdx then lastBtn = tabBtn end
-            end
-            if lastBtn then
-                dragIndicator:SetPoint("LEFT", lastBtn, "RIGHT", 3, 0)
-            end
-        end
-        dragIndicator:Show()
-    end
-
-    local function FinishTabDrag(srcBtn)
-        if not dragState.dragging then return end
-        local insertIdx = dragState.insertIdx
-        local srcIdx = dragState.sourceIdx
-        if insertIdx and srcIdx and insertIdx ~= srcIdx and insertIdx ~= srcIdx + 1 then
-            SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
-        end
-        dragIndicator:Hide()
-        dragState.dragging = false
-        dragState.sourceIdx = nil
-        dragState.sourceBtn = nil
-        dragState.insertIdx = nil
-        srcBtn:SetScript("OnUpdate", nil)
-        RefreshChatSubTabs(header)
-    end
-
-    local function CreateTabBtn(def, parent, tabIdx)
-        local btn = AcquireTabButton(subTabPool, parent)
-        btn:SetHeight(16)
-        btn.tabIdx = tabIdx
-
-        local text = btn.text
-        text:SetText(def.name)
-
-        local col = def.col
-        if IsSelectedFrame(def.cf) then
-            text:SetTextColor(col[1], col[2], col[3], 1)
-        else
-            text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-        end
-
-        btn:SetScript("OnClick", function(self, button)
-            if dragState.dragging then
-                FinishTabDrag(self)
-                return
-            end
-            if button == "RightButton" then
-                ShowContextMenu(self, def.frameIndex)
+            local col = ns.GetTabColor(name, i)
+            if selectedIdx == i then
+                mbText:SetTextColor(col[1], col[2], col[3], 1)
             else
-                if blinkingTabs[def.frameIndex] then
-                    blinkingTabs[def.frameIndex] = nil
-                    self.blinkAG:Stop()
-                end
-                SafeSelectDockFrame(def.cf)
+                mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
             end
-        end)
-
-        btn:SetScript("OnMouseDown", function(self, button)
-            if button == "LeftButton" then
-                local cx, cy = GetCursorPosition()
-                local scale = self:GetEffectiveScale()
-                dragState.startX = cx / scale
-                dragState.startY = cy / scale
-                dragState.pending = true
-                dragState.pendingBtn = self
-                dragState.pendingIdx = self.tabIdx
-                self:SetScript("OnUpdate", function(self)
-                    if not dragState.pending and not dragState.dragging then
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-                    if not IsMouseButtonDown("LeftButton") then
-                        if dragState.dragging then
-                            FinishTabDrag(self)
-                        end
-                        dragState.pending = false
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-                    -- Check drag threshold
-                    if dragState.pending then
-                        local cx, cy = GetCursorPosition()
-                        local scale = self:GetEffectiveScale()
-                        local dx = cx / scale - dragState.startX
-                        local dy = cy / scale - dragState.startY
-                        if (dx * dx + dy * dy) > DRAG_THRESHOLD * DRAG_THRESHOLD then
-                            dragState.pending = false
-                            dragState.dragging = true
-                            dragState.sourceIdx = dragState.pendingIdx
-                            dragState.sourceBtn = self
-                            self.text:SetTextColor(col[1] * 0.3, col[2] * 0.3, col[3] * 0.3, 0.5)
-                        end
-                    end
-                    -- Update insertion indicator while dragging
-                    if dragState.dragging then
-                        local ins = GetInsertIndex(dragState.sourceIdx)
-                        UpdateIndicator(ins, dragState.sourceIdx)
-                    end
-                end)
-            end
-        end)
-
-        btn:SetScript("OnEnter", function(self)
-            self.text:SetTextColor(col[1], col[2], col[3], 1)
-            if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if dragState.dragging and dragState.sourceBtn == self then return end
-            if self.blinking then return end
-            if IsSelectedFrame(def.cf) then
-                self.text:SetTextColor(col[1], col[2], col[3], 1)
-            else
-                self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-            end
-        end)
-
-        if blinkingTabs[def.frameIndex] then
-            btn.blinking = true
-            btn.blinkAG:Play()
-            text:SetTextColor(col[1], col[2], col[3], 1)
-        end
-
-        return btn
-    end
-
-    for idx = 1, fitCount do
-        local def = allTabs[idx]
-        local btn = CreateTabBtn(def, chatSubTabs, idx)
-        btn:SetWidth(widths[idx])
-        btn:SetPoint("LEFT", chatSubTabs, "LEFT", xOff, 0)
-        xOff = xOff + widths[idx] + EXT_TAB_GAP
-        tinsert(chatSubTabButtons, btn)
-    end
-
-    -- 4) Create overflow button if there are hidden tabs
-    if fitCount < #allTabs then
-        if not subTabMoreBtn then
-            subTabMoreBtn = CreateFrame("Button", nil, chatSubTabs)
-            subTabMoreBtn:SetSize(12, 12)
-            subTabMoreBtn:SetPoint("RIGHT", chatSubTabs, "RIGHT", -6, 0)
-
-            local moreIcon = subTabMoreBtn:CreateTexture(nil, "OVERLAY")
-            moreIcon:SetAllPoints()
-            moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
-            moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            subTabMoreBtn.icon = moreIcon
-
-            subTabMoreBtn:SetScript("OnEnter", function(self)
-                self.icon:SetVertexColor(1, 1, 1, 1)
-                if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
+            mb:SetScript("OnEnter", function()
+                mbText:SetTextColor(col[1], col[2], col[3], 1)
             end)
-            subTabMoreBtn:SetScript("OnLeave", function(self)
-                self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            end)
-        end
-        local moreBtn = subTabMoreBtn
-        moreBtn:Show()
-
-        moreBtn:SetScript("OnClick", function(self)
-            if overflowDropdown and overflowDropdown:IsShown() then
-                overflowDropdown:Hide()
-                return
-            end
-
-            if not overflowDropdown then
-                overflowDropdown = CreateFrame("Frame", "GudaChatTabOverflow", UIParent, "BackdropTemplate")
-                overflowDropdown:SetFrameStrata("TOOLTIP")
-                overflowDropdown:SetClampedToScreen(true)
-                ns.ApplyDarkBackdrop(overflowDropdown, { 0.08, 0.08, 0.08, 0.95 }, { 0.3, 0.3, 0.3, 0.6 })
-                overflowDropdown:EnableMouse(true)
-            end
-
-            local itemHeight = 18
-            local padding = 6
-            local maxW = 60
-            local items = {}
-
-            for idx = fitCount + 1, #allTabs do
-                local def = allTabs[idx]
-                local item = GetMenuItem(overflowDropdown, #items + 1, itemHeight)
-                local text = item.text
-                text:SetText(def.name)
-
-                local col = def.col
-                if def.frameIndex == selectedIndex then
-                    text:SetTextColor(col[1], col[2], col[3], 1)
-                else
-                    text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+            mb:SetScript("OnLeave", function()
+                if ns.GetSelectedChatFrameIndex() ~= i then
+                    mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                 end
+            end)
+            mb:SetScript("OnClick", function()
+                ns.SafeSelectDockFrame(_G["ChatFrame" .. i])
+                onPicked()
+            end)
 
-                item:SetScript("OnEnter", function(self)
-                    self.text:SetTextColor(col[1], col[2], col[3], 1)
-                end)
-                item:SetScript("OnLeave", function(self)
-                    if def.frameIndex == GetSelectedChatFrameIndex() then
-                        self.text:SetTextColor(col[1], col[2], col[3], 1)
-                    else
-                        self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                    end
-                end)
-                item:SetScript("OnClick", function(self, button)
-                    if button == "RightButton" then
-                        ShowContextMenu(self, def.frameIndex)
-                    else
-                        SafeSelectDockFrame(def.cf)
-                        overflowDropdown:Hide()
-                    end
-                end)
-
-                local w = text:GetStringWidth() + 16
-                if w > maxW then maxW = w end
-                tinsert(items, item)
-            end
-            HideMenuItemsFrom(overflowDropdown, #items + 1)
-
-            local totalH = #items * itemHeight + padding * 2
-            overflowDropdown:SetSize(maxW, totalH)
-            -- Anchor above the "..." button
-            overflowDropdown:ClearAllPoints()
-            overflowDropdown:SetPoint("BOTTOMLEFT", self, "TOPLEFT", 0, 2)
-
-            for i, item in ipairs(items) do
-                item:SetWidth(maxW)
-                item:ClearAllPoints()
-                item:SetPoint("TOPLEFT", overflowDropdown, "TOPLEFT", 0, -padding - (i - 1) * itemHeight)
-                item:Show()
-            end
-
-            overflowDropdown:Show()
-        end)
+            maxW = math.max(maxW, mbText:GetStringWidth() + 16)
+            yOff = yOff - DROPDOWN_ITEM_HEIGHT
+        end
     end
+    ns.HideMenuItemsFrom(dropdown, count + 1)
+    dropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
 end
-ns.RefreshChatSubTabs = RefreshChatSubTabs
 
-local function CreateChatSubTabs(header)
-    local bar = CreateFrame("Frame", "GudaChatSubTabs", UIParent, "BackdropTemplate")
-    bar:SetHeight(20)
-    bar:SetPoint("BOTTOMLEFT", header, "TOPLEFT", 0, -1)
-    bar:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT", 0, -1)
-    bar:SetFrameStrata("MEDIUM")
-    bar:SetFrameLevel(101)
+-- The header's controls. Left: General (logo), combat log, history. Centre: the current
+-- tab's name, which opens the window list (left click) or the window menu (right click).
+-- Right: settings, chat channels, chat type menu.
+local function CreateHeaderControls(header)
+    local controls = {}
 
-    ns.ApplyDarkBackdrop(bar, { 0.05, 0.05, 0.05, 0.75 }, { 0.25, 0.25, 0.25, 0.5 })
-    bar:EnableMouse(true)
-    bar:SetAlpha(0)
+    local dropdown = CreateFrame("Frame", "GudaChatTabDropdown", header, "BackdropTemplate")
+    dropdown:SetFrameStrata("TOOLTIP")
+    ns.ApplyDarkBackdrop(dropdown)
+    dropdown:Hide()
+    local function CloseDropdown()
+        dropdown:Hide()
+    end
+    controls.CloseDropdown = CloseDropdown
 
-    -- Independent hover fade for the tab bar
-    local tabBarHovering = false
-    local tabBarFadeIn = ns.CreateFade(bar, 1, FADE_IN_DURATION)
-    local tabBarFadeOut = ns.CreateFade(bar, 0, FADE_OUT_DURATION)
-    tabBarFadeOut:HookScript("OnFinished", function()
-        if overflowDropdown then overflowDropdown:Hide() end
+    local logoBtn = ns.CreateIconButton(header, ns.ASSET_PATH .. "logo.png", ICON_SIZE + 2, ns.Blizz(GENERAL, "General"))
+    logoBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
+    logoBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    logoBtn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            ns.ShowContextMenu(self, 1)
+        else
+            ns.SafeSelectDockFrame(ChatFrame1)
+        end
+        CloseDropdown()
     end)
-    local tabBarHideGen = 0
+    controls.logoBtn = logoBtn
 
-    local function ShowTabBar()
-        if ns.hideHeaderForInput then return end
-        if tabBarHovering then return end
-        tabBarHovering = true
-        tabBarHideGen = tabBarHideGen + 1
-        tabBarFadeOut:Stop()
-        tabBarFadeIn:PlayFromCurrent()
+    local combatBtn = ns.CreateIconButton(header, ns.ASSET_PATH .. "combat.png", ICON_SIZE, ns.Blizz(COMBAT_LOG, "Combat Log"))
+    combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", ICON_GAP, 0)
+    combatBtn:SetScript("OnClick", function()
+        if ChatFrame2 then
+            local target = (ns.GetUserSelectedFrame() == ChatFrame2) and ChatFrame1 or ChatFrame2
+            ns.SafeSelectDockFrame(target)
+        end
+        CloseDropdown()
+    end)
+    controls.combatBtn = combatBtn
+
+    local historyBtn = ns.CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, L["TIP_HISTORY"])
+    historyBtn:SetPoint("LEFT", combatBtn, "RIGHT", ICON_GAP, 0)
+    historyBtn:SetScript("OnClick", function()
+        ns.ToggleHistory()
+        CloseDropdown()
+    end)
+    if GudaChatDB and not GudaChatDB.historyEnabled then
+        historyBtn:Hide()
     end
+    ns.historyBtn = historyBtn
+    controls.historyBtn = historyBtn
 
-    local function HideTabBar()
-        if not tabBarHovering then return end
-        tabBarHovering = false
-        tabBarHideGen = tabBarHideGen + 1
-        local gen = tabBarHideGen
-        C_Timer.After(0.3, function()
-            if gen ~= tabBarHideGen then return end
-            if tabBarHovering then return end
-            if ns.HasBlinkingTabs and ns.HasBlinkingTabs() then
-                tabBarHovering = true
-                return
-            end
-            if contextMenu and contextMenu:IsShown() then
-                tabBarHovering = true
-                return
-            end
-            if bar:IsMouseOver() or (ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()) or (overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()) then
-                tabBarHovering = true
-                return
-            end
-            tabBarFadeIn:Stop()
-            tabBarFadeOut:PlayFromCurrent()
-        end)
-    end
+    local tabLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tabLabel:SetPoint("CENTER", header, "CENTER", 0, 0)
+    tabLabel:SetTextColor(unpack(TAB_LABEL_COLOR))
+    tabLabel:SetText(ns.GetChatTabName(1))
+    controls.tabLabel = tabLabel
 
-    local tabBarMonitor = CreateFrame("Frame", nil, bar)
-    local sinceHoverCheck = 0
-    tabBarMonitor:SetScript("OnUpdate", function(self, elapsed)
-        sinceHoverCheck = sinceHoverCheck + elapsed
-        if sinceHoverCheck < HOVER_CHECK_INTERVAL then return end
-        sinceHoverCheck = 0
-        if ns.hideHeaderForInput then
-            if tabBarHovering then
-                tabBarHovering = false
-                bar:SetAlpha(0)
+    local tabLabelBtn = CreateFrame("Button", nil, header)
+    ns._tabLabelBtn = tabLabelBtn
+    tabLabelBtn:SetPoint("CENTER", tabLabel, "CENTER", 0, 0)
+    tabLabelBtn:SetHeight(HEADER_HEIGHT)
+    tabLabelBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    tabLabelBtn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            CloseDropdown()
+            if ns.IsContextMenuShown() then
+                ns.HideContextMenu()
+            else
+                ns.ShowContextMenu(self)
             end
             return
         end
-        local overBar = bar:IsMouseOver()
-        local overLabel = ns._tabLabelBtn and ns._tabLabelBtn:IsMouseOver()
-        local overOverflow = overflowDropdown and overflowDropdown:IsShown() and overflowDropdown:IsMouseOver()
-        local overContext = contextMenu and contextMenu:IsShown()
-        if overBar or overLabel or overOverflow or overContext then
-            ShowTabBar()
+        if ns.IsContextMenuShown() then
+            ns.HideContextMenu()
+        end
+        if dropdown:IsShown() then
+            CloseDropdown()
         else
-            HideTabBar()
+            RefreshTabDropdown(dropdown, CloseDropdown)
+            dropdown:ClearAllPoints()
+            dropdown:SetPoint("BOTTOM", self, "TOP", 0, 2)
+            dropdown:Show()
         end
     end)
+    tabLabelBtn:SetScript("OnEnter", function(self)
+        tabLabel:SetTextColor(unpack(TAB_LABEL_HOVER_COLOR))
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["TIP_TAB_SWITCH"], 0.7, 0.7, 0.7)
+        ns.SetTooltipFontSize(12)
+        GameTooltip:Show()
+        ns.RevealHeader()
+    end)
+    tabLabelBtn:SetScript("OnLeave", function()
+        tabLabel:SetTextColor(unpack(TAB_LABEL_COLOR))
+        GameTooltip:Hide()
+    end)
+    controls.tabLabelBtn = tabLabelBtn
 
-    ns.ShowTabBar = ShowTabBar
+    function controls.UpdateTabLabelBtnWidth()
+        tabLabelBtn:SetWidth(math.max(tabLabel:GetStringWidth() + 16, TAB_LABEL_MIN_WIDTH))
+    end
+    controls.UpdateTabLabelBtnWidth()
 
-    chatSubTabs = bar
-    ns.chatSubTabs = bar
-    return bar
+    ns.CreateClickCloser(dropdown,
+        function() return dropdown:IsMouseOver() or tabLabelBtn:IsMouseOver() end,
+        CloseDropdown)
+
+    local settingsBtn = ns.CreateIconButton(header, ns.ASSET_PATH .. "cog.png", ICON_SIZE, ns.Blizz(SETTINGS, "Settings"))
+    settingsBtn:SetPoint("RIGHT", header, "RIGHT", -4, 0)
+    settingsBtn:SetScript("OnClick", function()
+        ns.ToggleSettings()
+        CloseDropdown()
+    end)
+
+    local channelsBtn = ns.CreateIconButton(header, ns.ASSET_PATH .. "voice.png", ICON_SIZE - 1, L["TIP_CHAT_CHANNELS"])
+    channelsBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -ICON_GAP, 0)
+    channelsBtn:SetScript("OnClick", function()
+        if ToggleChannelFrame then ToggleChannelFrame() end
+        CloseDropdown()
+    end)
+
+    local chatTypeBtn = ns.CreateIconButton(header, ns.ASSET_PATH .. "chat.png", ICON_SIZE - 1, L["TIP_CHAT_TYPE"])
+    chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -ICON_GAP, 0)
+    ns.CreateChatTypeMenu(chatTypeBtn, CloseDropdown)
+    controls.chatTypeBtn = chatTypeBtn
+
+    return controls
 end
 
----------------------------------------------------------------------------
--- Whisper frame setup
----------------------------------------------------------------------------
+-- General and combat log icons light up while their window is selected
+local function AddIconHighlights(controls)
+    local logoBtn, combatBtn = controls.logoBtn, controls.combatBtn
 
-local function EnforceWhisperGroups(cf, idx)
-    -- Add whisper message groups so Blizzard routes whispers to this frame
-    ChatFrame_AddMessageGroup(cf, "WHISPER")
-    ChatFrame_AddMessageGroup(cf, "BN_WHISPER")
-    ChatFrame_AddMessageGroup(cf, "WHISPER_INFORM")
-    ChatFrame_AddMessageGroup(cf, "BN_WHISPER_INFORM")
-    -- Server-side registration so config persists across reloads
-    if idx and AddChatWindowMessages then
-        AddChatWindowMessages(idx, "WHISPER")
-        AddChatWindowMessages(idx, "BN_WHISPER")
-        AddChatWindowMessages(idx, "WHISPER_INFORM")
-        AddChatWindowMessages(idx, "BN_WHISPER_INFORM")
+    function controls.UpdateIconHighlights(cf)
+        logoBtn.icon:SetVertexColor(unpack(cf == ChatFrame1 and ICON_ACTIVE or ICON_INACTIVE))
+        combatBtn.icon:SetVertexColor(unpack(cf == ChatFrame2 and ICON_ACTIVE or ICON_INACTIVE))
+    end
+
+    logoBtn:HookScript("OnLeave", function()
+        if ns.GetSelectedChatFrame() == ChatFrame1 then logoBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+    end)
+    combatBtn:HookScript("OnLeave", function()
+        if ns.GetSelectedChatFrame() == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+    end)
+end
+
+-- Label and icon highlights follow every tab switch, Blizzard's and GudaChat's
+local function FollowFrameSelection(controls)
+    local tabLabel = controls.tabLabel
+    local function UpdateHeaderForFrame(cf)
+        if not cf or not cf.GetID then return end
+        local idx = cf:GetID()
+        if idx <= NUM_CHAT_WINDOWS then
+            tabLabel:SetText(ns.GetChatTabName(idx))
+        else
+            local tab = _G[cf:GetName() .. "Tab"]
+            tabLabel:SetText(tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ns.GetChatTabName(idx))
+        end
+        controls.UpdateTabLabelBtnWidth()
+        controls.UpdateIconHighlights(cf)
+        ns.RequestTabRefresh()
+    end
+    hooksecurefunc("FCF_SelectDockFrame", UpdateHeaderForFrame)
+    ns.OnFrameSelected(UpdateHeaderForFrame)
+end
+
+-- Inline tabs: the tab strip drawn inside the header, between the left icons and the chat
+-- type icon. While it is on, the tab label and the General icon make room for it and the
+-- bar above the header stays hidden.
+local function CreateInlineTabs(header, controls)
+    local logoBtn, combatBtn, historyBtn = controls.logoBtn, controls.combatBtn, controls.historyBtn
+    local tabLabel, tabLabelBtn, chatTypeBtn = controls.tabLabel, controls.tabLabelBtn, controls.chatTypeBtn
+
+    local inlineStrip = ns.CreateTabStrip({
+        parent = header,
+        overflowName = "GudaChatInlineTabOverflow",
+        firstGap = INLINE_FIRST_GAP,
+        overflowAutoHide = true,
+        isEnabled = function()
+            return GudaChatDB.inlineTabBar
+        end,
+        onDisabled = function()
+            tabLabel:Show()
+            tabLabelBtn:Show()
+            logoBtn:Show()
+            combatBtn:ClearAllPoints()
+            combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", ICON_GAP, 0)
+        end,
+        onEnabled = function()
+            tabLabel:Hide()
+            tabLabelBtn:Hide()
+            logoBtn:Hide()
+            combatBtn:ClearAllPoints()
+            combatBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
+            if ns.chatSubTabs then ns.chatSubTabs:Hide() end
+        end,
+        getLayout = function()
+            local leftAnchor = historyBtn:IsShown() and historyBtn or combatBtn
+            local leftEdge = leftAnchor:GetRight()
+            local rightEdge = chatTypeBtn:GetLeft()
+            if not leftEdge or not rightEdge then return nil end
+            local totalSpace = rightEdge - leftEdge
+            if totalSpace < INLINE_MIN_SPACE then return nil end
+            return leftAnchor, "RIGHT", totalSpace
+        end,
+        placeMoreButton = function(moreBtn, marginRight)
+            moreBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -marginRight, 0)
+        end,
+        anchorOverflow = function(menu, moreBtn)
+            menu:SetPoint("TOPLEFT", moreBtn, "BOTTOMLEFT", 0, -2)
+        end,
+    })
+
+    ns.RefreshInlineTabs = function()
+        inlineStrip:Refresh()
     end
 end
 
--- Keep every whisper in the single dedicated Whispers tab instead of letting retail spawn a
--- separate conversation window per target. The `whisperMode` CVar drives that popout behavior:
--- "popout"/"popout_and_inline" open a temp window for each whisper, while "inline" keeps whispers
--- in the frames that registered the WHISPER group (our Whispers frame). We also drop the WHISPER
--- groups from General so whispers land ONLY in the dedicated tab, not duplicated into General.
--- The reverse (restore the player's whisperMode, re-add whispers to General) mirrors the cleanup
--- already done when a whisper window is closed (see RemoveWindow above).
-local function ApplyWhisperRouting()
-    if GudaChatDB.whisperTab then
-        -- Remember the player's original mode once, so disabling the feature can restore it.
-        -- Guard against clobbering it with our own "inline" on later reloads.
-        local cur = GetCVar and GetCVar("whisperMode")
-        if cur and cur ~= "inline" and GudaChatDB.origWhisperMode == nil then
-            GudaChatDB.origWhisperMode = cur
-        end
-        pcall(SetCVar, "whisperMode", "inline")
-        if ChatFrame_RemoveMessageGroup then
-            ChatFrame_RemoveMessageGroup(ChatFrame1, "WHISPER")
-            ChatFrame_RemoveMessageGroup(ChatFrame1, "BN_WHISPER")
-        end
-        if RemoveChatWindowMessages then
-            RemoveChatWindowMessages(1, "WHISPER")
-            RemoveChatWindowMessages(1, "BN_WHISPER")
-        end
-    else
-        if GudaChatDB.origWhisperMode then
-            pcall(SetCVar, "whisperMode", GudaChatDB.origWhisperMode)
-            GudaChatDB.origWhisperMode = nil
-        end
-        ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
-        ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
-        if AddChatWindowMessages then
-            AddChatWindowMessages(1, "WHISPER")
-            AddChatWindowMessages(1, "BN_WHISPER")
+-- Shows the combat log subtabs only while the combat log is selected, and the tab bar
+-- above the header for every other window
+local function UpdateSubTabsForFrame(cf)
+    local combatSubTabs, chatSubTabs = ns.combatSubTabs, ns.chatSubTabs
+    if combatSubTabs then
+        if cf == ChatFrame2 then
+            ns.UpdateCombatSubTabColors()
+            combatSubTabs:Show()
+            combatSubTabs:SetAlpha(ns.chatHeader and ns.chatHeader:GetAlpha() or 1)
+        else
+            combatSubTabs:Hide()
         end
     end
+    if chatSubTabs and GudaChatDB.showTabBar then
+        chatSubTabs:SetShown(cf ~= ChatFrame2)
+    end
+    ns.RequestTabRefresh()
 end
-ns.ApplyWhisperRouting = ApplyWhisperRouting
-
--- Logout half of ApplyWhisperRouting. The whisperMode CVar and General's WHISPER groups
--- are saved by the game, outside SavedVariables; if GudaChatDB is lost (the WoW: Forever
--- SavedVariables bug) the next session could never undo them and General would stop
--- showing whispers. So they go back to the player's own setup at every logout, and
--- ApplyWhisperRouting sets them again at login. origWhisperMode is kept for that.
-local function UndoWhisperRoutingForLogout()
-    if not GudaChatDB.whisperTab then return end
-    if GudaChatDB.origWhisperMode then
-        pcall(SetCVar, "whisperMode", GudaChatDB.origWhisperMode)
-    end
-    if AddChatWindowMessages then
-        AddChatWindowMessages(1, "WHISPER")
-        AddChatWindowMessages(1, "BN_WHISPER")
-    end
-end
-ns.UndoWhisperRoutingForLogout = UndoWhisperRoutingForLogout
-
-local function SetupWhisperFrame()
-    local function InitWhisperFrame(cf, idx)
-        ns.whisperFrame = cf
-        ns.whisperFrameIndex = idx
-        GudaChatDB.whisperFrameIndex = idx
-        EnforceWhisperGroups(cf, idx)
-        -- Ensure the frame is docked so FCF_SelectDockFrame can show it
-        if not cf.isDocked then
-            FCF_DockFrame(cf)
-        end
-        -- Sync with ChatFrame1 so it shares the same area
-        cf:ClearAllPoints()
-        cf:SetPoint(ChatFrame1:GetPoint(1))
-        cf:SetSize(ChatFrame1:GetSize())
-        -- Always ensure font is set — AddMessage silently fails without one
-        local font, size, flags = cf:GetFont()
-        if not font then
-            font, size, flags = ChatFrame1:GetFont()
-        end
-        if GudaChatDB.chatFont then
-            font = GudaChatDB.chatFont
-        end
-        if font then
-            cf:SetFont(font, GudaChatDB.chatFontSize or size or 14, flags or "")
-        end
-        cf:SetMaxLines(500)
-        cf:SetFading(GudaChatDB.fading or false)
-        cf:SetJustifyH("LEFT")
-        -- Route all whispers into this one tab; suppress retail's per-target popout windows.
-        ApplyWhisperRouting()
-        SafeSelectDockFrame(ChatFrame1)
-    end
-
-    -- Name the window in the client's language, but keep matching the old English
-    -- literal so windows created by earlier versions are still found instead of a
-    -- second one being spawned alongside them.
-    local whisperName = (type(WHISPERS) == "string" and WHISPERS ~= "" and WHISPERS)
-        or (type(WHISPER) == "string" and WHISPER ~= "" and WHISPER)
-        or "Whispers"
-
-    local function IsWhisperWindowName(name)
-        return name == whisperName or name == "Whispers"
-    end
-
-    local idx = GudaChatDB.whisperFrameIndex
-    if idx then
-        local cf = _G["ChatFrame" .. idx]
-        local name = cf and GetChatWindowInfo(idx)
-        if cf and IsWhisperWindowName(name) then
-            InitWhisperFrame(cf, idx)
-            return
-        end
-        GudaChatDB.whisperFrameIndex = nil
-    end
-
-    for i = 3, NUM_CHAT_WINDOWS do
-        local name = GetChatWindowInfo(i)
-        if IsWhisperWindowName(name) then
-            local cf = _G["ChatFrame" .. i]
-            InitWhisperFrame(cf, i)
-            return
-        end
-    end
-
-    if FCF_OpenNewWindow then
-        local before = ns.InUseChatWindows()
-        FCF_OpenNewWindow(whisperName)
-        local cf, i = ns.FindNewChatWindow(before)
-        if cf then
-            ns.StripChatChrome(i)
-            InitWhisperFrame(cf, i)
-            if not cf.isDocked then FCF_DockFrame(cf) end
-            SafeSelectDockFrame(ChatFrame1)
-        end
-    end
-end
-ns.SetupWhisperFrame = SetupWhisperFrame
-
--- Closing the Whispers window turns the Whispers tab off. Otherwise the addon would keep
--- routing whispers to a closed window (General stays without whispers) and select it on
--- every whisper sent, which used to leave the chat area empty.
-hooksecurefunc("FCF_Close", function(frame)
-    if not ns.whisperFrame or frame ~= ns.whisperFrame then return end
-    ns.whisperFrame = nil
-    ns.whisperFrameIndex = nil
-    GudaChatDB.whisperFrameIndex = nil
-    GudaChatDB.whisperTab = false
-    ApplyWhisperRouting()
-    if ns.whisperTabCheckbox then ns.whisperTabCheckbox:SetChecked(false) end
-end)
-
----------------------------------------------------------------------------
--- Create chat header
----------------------------------------------------------------------------
 
 local function CreateChatHeader(parentFrame)
     local header = CreateFrame("Frame", "GudaChatHeader", UIParent, "BackdropTemplate")
@@ -1925,1189 +469,42 @@ local function CreateChatHeader(parentFrame)
     header:SetFrameStrata("MEDIUM")
     header:SetFrameLevel(100)
     header:SetAlpha(0)
-
     ns.ApplyDarkBackdrop(header, ns.COLOR_HEADER_BG, ns.COLOR_HEADER_BORDER)
-
-    -- Hover detection zone
-    local hoverZone = CreateFrame("Frame", nil, UIParent)
-    hoverZone:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
-    hoverZone:SetPoint("BOTTOMRIGHT", parentFrame, "BOTTOMRIGHT", 4 + extraR, 0)
-    hoverZone:SetFrameStrata("BACKGROUND")
-    hoverZone:EnableMouse(false)
-
-    local fadeIn = ns.CreateFade(header, 1, FADE_IN_DURATION)
-    fadeIn:HookScript("OnFinished", function()
-        if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(1) end
-    end)
-    local fadeOut = ns.CreateFade(header, 0, FADE_OUT_DURATION)
-    fadeOut:HookScript("OnFinished", function()
-        if combatSubTabs then combatSubTabs:SetAlpha(0) end
-    end)
-    local isHovering = false
-    local hideTimerGen = 0  -- generation counter to invalidate stale timers
-
-    -- Check if mouse is over any scrollbar belonging to a visible chat frame
-    local function IsOverScrollbar()
-        for i = 1, NUM_CHAT_WINDOWS do
-            local cf = _G["ChatFrame" .. i]
-            if cf and cf.gudaScrollbar and cf:IsVisible() and cf.gudaScrollbar:IsMouseOver() then
-                return true
-            end
-        end
-        return false
-    end
-
-    -- Unified check: is the cursor anywhere in the chat UI area?
-    local function IsOverChatUI()
-        if header:IsMouseOver() or parentFrame:IsMouseOver() then return true end
-        if combatSubTabs and combatSubTabs:IsShown() and combatSubTabs:IsMouseOver() then return true end
-        if chatSubTabs and chatSubTabs:IsShown() and chatSubTabs:GetAlpha() > 0 and chatSubTabs:IsMouseOver() then return true end
-        if IsOverScrollbar() then return true end
-        -- Open menus/dropdowns
-        if GudaChatTabDropdown and GudaChatTabDropdown:IsShown() then return true end
-        if GudaChatTypeDropdown and GudaChatTypeDropdown:IsShown() then return true end
-        if GudaChatEmoteSubMenu and GudaChatEmoteSubMenu:IsShown() then return true end
-        if DropDownList1 and DropDownList1:IsShown() then return true end
-        if contextMenu and contextMenu:IsShown() then return true end
-        if fontSubMenu and fontSubMenu:IsShown() then return true end
-        if GudaChatInlineTabOverflow and GudaChatInlineTabOverflow:IsShown() and GudaChatInlineTabOverflow:IsMouseOver() then return true end
-        return false
-    end
-
-    local function ShowHeader()
-        if ns.hideHeaderForInput then return end
-        if isHovering then return end
-        isHovering = true
-        hideTimerGen = hideTimerGen + 1  -- invalidate any pending hide timer
-        fadeOut:Stop()
-        fadeIn:PlayFromCurrent()
-        if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
-        ns.FadeInScrollbar()
-    end
-
-    local function HideHeader()
-        if not isHovering then return end
-        isHovering = false
-        hideTimerGen = hideTimerGen + 1
-        local gen = hideTimerGen  -- capture current generation
-        C_Timer.After(0.3, function()
-            if gen ~= hideTimerGen then return end  -- a newer show/hide call superseded us
-            if isHovering then return end
-            if IsOverChatUI() then
-                isHovering = true
-                return
-            end
-            -- Keep header visible while inline tabs are blinking
-            if GudaChatDB.inlineTabBar and ns.HasBlinkingTabs and ns.HasBlinkingTabs() then
-                isHovering = true
-                return
-            end
-            fadeIn:Stop()
-            fadeOut:PlayFromCurrent()
-            if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
-            ns.FadeOutScrollbar()
-        end)
-    end
-
-    local monitor = CreateFrame("Frame", nil, header)
-    local sinceHoverCheck = 0
-    monitor:SetScript("OnUpdate", function(self, elapsed)
-        sinceHoverCheck = sinceHoverCheck + elapsed
-        if sinceHoverCheck < HOVER_CHECK_INTERVAL then return end
-        sinceHoverCheck = 0
-        if ns.hideHeaderForInput then
-            if isHovering then
-                isHovering = false
-                fadeIn:Stop()
-                header:SetAlpha(0)
-                if combatSubTabs then combatSubTabs:SetAlpha(0) end
-                ns.FadeOutScrollbar()
-            end
-            return
-        end
-        if IsOverChatUI() then
-            ShowHeader()
-        else
-            HideHeader()
-        end
-    end)
-
     header:EnableMouse(true)
 
-    -------------------------------------------------------------------
-    -- Drag to move chat (when not locked)
-    -------------------------------------------------------------------
-    header:RegisterForDrag("LeftButton")
-
-    local function FinishDrag(self)
-        if not self.isDragging then return end
-        parentFrame:StopMovingOrSizing()
-        parentFrame:SetUserPlaced(false)
-        self.isDragging = false
-        self:SetScript("OnUpdate", nil)
-        -- Save position and sync all docked frames to it
-        ns.SaveChatPosition()
-        -- Re-lock position against UIParentPanelManager
-        ns.cf1PositionLocked = true
-    end
-
-    header:SetScript("OnDragStart", function(self)
-        if GudaChatDB.locked then return end
-        -- Unlock so StartMoving can reposition the frame
-        ns.cf1PositionLocked = false
-        parentFrame:SetMovable(true)
-        parentFrame:StartMoving()
-        self.isDragging = true
-        -- Catch interrupted drags (e.g. targeting a unit mid-drag)
-        self:SetScript("OnUpdate", function(self)
-            if not IsMouseButtonDown("LeftButton") then
-                FinishDrag(self)
-            else
-                ns.SyncDockedFrames()
-            end
-        end)
-    end)
-    header:SetScript("OnDragStop", function(self)
-        FinishDrag(self)
-    end)
-
-    header:SetScript("OnEnter", function(self)
-        if not GudaChatDB.locked then
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(L["TIP_DRAG_TO_MOVE"], 0.7, 0.7, 0.7)
-            SetTooltipFontSize(12)
-            GameTooltip:Show()
-        end
-    end)
-    header:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    -------------------------------------------------------------------
-    -- Tab switcher dropdown (shown on tab label click)
-    -------------------------------------------------------------------
-    local dropdown = CreateFrame("Frame", "GudaChatTabDropdown", header, "BackdropTemplate")
-    dropdown:SetFrameStrata("TOOLTIP")
-    ns.ApplyDarkBackdrop(dropdown)
-    dropdown:Hide()
-
-    local menuButtons = {}
-
-    local function CloseDropdown()
-        dropdown:Hide()
-    end
-
-    local function RefreshDropdown()
-        wipe(menuButtons)
-
-        local yOff = -4
-        local maxW = 60
-
-        for i = 1, NUM_CHAT_WINDOWS do
-            local cf = _G["ChatFrame" .. i]
-            local tab = _G["ChatFrame" .. i .. "Tab"]
-            if cf and tab then
-                local name = GetChatTabName(i)
-                local isDocked = cf.isDocked or (i == 1)
-                if isDocked and i ~= 2 then
-                    local mb = GetMenuItem(dropdown, #menuButtons + 1, 20)
-                    mb:RegisterForClicks("LeftButtonUp")
-                    mb:ClearAllPoints()
-                    mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
-                    mb:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -4, yOff)
-                    mb:Show()
-
-                    local mbText = mb.text
-                    mbText:ClearAllPoints()
-                    mbText:SetPoint("LEFT", mb, "LEFT", 6, 0)
-                    mbText:SetText(name)
-
-                    local col = GetTabColor(name, i)
-                    local isActive = (GetSelectedChatFrameIndex() == i)
-                    if isActive then
-                        mbText:SetTextColor(col[1], col[2], col[3], 1)
-                    else
-                        mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                    end
-
-                    mb:SetScript("OnEnter", function()
-                        mbText:SetTextColor(col[1], col[2], col[3], 1)
-                    end)
-                    mb:SetScript("OnLeave", function()
-                        local active = (GetSelectedChatFrameIndex() == i)
-                        if not active then
-                            mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                        end
-                    end)
-
-                    local frameIndex = i
-                    mb:SetScript("OnClick", function()
-                        SafeSelectDockFrame(_G["ChatFrame" .. frameIndex])
-                        CloseDropdown()
-                    end)
-
-                    local tw = mbText:GetStringWidth() + 16
-                    if tw > maxW then maxW = tw end
-                    yOff = yOff - 20
-                    tinsert(menuButtons, mb)
-                end
-            end
-        end
-        HideMenuItemsFrom(dropdown, #menuButtons + 1)
-
-        dropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
-    end
-
-    local closer = CreateFrame("Frame", nil, dropdown)
-
-    -------------------------------------------------------------------
-    -- Left side: Logo icon (General tab)
-    -------------------------------------------------------------------
-    local logoBtn = CreateIconButton(header, ns.ASSET_PATH .. "logo.png", ICON_SIZE + 2, ns.Blizz(GENERAL, "General"))
-    logoBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
-    logoBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-
-    logoBtn:SetScript("OnClick", function(self, button)
-        if button == "RightButton" then
-            ShowContextMenu(self, 1)
-        else
-            SafeSelectDockFrame(ChatFrame1)
-        end
-        CloseDropdown()
-    end)
-
-    -------------------------------------------------------------------
-    -- Left side: Combat log icon
-    -------------------------------------------------------------------
-    local combatBtn = CreateIconButton(header, ns.ASSET_PATH .. "combat.png", ICON_SIZE, ns.Blizz(COMBAT_LOG, "Combat Log"))
-    combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", 6, 0)
-
-    combatBtn:SetScript("OnClick", function()
-        if ChatFrame2 then
-            -- Use userSelectedFrame instead of IsShown() because on modern engines
-            -- we use SetAlpha(0/1) which doesn't change IsShown() state.
-            local target = (userSelectedFrame == ChatFrame2) and ChatFrame1 or ChatFrame2
-            SafeSelectDockFrame(target)
-        end
-    end)
-
-    combatBtn:HookScript("OnClick", function() CloseDropdown() end)
-
-    -------------------------------------------------------------------
-    -- Left side: History icon
-    -------------------------------------------------------------------
-    local historyBtn = CreateIconButton(header, ns.ASSET_PATH .. "history.png", ICON_SIZE + 3, L["TIP_HISTORY"])
-    historyBtn:SetPoint("LEFT", combatBtn, "RIGHT", 6, 0)
-    ns.historyBtn = historyBtn
-
-    historyBtn:SetScript("OnClick", function()
-        ns.ToggleHistory()
-        CloseDropdown()
-    end)
-
-    if GudaChatDB and not GudaChatDB.historyEnabled then
-        historyBtn:Hide()
-    end
-
-    -------------------------------------------------------------------
-    -- Center: Current tab name
-    -------------------------------------------------------------------
-    local tabLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    tabLabel:SetPoint("CENTER", header, "CENTER", 0, 0)
-    tabLabel:SetTextColor(0.6, 0.45, 0.0, 0.8)
-    tabLabel:SetText(GetChatTabName(1))
-
-    local tabLabelBtn = CreateFrame("Button", nil, header)
-    ns._tabLabelBtn = tabLabelBtn
-    tabLabelBtn:SetPoint("CENTER", tabLabel, "CENTER", 0, 0)
-    tabLabelBtn:SetHeight(HEADER_HEIGHT)
-    tabLabelBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    tabLabelBtn:SetScript("OnClick", function(self, button)
-        if button == "RightButton" then
-            CloseDropdown()
-            if contextMenu and contextMenu:IsShown() then
-                contextMenu:Hide()
-                if fontSubMenu then fontSubMenu:Hide() end
-            else
-                ShowContextMenu(self)
-            end
-        else
-            if contextMenu and contextMenu:IsShown() then
-                contextMenu:Hide()
-                if fontSubMenu then fontSubMenu:Hide() end
-            end
-            if dropdown:IsShown() then
-                CloseDropdown()
-            else
-                RefreshDropdown()
-                dropdown:ClearAllPoints()
-                dropdown:SetPoint("BOTTOM", self, "TOP", 0, 2)
-                dropdown:Show()
-            end
-        end
-    end)
-    tabLabelBtn:SetScript("OnEnter", function(self)
-        tabLabel:SetTextColor(1, 0.8, 0, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(L["TIP_TAB_SWITCH"], 0.7, 0.7, 0.7)
-        SetTooltipFontSize(12)
-        GameTooltip:Show()
-        if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-    end)
-    tabLabelBtn:SetScript("OnLeave", function(self)
-        tabLabel:SetTextColor(0.6, 0.45, 0.0, 0.8)
-        GameTooltip:Hide()
-    end)
-
-    local function UpdateTabLabelBtnWidth()
-        tabLabelBtn:SetWidth(math.max(tabLabel:GetStringWidth() + 16, 40))
-    end
-    UpdateTabLabelBtnWidth()
-
-    -- Set up closer for tab dropdown (needs tabLabelBtn reference)
-    closer:SetScript("OnUpdate", function()
-        if dropdown:IsShown() and not dropdown:IsMouseOver() and not tabLabelBtn:IsMouseOver() then
-            if IsMouseButtonDown("LeftButton") then
-                CloseDropdown()
-            end
-        end
-    end)
-
-    -- Highlight active icon based on selected frame
-    local ICON_ACTIVE = {1, 1, 1, 1}
-    local ICON_INACTIVE = {0.7, 0.7, 0.7, 0.9}
-
-    local function UpdateIconHighlights(cf)
-        local isGeneral = (cf == ChatFrame1)
-        local isCombat = (cf == ChatFrame2)
-        logoBtn.icon:SetVertexColor(unpack(isGeneral and ICON_ACTIVE or ICON_INACTIVE))
-        combatBtn.icon:SetVertexColor(unpack(isCombat and ICON_ACTIVE or ICON_INACTIVE))
-    end
-
-    logoBtn:HookScript("OnLeave", function()
-        local sel = GetSelectedChatFrame()
-        if sel == ChatFrame1 then logoBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
-    end)
-    combatBtn:HookScript("OnLeave", function()
-        local sel = GetSelectedChatFrame()
-        if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
-    end)
-
-    -- Set initial highlight (General is selected by default on load)
-    userSelectedFrame = userSelectedFrame or ChatFrame1
-    UpdateIconHighlights(ChatFrame1)
-
-    -- Label and icon highlights follow every tab switch, Blizzard's and GudaChat's
-    local function UpdateHeaderForFrame(cf)
-        if not cf or not cf.GetID then return end
-        local idx = cf:GetID()
-        if idx <= NUM_CHAT_WINDOWS then
-            tabLabel:SetText(GetChatTabName(idx))
-        else
-            local tab = _G[cf:GetName() .. "Tab"]
-            tabLabel:SetText(tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or GetChatTabName(idx))
-        end
-        UpdateTabLabelBtnWidth()
-        UpdateIconHighlights(cf)
-        RequestTabRefresh()
-    end
-    hooksecurefunc("FCF_SelectDockFrame", UpdateHeaderForFrame)
-    ns.OnFrameSelected(UpdateHeaderForFrame)
-
-    -------------------------------------------------------------------
-    -- Right side: Settings icon
-    -------------------------------------------------------------------
-    local settingsBtn = CreateIconButton(header, ns.ASSET_PATH .. "cog.png", ICON_SIZE, ns.Blizz(SETTINGS, "Settings"))
-    settingsBtn:SetPoint("RIGHT", header, "RIGHT", -4, 0)
-
-    settingsBtn:SetScript("OnClick", function()
-        ns.ToggleSettings()
-        CloseDropdown()
-    end)
-
-    -------------------------------------------------------------------
-    -- Right side: Chat Channels icon
-    -------------------------------------------------------------------
-    local channelsBtn = CreateIconButton(header, ns.ASSET_PATH .. "voice.png", ICON_SIZE - 1, L["TIP_CHAT_CHANNELS"])
-    channelsBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
-
-    channelsBtn:SetScript("OnClick", function()
-        if ToggleChannelFrame then ToggleChannelFrame() end
-        CloseDropdown()
-    end)
-
-    -------------------------------------------------------------------
-    -- Right side: Chat Type (emote) icon
-    -------------------------------------------------------------------
-    local chatTypeBtn = CreateIconButton(header, ns.ASSET_PATH .. "chat.png", ICON_SIZE - 1, L["TIP_CHAT_TYPE"])
-    chatTypeBtn:SetPoint("RIGHT", channelsBtn, "LEFT", -6, 0)
-
-    if GudaChatDB and not GudaChatDB.historyEnabled then
-        historyBtn:Hide()
-    end
-
-    local chatTypeDropdown = CreateFrame("Frame", "GudaChatTypeDropdown", chatTypeBtn, "BackdropTemplate")
-    chatTypeDropdown:SetFrameStrata("TOOLTIP")
-    ns.ApplyDarkBackdrop(chatTypeDropdown)
-    chatTypeDropdown:Hide()
-
-    -- Emote submenu
-    local emoteSubMenu = CreateFrame("Frame", "GudaChatEmoteSubMenu", chatTypeDropdown, "BackdropTemplate")
-    emoteSubMenu:SetFrameStrata("TOOLTIP")
-    emoteSubMenu:SetFrameLevel(chatTypeDropdown:GetFrameLevel() + 1)
-    ns.ApplyDarkBackdrop(emoteSubMenu)
-    emoteSubMenu:Hide()
-
-    -- Resolve a slash command to the token DoEmote actually expects. Upper-casing
-    -- the command is wrong wherever the two differ — "/goodbye" is the BYE token,
-    -- so DoEmote("GOODBYE") silently did nothing. Blizzard's own EMOTE%d_CMD%d ->
-    -- EMOTE%d_TOKEN tables are the authority, and they are localized, so this also
-    -- resolves correctly when the client's emote commands are translated.
-    local emoteTokens
-    local function EmoteToken(cmd)
-        if not emoteTokens then
-            emoteTokens = {}
-            for i = 1, 512 do
-                local token = _G["EMOTE" .. i .. "_TOKEN"]
-                if token then
-                    for j = 1, 8 do
-                        local c = _G["EMOTE" .. i .. "_CMD" .. j]
-                        if not c then break end
-                        emoteTokens[c:lower()] = token
-                    end
-                end
-            end
-        end
-        return emoteTokens[cmd:lower()] or cmd:sub(2):upper()
-    end
-
-    local emoteList = {
-        { label = L["EMOTE_WAVE"],     cmd = "/wave" },
-        { label = L["EMOTE_DANCE"],    cmd = "/dance" },
-        { label = L["EMOTE_BOW"],      cmd = "/bow" },
-        { label = L["EMOTE_CHEER"],    cmd = "/cheer" },
-        { label = L["EMOTE_CLAP"],     cmd = "/clap" },
-        { label = L["EMOTE_CRY"],      cmd = "/cry" },
-        { label = L["EMOTE_FLEX"],     cmd = "/flex" },
-        -- "/bye" rather than "/goodbye": both are the same emote, but the token
-        -- is BYE, so this is also correct via the upper-case fallback on a client
-        -- whose localized command table has no English "/goodbye" alias.
-        { label = L["EMOTE_GOODBYE"],  cmd = "/bye" },
-        { label = L["EMOTE_HELLO"],    cmd = "/hello" },
-        { label = L["EMOTE_KISS"],     cmd = "/kiss" },
-        { label = L["EMOTE_LAUGH"],    cmd = "/laugh" },
-        { label = L["EMOTE_NO"],       cmd = "/no" },
-        { label = L["EMOTE_POINT"],    cmd = "/point" },
-        { label = L["EMOTE_RUDE"],     cmd = "/rude" },
-        { label = L["EMOTE_SALUTE"],   cmd = "/salute" },
-        { label = L["EMOTE_SHY"],      cmd = "/shy" },
-        { label = L["EMOTE_SIT"],      cmd = "/sit" },
-        { label = L["EMOTE_SLEEP"],    cmd = "/sleep" },
-        { label = L["EMOTE_SMILE"],    cmd = "/smile" },
-        { label = L["EMOTE_THANK"],    cmd = "/thank" },
-        { label = L["EMOTE_YES"],      cmd = "/yes" },
-        { label = L["EMOTE_ANGRY"],    cmd = "/angry" },
-        { label = L["EMOTE_BEG"],      cmd = "/beg" },
-        { label = L["EMOTE_APPLAUD"],  cmd = "/applaud" },
-    }
-
-    local emYOff = -4
-    local emMaxW = 60
-    for _, entry in ipairs(emoteList) do
-        local mb = CreateFrame("Button", nil, emoteSubMenu)
-        mb:SetHeight(20)
-        mb:SetPoint("TOPLEFT", emoteSubMenu, "TOPLEFT", 4, emYOff)
-        mb:SetPoint("TOPRIGHT", emoteSubMenu, "TOPRIGHT", -4, emYOff)
-
-        local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
-        labelText:SetText(entry.label)
-        labelText:SetTextColor(0.8, 0.8, 0.8, 1)
-
-        local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
-        cmdText:SetText(entry.cmd)
-        cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
-
-        mb:SetScript("OnEnter", function()
-            labelText:SetTextColor(1, 0.8, 0, 1)
-            cmdText:SetTextColor(0.8, 0.6, 0, 1)
-        end)
-        mb:SetScript("OnLeave", function()
-            labelText:SetTextColor(0.8, 0.8, 0.8, 1)
-            cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
-        end)
-
-        local slash = entry.cmd
-        mb:SetScript("OnClick", function()
-            ns.PerformEmote(EmoteToken(slash))
-            emoteSubMenu:Hide()
-            chatTypeDropdown:Hide()
-        end)
-
-        local tw = labelText:GetStringWidth() + cmdText:GetStringWidth() + 32
-        if tw > emMaxW then emMaxW = tw end
-        emYOff = emYOff - 20
-    end
-    emoteSubMenu:SetSize(emMaxW + 8, math.abs(emYOff) + 4)
-
-    -- Main chat type entries. Commands come from Blizzard's localized SLASH_*
-    -- globals — a hardcoded "/bg" is not registered on every locale and would be
-    -- pasted as literal text, sending the message to say instead.
-    local chatTypeEntries = {
-        { label = ns.Blizz(SAY, "Say"),                   cmd = ns.SlashCmd("SLASH_SAY", "/s") },
-        { label = ns.Blizz(PARTY, "Party Chat"),          cmd = ns.SlashCmd("SLASH_PARTY", "/p") },
-        { label = ns.Blizz(RAID, "Raid"),                 cmd = ns.SlashCmd("SLASH_RAID", "/raid") },
-        { label = ns.Blizz(BATTLEGROUND, "Battleground"), cmd = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg") },
-        { label = ns.Blizz(GUILD, "Guild Chat"),          cmd = ns.SlashCmd("SLASH_GUILD", "/g") },
-        { label = ns.Blizz(YELL, "Yell"),                 cmd = ns.SlashCmd("SLASH_YELL", "/y") },
-        { label = ns.Blizz(WHISPER, "Whisper"),           cmd = ns.SlashCmd("SLASH_WHISPER", "/w") },
-        { label = ns.Blizz(EMOTE, "Emote"),               cmd = ns.SlashCmd("SLASH_EMOTE", "/e"), hasArrow = true },
-        { label = ns.Blizz(REPLY, "Reply"),               cmd = ns.SlashCmd("SLASH_REPLY", "/r") },
-    }
-
-    local ctYOff = -4
-    local ctMaxW = 60
-
-    for _, entry in ipairs(chatTypeEntries) do
-        local mb = CreateFrame("Button", nil, chatTypeDropdown)
-        mb:SetHeight(20)
-        mb:SetPoint("TOPLEFT", chatTypeDropdown, "TOPLEFT", 4, ctYOff)
-        mb:SetPoint("TOPRIGHT", chatTypeDropdown, "TOPRIGHT", -4, ctYOff)
-
-        local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
-        labelText:SetText(entry.label)
-        labelText:SetTextColor(0.8, 0.8, 0.8, 1)
-
-        local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
-        cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
-
-        if entry.hasArrow then
-            cmdText:SetText(">")
-        else
-            cmdText:SetText(entry.cmd)
-        end
-
-        mb:SetScript("OnEnter", function()
-            labelText:SetTextColor(1, 0.8, 0, 1)
-            cmdText:SetTextColor(0.8, 0.6, 0, 1)
-            if entry.hasArrow then
-                emoteSubMenu:ClearAllPoints()
-                emoteSubMenu:SetPoint("BOTTOMRIGHT", chatTypeDropdown, "BOTTOMLEFT", -2, 0)
-                emoteSubMenu:Show()
-            else
-                emoteSubMenu:Hide()
-            end
-        end)
-        mb:SetScript("OnLeave", function()
-            labelText:SetTextColor(0.8, 0.8, 0.8, 1)
-            cmdText:SetTextColor(0.5, 0.5, 0.5, 1)
-        end)
-
-        local slash = entry.cmd
-        mb:SetScript("OnClick", function()
-            ns.OpenChat(slash .. " ", ChatFrame1)
-            chatTypeDropdown:Hide()
-            emoteSubMenu:Hide()
-        end)
-
-        local tw = labelText:GetStringWidth() + cmdText:GetStringWidth() + 32
-        if tw > ctMaxW then ctMaxW = tw end
-        ctYOff = ctYOff - 20
-    end
-
-    chatTypeDropdown:SetSize(ctMaxW + 8, math.abs(ctYOff) + 4)
-
-    chatTypeBtn:SetScript("OnClick", function(self)
-        if chatTypeDropdown:IsShown() then
-            chatTypeDropdown:Hide()
-            emoteSubMenu:Hide()
-        else
-            chatTypeDropdown:ClearAllPoints()
-            chatTypeDropdown:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 4, 2)
-            chatTypeDropdown:Show()
-        end
-        CloseDropdown()
-    end)
-
-    local ctCloser = CreateFrame("Frame", nil, chatTypeDropdown)
-    ctCloser:SetScript("OnUpdate", function()
-        if chatTypeDropdown:IsShown()
-            and not chatTypeDropdown:IsMouseOver()
-            and not chatTypeBtn:IsMouseOver()
-            and not (emoteSubMenu:IsShown() and emoteSubMenu:IsMouseOver()) then
-            if IsMouseButtonDown("LeftButton") then
-                chatTypeDropdown:Hide()
-                emoteSubMenu:Hide()
-            end
-        end
-    end)
-
-    -------------------------------------------------------------------
-    -- Inline tabs (rendered directly in header bar)
-    -------------------------------------------------------------------
-    local inlineTabButtons = {}
-    local inlineOverflowDropdown
-    local inlineMoreBtn
-    local inlineDragIndicator
-    local inlineDragState = {
-        dragging = false,
-        sourceIdx = nil,
-        sourceBtn = nil,
-        insertIdx = nil,
-    }
-
-    local inlineTabPool = NewButtonPool()
-
-    local function RefreshInlineTabs()
-        ReleaseTabButtons(inlineTabPool, inlineTabButtons)
-        if inlineMoreBtn then inlineMoreBtn:Hide() end
-        if inlineOverflowDropdown then inlineOverflowDropdown:Hide() end
-
-        if not GudaChatDB.inlineTabBar then
-            tabLabel:Show()
-            tabLabelBtn:Show()
-            logoBtn:Show()
-            combatBtn:ClearAllPoints()
-            combatBtn:SetPoint("LEFT", logoBtn, "RIGHT", 6, 0)
-            return
-        end
-
-        -- Hide center label, logo icon, and external tab bar
-        tabLabel:Hide()
-        tabLabelBtn:Hide()
-        logoBtn:Hide()
-        combatBtn:ClearAllPoints()
-        combatBtn:SetPoint("LEFT", header, "LEFT", 4, 0)
-        if chatSubTabs then chatSubTabs:Hide() end
-
-        -- Collect tabs (same logic as RefreshChatSubTabs)
-        local allTabs = {}
-
-        for i = 1, NUM_CHAT_WINDOWS do
-            local cf = _G["ChatFrame" .. i]
-            local tab = _G["ChatFrame" .. i .. "Tab"]
-            if cf and tab then
-                local isDocked = cf.isDocked or (i == 1)
-                local shown = (i == 1) or tab:IsShown()
-                if isDocked and shown and i ~= 2 then
-                    if not (not GudaChatDB.whisperTab and ns.whisperFrame and cf == ns.whisperFrame) then
-                        local name = GetChatTabName(i)
-                        local col = GetTabColor(name, i)
-                        tinsert(allTabs, { name = name, col = col, frameIndex = i, cf = cf })
-                    end
-                end
-            end
-        end
-
-        if CHAT_FRAMES then
-            for _, frameName in ipairs(CHAT_FRAMES) do
-                local cf = _G[frameName]
-                if cf and cf.isTemporary and cf.inUse and cf.isDocked then
-                    local idx = cf:GetID()
-                    local tab = _G[frameName .. "Tab"]
-                    local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or string.format(L["CHAT_WINDOW_NUMBER"], idx)
-                    local whisperInfo = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and ChatTypeInfo["WHISPER"]
-                    local col = whisperInfo and { whisperInfo.r, whisperInfo.g, whisperInfo.b } or GetTabColor(name, idx)
-                    tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
-                end
-            end
-        end
-
-        ApplySavedTabOrder(allTabs)
-        PruneBlinksToTabs(allTabs)
-        local baseOrder = { unpack(allTabs) }
-
-        -- Measure available width between left icons and chatTypeBtn
-        local leftAnchor = historyBtn:IsShown() and historyBtn or combatBtn
-        local leftEdge = leftAnchor:GetRight()
-        local rightEdge = chatTypeBtn:GetLeft()
-        if not leftEdge or not rightEdge then return end
-        local totalSpace = rightEdge - leftEdge
-        if totalSpace < 60 then return end
-
-        local widths = {}
-        for idx, def in ipairs(allTabs) do
-            widths[idx] = MeasureTabText(def.name) + 8
-        end
-
-        -- Pixel budget: first tab gap=8, subsequent gap=6, plus 6px right margin
-        local TAB_GAP = 6
-        local FIRST_GAP = 8
-        local marginRight = 6
-        local overflowExtra = TAB_GAP + 12  -- gap + button width
-
-        local totalW = FIRST_GAP
-        local fitCount = #allTabs
-
-        for idx = 1, #allTabs do
-            totalW = totalW + widths[idx] + (idx > 1 and TAB_GAP or 0)
-        end
-
-        local allFitLimit = totalSpace - marginRight
-        if totalW > allFitLimit then
-            local maxUsable = totalSpace - overflowExtra - marginRight
-            totalW = FIRST_GAP
-            fitCount = 0
-            for idx = 1, #allTabs do
-                totalW = totalW + widths[idx] + (idx > 1 and TAB_GAP or 0)
-                if totalW > maxUsable then break end
-                fitCount = idx
-            end
-            -- Ensure selected tab is visible
-            local selectedTabIdx
-            for idx, def in ipairs(allTabs) do
-                if def.cf and def.cf:IsShown() then
-                    selectedTabIdx = idx
-                    break
-                end
-            end
-            if selectedTabIdx and selectedTabIdx > fitCount and fitCount > 0 then
-                allTabs[fitCount], allTabs[selectedTabIdx] = allTabs[selectedTabIdx], allTabs[fitCount]
-                widths[fitCount], widths[selectedTabIdx] = widths[selectedTabIdx], widths[fitCount]
-                totalW = FIRST_GAP
-                fitCount = 0
-                for idx = 1, #allTabs do
-                    totalW = totalW + widths[idx] + (idx > 1 and TAB_GAP or 0)
-                    if totalW > maxUsable then break end
-                    fitCount = idx
-                end
-            end
-        end
-
-        -- Drag indicator
-        if not inlineDragIndicator then
-            inlineDragIndicator = header:CreateTexture(nil, "OVERLAY")
-            inlineDragIndicator:SetTexture("Interface\\Buttons\\WHITE8x8")
-            inlineDragIndicator:SetVertexColor(0.8, 0.6, 0.0, 1)
-            inlineDragIndicator:SetSize(2, 14)
-            inlineDragIndicator:Hide()
-        end
-
-        local function IsSelectedFrame(cf)
-            return cf and cf:IsShown()
-        end
-
-        local DRAG_THRESHOLD = 5
-
-        local function GetInsertIndex(srcIdx)
-            local scale = header:GetEffectiveScale()
-            local cursorX = GetCursorPosition() / scale
-            for _, tabBtn in ipairs(inlineTabButtons) do
-                if tabBtn.tabIdx then
-                    local left = tabBtn:GetLeft()
-                    local right = tabBtn:GetRight()
-                    if left and right then
-                        local mid = (left + right) / 2
-                        if cursorX < mid then
-                            return tabBtn.tabIdx
-                        end
-                    end
-                end
-            end
-            return fitCount + 1
-        end
-
-        local function UpdateIndicator(insertIdx, srcIdx)
-            if not insertIdx or insertIdx == srcIdx or insertIdx == srcIdx + 1 then
-                inlineDragIndicator:Hide()
-                inlineDragState.insertIdx = nil
-                return
-            end
-            inlineDragState.insertIdx = insertIdx
-            local anchorBtn
-            if insertIdx <= fitCount then
-                for _, tabBtn in ipairs(inlineTabButtons) do
-                    if tabBtn.tabIdx == insertIdx then
-                        anchorBtn = tabBtn
-                        break
-                    end
-                end
-            end
-            inlineDragIndicator:ClearAllPoints()
-            if anchorBtn then
-                inlineDragIndicator:SetPoint("RIGHT", anchorBtn, "LEFT", -3, 0)
-            else
-                local lastBtn
-                for _, tabBtn in ipairs(inlineTabButtons) do
-                    if tabBtn.tabIdx then lastBtn = tabBtn end
-                end
-                if lastBtn then
-                    inlineDragIndicator:SetPoint("LEFT", lastBtn, "RIGHT", 3, 0)
-                end
-            end
-            inlineDragIndicator:Show()
-        end
-
-        local function FinishTabDrag(srcBtn)
-            if not inlineDragState.dragging then return end
-            local insertIdx = inlineDragState.insertIdx
-            local srcIdx = inlineDragState.sourceIdx
-            if insertIdx and srcIdx and insertIdx ~= srcIdx and insertIdx ~= srcIdx + 1 then
-                SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
-            end
-            inlineDragIndicator:Hide()
-            inlineDragState.dragging = false
-            inlineDragState.sourceIdx = nil
-            inlineDragState.sourceBtn = nil
-            inlineDragState.insertIdx = nil
-            srcBtn:SetScript("OnUpdate", nil)
-            RefreshInlineTabs()
-        end
-
-        -- Create visible tab buttons
-        local prevAnchor = leftAnchor
-        local gap = FIRST_GAP
-        for idx = 1, fitCount do
-            local def = allTabs[idx]
-            local col = def.col
-            local btn = AcquireTabButton(inlineTabPool, header)
-            btn:SetHeight(16)
-            btn.tabIdx = idx
-
-            local text = btn.text
-            text:SetText(def.name)
-
-            if IsSelectedFrame(def.cf) then
-                text:SetTextColor(col[1], col[2], col[3], 1)
-            else
-                text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-            end
-
-            btn:SetScript("OnClick", function(self, button)
-                if inlineDragState.dragging then
-                    FinishTabDrag(self)
-                    return
-                end
-                if button == "RightButton" then
-                    ShowContextMenu(self, def.frameIndex)
-                else
-                    if blinkingTabs[def.frameIndex] then
-                        blinkingTabs[def.frameIndex] = nil
-                        self.blinkAG:Stop()
-                    end
-                    SafeSelectDockFrame(def.cf)
-                end
-            end)
-
-            btn:SetScript("OnMouseDown", function(self, button)
-                if button == "LeftButton" then
-                    local cx, cy = GetCursorPosition()
-                    local scale = self:GetEffectiveScale()
-                    inlineDragState.startX = cx / scale
-                    inlineDragState.startY = cy / scale
-                    inlineDragState.pending = true
-                    inlineDragState.pendingBtn = self
-                    inlineDragState.pendingIdx = self.tabIdx
-                    self:SetScript("OnUpdate", function(self)
-                        if not inlineDragState.pending and not inlineDragState.dragging then
-                            self:SetScript("OnUpdate", nil)
-                            return
-                        end
-                        if not IsMouseButtonDown("LeftButton") then
-                            if inlineDragState.dragging then
-                                FinishTabDrag(self)
-                            end
-                            inlineDragState.pending = false
-                            self:SetScript("OnUpdate", nil)
-                            return
-                        end
-                        if inlineDragState.pending then
-                            local cx, cy = GetCursorPosition()
-                            local scale = self:GetEffectiveScale()
-                            local dx = cx / scale - inlineDragState.startX
-                            local dy = cy / scale - inlineDragState.startY
-                            if (dx * dx + dy * dy) > DRAG_THRESHOLD * DRAG_THRESHOLD then
-                                inlineDragState.pending = false
-                                inlineDragState.dragging = true
-                                inlineDragState.sourceIdx = inlineDragState.pendingIdx
-                                inlineDragState.sourceBtn = self
-                                self.text:SetTextColor(col[1] * 0.3, col[2] * 0.3, col[3] * 0.3, 0.5)
-                            end
-                        end
-                        if inlineDragState.dragging then
-                            local ins = GetInsertIndex(inlineDragState.sourceIdx)
-                            UpdateIndicator(ins, inlineDragState.sourceIdx)
-                        end
-                    end)
-                end
-            end)
-
-            btn:SetScript("OnEnter", function(self)
-                self.text:SetTextColor(col[1], col[2], col[3], 1)
-                if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-            end)
-            btn:SetScript("OnLeave", function(self)
-                if inlineDragState.dragging and inlineDragState.sourceBtn == self then return end
-                if self.blinking then return end
-                if IsSelectedFrame(def.cf) then
-                    self.text:SetTextColor(col[1], col[2], col[3], 1)
-                else
-                    self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                end
-            end)
-
-            if blinkingTabs[def.frameIndex] then
-                btn.blinking = true
-                btn.blinkAG:Play()
-                text:SetTextColor(col[1], col[2], col[3], 1)
-            end
-
-            btn:SetWidth(widths[idx])
-            btn:SetPoint("LEFT", prevAnchor, "RIGHT", gap, 0)
-            gap = TAB_GAP
-            prevAnchor = btn
-            tinsert(inlineTabButtons, btn)
-        end
-
-        -- Overflow button if there are hidden tabs
-        if fitCount < #allTabs then
-            if not inlineMoreBtn then
-                inlineMoreBtn = CreateFrame("Button", nil, header)
-                inlineMoreBtn:SetSize(12, 12)
-
-                local moreIcon = inlineMoreBtn:CreateTexture(nil, "OVERLAY")
-                moreIcon:SetAllPoints()
-                moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
-                moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-                inlineMoreBtn.icon = moreIcon
-
-                inlineMoreBtn:SetScript("OnEnter", function(self)
-                    self.icon:SetVertexColor(1, 1, 1, 1)
-                    if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-                end)
-                inlineMoreBtn:SetScript("OnLeave", function(self)
-                    self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
-                end)
-            end
-            local moreBtn = inlineMoreBtn
-            moreBtn:ClearAllPoints()
-            moreBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -marginRight, 0)
-            moreBtn:Show()
-
-            moreBtn:SetScript("OnClick", function(self)
-                if inlineOverflowDropdown and inlineOverflowDropdown:IsShown() then
-                    inlineOverflowDropdown:Hide()
-                    return
-                end
-
-                if not inlineOverflowDropdown then
-                    inlineOverflowDropdown = CreateFrame("Frame", "GudaChatInlineTabOverflow", UIParent, "BackdropTemplate")
-                    inlineOverflowDropdown:SetFrameStrata("TOOLTIP")
-                    inlineOverflowDropdown:SetClampedToScreen(true)
-                    ns.ApplyDarkBackdrop(inlineOverflowDropdown, { 0.08, 0.08, 0.08, 0.95 }, { 0.3, 0.3, 0.3, 0.6 })
-                    inlineOverflowDropdown:EnableMouse(true)
-                    local hideElapsed = 0
-                    local HIDE_DELAY = 0.3
-                    inlineOverflowDropdown:SetScript("OnUpdate", function(self, dt)
-                        if not self:IsShown() then return end
-                        if contextMenu and contextMenu:IsShown() then
-                            hideElapsed = 0
-                            return
-                        end
-                        local overDropdown = self:IsMouseOver(0, 0, 10, 0)
-                        local overMore = inlineMoreBtn and inlineMoreBtn:IsMouseOver()
-                        if overDropdown or overMore then
-                            hideElapsed = 0
-                        else
-                            hideElapsed = hideElapsed + dt
-                            if hideElapsed >= HIDE_DELAY then
-                                self:Hide()
-                                hideElapsed = 0
-                            end
-                        end
-                    end)
-                    inlineOverflowDropdown:SetScript("OnShow", function()
-                        hideElapsed = 0
-                    end)
-                end
-
-                local itemHeight = 18
-                local padding = 6
-                local maxW = 60
-                local items = {}
-                local selectedIndex = GetSelectedChatFrameIndex()
-
-                for oidx = fitCount + 1, #allTabs do
-                    local def = allTabs[oidx]
-                    local item = GetMenuItem(inlineOverflowDropdown, #items + 1, itemHeight)
-                    local text = item.text
-                    text:SetText(def.name)
-
-                    local col = def.col
-                    if def.frameIndex == selectedIndex then
-                        text:SetTextColor(col[1], col[2], col[3], 1)
-                    else
-                        text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                    end
-
-                    item:SetScript("OnEnter", function(self)
-                        self.text:SetTextColor(col[1], col[2], col[3], 1)
-                    end)
-                    item:SetScript("OnLeave", function(self)
-                        if def.frameIndex == GetSelectedChatFrameIndex() then
-                            self.text:SetTextColor(col[1], col[2], col[3], 1)
-                        else
-                            self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
-                        end
-                    end)
-                    item:SetScript("OnClick", function(self, button)
-                        if button == "RightButton" then
-                            ShowContextMenu(self, def.frameIndex)
-                        else
-                            SafeSelectDockFrame(def.cf)
-                            inlineOverflowDropdown:Hide()
-                        end
-                    end)
-
-                    local w = text:GetStringWidth() + 16
-                    if w > maxW then maxW = w end
-                    tinsert(items, item)
-                end
-                HideMenuItemsFrom(inlineOverflowDropdown, #items + 1)
-
-                local totalH = #items * itemHeight + padding * 2
-                inlineOverflowDropdown:SetSize(maxW, totalH)
-                -- Anchor downward from the overflow button
-                inlineOverflowDropdown:ClearAllPoints()
-                inlineOverflowDropdown:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
-
-                for i, item in ipairs(items) do
-                    item:SetWidth(maxW)
-                    item:ClearAllPoints()
-                    item:SetPoint("TOPLEFT", inlineOverflowDropdown, "TOPLEFT", 0, -padding - (i - 1) * itemHeight)
-                    item:Show()
-                end
-
-                inlineOverflowDropdown:Show()
-            end)
-        end
-    end
-    ns.RefreshInlineTabs = RefreshInlineTabs
-
-    -------------------------------------------------------------------
-    -- Combat log subtabs
-    -------------------------------------------------------------------
-    CreateCombatSubTabs(header)
-
-    -------------------------------------------------------------------
-    -- Chat window subtab bar
-    -------------------------------------------------------------------
-    CreateChatSubTabs(header)
+    AddHeaderHoverFade(header, parentFrame)
+    AddHeaderDrag(header, parentFrame)
+
+    local controls = CreateHeaderControls(header)
+    AddIconHighlights(controls)
+    ns.EnsureUserSelectedFrame()
+    controls.UpdateIconHighlights(ChatFrame1)
+    FollowFrameSelection(controls)
+    CreateInlineTabs(header, controls)
+
+    ns.CreateCombatSubTabs(header)
+    local chatSubTabs = ns.CreateChatSubTabs(header)
     if GudaChatDB.showTabBar then
-        RefreshChatSubTabs(header)
+        ns.RefreshChatSubTabs()
         chatSubTabs:Show()
         chatSubTabs:SetAlpha(0)
     end
     if GudaChatDB.inlineTabBar then
-        RefreshInlineTabs()
+        ns.RefreshInlineTabs()
     end
 
-    UpdateSubTabsForFrame = function(cf)
-        if combatSubTabs then
-            if cf == ChatFrame2 then
-                UpdateCombatSubTabColors()
-                combatSubTabs:Show()
-                combatSubTabs:SetAlpha(chatHeader and chatHeader:GetAlpha() or 1)
-            else
-                combatSubTabs:Hide()
-            end
-        end
-        if chatSubTabs and GudaChatDB.showTabBar then
-            if cf == ChatFrame2 then
-                chatSubTabs:Hide()
-            else
-                chatSubTabs:Show()
-            end
-        end
-        RequestTabRefresh()
-    end
+    ns.UpdateSubTabsForFrame = UpdateSubTabsForFrame
+    hooksecurefunc("FCF_SelectDockFrame", UpdateSubTabsForFrame)
 
-    hooksecurefunc("FCF_SelectDockFrame", function(cf)
-        UpdateSubTabsForFrame(cf)
-    end)
-
-    -- Refresh chat subtabs when windows are created/removed/docked
     local chatSubTabHooks = { "FCF_OpenNewWindow", "FCF_Close", "FCF_DockFrame", "FCF_UnDockFrame", "FCF_SetWindowName" }
     for _, funcName in ipairs(chatSubTabHooks) do
         if _G[funcName] then
-            hooksecurefunc(funcName, RequestTabRefresh)
+            hooksecurefunc(funcName, ns.RequestTabRefresh)
         end
     end
 
-    -- Auto-select tab when sending a message to a channel with its own window
-    local AUTO_SELECT_EVENTS = {
-        CHAT_MSG_GUILD = "GUILD", CHAT_MSG_OFFICER = "OFFICER",
-        CHAT_MSG_PARTY = "PARTY", CHAT_MSG_PARTY_LEADER = "PARTY",
-        CHAT_MSG_RAID = "RAID", CHAT_MSG_RAID_LEADER = "RAID",
-        CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT", CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
-        CHAT_MSG_WHISPER_INFORM = "WHISPER", CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
-    }
-    local autoSelectFrame = CreateFrame("Frame")
-    autoSelectFrame:SetScript("OnEvent", function(self, event, msg, sender)
-        if not GudaChatDB or not (GudaChatDB.showTabBar or GudaChatDB.inlineTabBar) then return end
-        local group = AUTO_SELECT_EVENTS[event]
-        if not group then return end
+    ns.EnableAutoSelectOnSend()
 
-        -- Only react to our own messages (sender may be a secret string; use taint-safe helpers)
-        local isOutgoing = (event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM")
-        if not isOutgoing and not ns.SameCharacter(sender, ns.UnitFullName("player")) then return end
-
-        -- For outgoing whispers, check temporary windows then dedicated Whispers tab
-        if isOutgoing then
-            if CHAT_FRAMES then
-                for _, frameName in ipairs(CHAT_FRAMES) do
-                    local cf = _G[frameName]
-                    if cf and cf.isTemporary and cf.inUse and cf.isDocked then
-                        if ns.SameCharacter(cf.chatTarget, sender) then
-                            SafeSelectDockFrame(cf)
-                            return
-                        end
-                    end
-                end
-            end
-            if GudaChatDB.whisperTab and ns.whisperFrame then
-                SafeSelectDockFrame(ns.whisperFrame)
-                return
-            end
-            return
-        end
-
-        -- If the user's frame already receives this message group, stay put
-        if userSelectedFrame and userSelectedFrame ~= ChatFrame2 then
-            local userIdx = userSelectedFrame:GetID()
-            local userMsgs = { GetChatWindowMessages(userIdx) }
-            for _, grp in ipairs(userMsgs) do
-                if grp == group then return end
-            end
-        end
-
-        -- For other chat types, find a non-General window that has this message group
-        for i = 3, NUM_CHAT_WINDOWS do
-            local cf = _G["ChatFrame" .. i]
-            local tab = _G["ChatFrame" .. i .. "Tab"]
-            if cf and tab then
-                local isDocked = cf.isDocked
-                local shown = tab:IsShown()
-                if isDocked and shown then
-                    local msgs = { GetChatWindowMessages(i) }
-                    for _, grp in ipairs(msgs) do
-                        if grp == group then
-                            SafeSelectDockFrame(cf)
-                            return
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    for ev in pairs(AUTO_SELECT_EVENTS) do
-        autoSelectFrame:RegisterEvent(ev)
-    end
-
-    chatHeader = header
     ns.chatHeader = header
     return header
 end
