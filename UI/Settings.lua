@@ -1023,7 +1023,7 @@ local function CreateSettingsFrame()
 
     local credit = sidebar:CreateFontString(nil, "OVERLAY", "GudaChatFontDisableSmall")
     credit:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 14, 12)
-    credit:SetText("by Vati")
+    credit:SetText("by Guda")
     ns.Paint(credit, C.dimText)
 
     local scroll = ns.CreateScrollArea(f)
