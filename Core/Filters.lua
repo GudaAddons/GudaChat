@@ -9,16 +9,24 @@ local CLASS_COLOR_GROUPS = {
     "ACHIEVEMENT", "WHISPER", "BN_WHISPER", "PARTY", "PARTY_LEADER",
     "RAID", "RAID_LEADER", "RAID_WARNING",
     "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER",
-    "CHANNEL1", "CHANNEL2", "CHANNEL3", "CHANNEL4", "CHANNEL5",
-    "CHANNEL6", "CHANNEL7", "CHANNEL8", "CHANNEL9", "CHANNEL10",
 }
 
+-- Custom channels CHANNEL1..CHANNEL20; only those the client defines in ChatTypeInfo are set
+local MAX_CHANNEL_GROUPS = 20
+for i = 1, MAX_CHANNEL_GROUPS do
+    tinsert(CLASS_COLOR_GROUPS, "CHANNEL" .. i)
+end
+
+-- The name-by-class flag is global per chat type, not per window, so each group is set
+-- once, and only when ChatTypeInfo says it differs (the call also saves chat settings).
 local function SetClassColors(enabled)
-    ns.ForEachChatWindow(function()
-        for _, group in ipairs(CLASS_COLOR_GROUPS) do
+    enabled = enabled and true or false
+    for _, group in ipairs(CLASS_COLOR_GROUPS) do
+        local info = ChatTypeInfo and ChatTypeInfo[group]
+        if info and (info.colorNameByClass and true or false) ~= enabled then
             SetChatColorNameByClass(group, enabled)
         end
-    end)
+    end
 end
 
 function ns.ApplyClassColors()
@@ -29,7 +37,22 @@ end
 -- Player level in chat
 ---------------------------------------------------------------------------
 
+-- CompactName -> level, or false for "looked up and not found". Misses are cached too, so a
+-- busy channel full of strangers does not rescan every unit on every line; the whole cache
+-- is wiped every LEVEL_CACHE_SECONDS and on guild roster changes so new targets and
+-- level-ups show up.
 local levelCache = {}
+local LEVEL_CACHE_SECONDS = 60
+
+local LEVEL_UNITS = { "target", "focus", "mouseover" }
+for i = 1, 4 do tinsert(LEVEL_UNITS, "party" .. i) end
+for i = 1, 40 do tinsert(LEVEL_UNITS, "raid" .. i) end
+for i = 1, 40 do tinsert(LEVEL_UNITS, "nameplate" .. i) end
+
+-- CompactName -> level for the guild roster, rebuilt on demand after GUILD_ROSTER_UPDATE
+-- instead of scanning the whole roster for every chat line.
+local guildLevels = {}
+local guildLevelsDirty = true
 
 -- A usable level, or nil for unknown (0, -1) and secret levels, which throw on compare
 local function PlainLevel(level)
@@ -37,43 +60,50 @@ local function PlainLevel(level)
     return level
 end
 
+local function RebuildGuildLevels()
+    wipe(guildLevels)
+    guildLevelsDirty = false
+    if not (IsInGuild and IsInGuild()) then return end
+    local numMembers = GetNumGuildMembers and GetNumGuildMembers() or 0
+    for i = 1, numMembers do
+        local gName, _, _, gLevel = GetGuildRosterInfo(i)
+        local key = ns.CompactName(gName)
+        local level = key and PlainLevel(gLevel)
+        if level then
+            guildLevels[key] = level
+        end
+    end
+end
+
+local function FindUnitLevel(key)
+    for _, unit in ipairs(LEVEL_UNITS) do
+        if UnitExists(unit) and ns.CompactName(ns.UnitFullName(unit)) == key then
+            local level = PlainLevel(UnitLevel(unit))
+            if level then return level end
+        end
+    end
+    if guildLevelsDirty then RebuildGuildLevels() end
+    return guildLevels[key]
+end
+
 local function GetPlayerLevel(name)
     local key = ns.CompactName(name)
     if not key then return nil end
-    if levelCache[key] then return levelCache[key] end
-
-    local unitIDs = { "target", "focus", "mouseover" }
-    for i = 1, 4 do tinsert(unitIDs, "party" .. i) end
-    for i = 1, 40 do tinsert(unitIDs, "raid" .. i) end
-    for i = 1, 40 do tinsert(unitIDs, "nameplate" .. i) end
-
-    for _, unit in ipairs(unitIDs) do
-        if UnitExists(unit) and ns.CompactName(ns.UnitFullName(unit)) == key then
-            local level = PlainLevel(UnitLevel(unit))
-            if level then
-                levelCache[key] = level
-                return level
-            end
-        end
-    end
-
-    if IsInGuild and IsInGuild() then
-        local numMembers = GetNumGuildMembers and GetNumGuildMembers() or 0
-        for i = 1, numMembers do
-            local gName, _, _, gLevel = GetGuildRosterInfo(i)
-            if ns.CompactName(gName) == key then
-                local level = PlainLevel(gLevel)
-                if level then
-                    levelCache[key] = level
-                    return level
-                end
-            end
-        end
-    end
-
-    return nil
+    local cached = levelCache[key]
+    if cached ~= nil then return cached or nil end
+    local level = FindUnitLevel(key)
+    levelCache[key] = level or false
+    return level
 end
 ns.GetPlayerLevel = GetPlayerLevel
+
+local guildWatcher = CreateFrame("Frame")
+guildWatcher:RegisterEvent("GUILD_ROSTER_UPDATE")
+guildWatcher:RegisterEvent("PLAYER_GUILD_UPDATE")
+guildWatcher:SetScript("OnEvent", function()
+    guildLevelsDirty = true
+    wipe(levelCache)
+end)
 
 local function GetLevelDifficultyColor(level)
     if GetQuestDifficultyColor then
@@ -96,16 +126,25 @@ local function GetLevelDifficultyColor(level)
 end
 ns.GetLevelDifficultyColor = GetLevelDifficultyColor
 
+local levelMemo = ns.NewLineMemo()
+
 local function FilterAddLevel(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.showLevel then return false end
     if not msg or ns.IsSecret(msg) then return false end
 
-    local level = GetPlayerLevel(sender)
-    if level then
-        local r, g, b = GetLevelDifficultyColor(level)
-        local hex = string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
-        msg = hex .. "[" .. level .. "]|r " .. msg
-        return false, msg, sender, ...
+    local lineID = ns.PlainLineID(select(9, ...))
+    local hit, output = levelMemo:Get(lineID, msg)
+    if not hit then
+        output = false
+        local level = GetPlayerLevel(sender)
+        if level then
+            local r, g, b = GetLevelDifficultyColor(level)
+            output = string.format("|cff%02x%02x%02x[%d]|r ", r * 255, g * 255, b * 255, level) .. msg
+        end
+        levelMemo:Set(lineID, msg, output)
+    end
+    if output then
+        return false, output, sender, ...
     end
     return false
 end
@@ -125,8 +164,7 @@ function ns.EnableLevelDisplay()
     end
 end
 
--- Clear cache periodically to stay fresh
-C_Timer.NewTicker(60, function() wipe(levelCache) end)
+C_Timer.NewTicker(LEVEL_CACHE_SECONDS, function() wipe(levelCache) end)
 
 ---------------------------------------------------------------------------
 -- Copyable links
@@ -159,25 +197,18 @@ local function LinkifyURL(url)
     return "|cff33bbff|Hgudachat:url:" .. url .. "|h[" .. url .. "]|h|r"
 end
 
-local function FilterAddURLLinks(self, event, msg, ...)
-    if not GudaChatDB or not GudaChatDB.copyLinks then return false end
-    if not msg or ns.IsSecret(msg) or msg == "" then return false end
-    -- Skip messages that already contain our link — re-processing would nest the
-    -- hyperlink inside itself, corrupting both the display and the click target.
+-- Skips messages that already contain our link: re-processing would nest the hyperlink
+-- inside itself. Only plain text is linkified, never inside existing hyperlinks or
+-- [brackets] (same splitter as the emoji filter), so a URL-like substring inside an item
+-- link is left alone. Returns the new message, or false when nothing changed.
+local function LinkifyMessage(msg)
     if msg:find("|Hgudachat:url:", 1, true) then return false end
-
-    -- Only linkify plain text, never inside existing hyperlinks / [brackets], using the
-    -- same splitter the emoji filter uses. Prevents matching a URL-like substring inside
-    -- an item link (or a link we just created in this same message).
     local parts = (ns.SplitProtected and ns.SplitProtected(msg)) or { { text = msg, free = true } }
-
     local changed = false
     for _, part in ipairs(parts) do
         if part.free then
             for _, pattern in ipairs(URL_PATTERNS) do
-                local newText, n = part.text:gsub(pattern, function(url)
-                    return LinkifyURL(url)
-                end)
+                local newText, n = part.text:gsub(pattern, LinkifyURL)
                 if n > 0 then
                     part.text = newText
                     changed = true
@@ -186,13 +217,24 @@ local function FilterAddURLLinks(self, event, msg, ...)
             end
         end
     end
+    return changed and ns.JoinParts(parts) or false
+end
+ns.LinkifyMessage = LinkifyMessage
 
-    if changed then
-        local result = ""
-        for _, part in ipairs(parts) do
-            result = result .. part.text
-        end
-        return false, result, ...
+local urlMemo = ns.NewLineMemo()
+
+local function FilterAddURLLinks(self, event, msg, ...)
+    if not GudaChatDB or not GudaChatDB.copyLinks then return false end
+    if not msg or ns.IsSecret(msg) or msg == "" then return false end
+
+    local lineID = ns.PlainLineID(select(10, ...))
+    local hit, output = urlMemo:Get(lineID, msg)
+    if not hit then
+        output = LinkifyMessage(msg)
+        urlMemo:Set(lineID, msg, output)
+    end
+    if output then
+        return false, output, ...
     end
     return false
 end
@@ -296,16 +338,20 @@ local function HighlightIn(text)
         return text:gsub(namePattern, function(m) return classHex .. m .. "|r" end)
     end
     if not plainName then return text, 0 end
-    local out, pos, count = "", 1, 0
+    local out, pos, count = {}, 1, 0
     while true do
         local s, e = text:find(plainName, pos, true)
         if not s then break end
-        out = out .. text:sub(pos, s - 1) .. classHex .. text:sub(s, e) .. "|r"
+        out[#out + 1] = text:sub(pos, s - 1)
+        out[#out + 1] = classHex
+        out[#out + 1] = text:sub(s, e)
+        out[#out + 1] = "|r"
         pos = e + 1
         count = count + 1
     end
     if count == 0 then return text, 0 end
-    return out .. text:sub(pos), count
+    out[#out + 1] = text:sub(pos)
+    return table.concat(out), count
 end
 
 -- Public channels (General / Trade / LocalDefense / LookingForGroup) are skipped
@@ -324,16 +370,9 @@ local function IsPublicChannel(zoneID, channelName)
         or channelName:find("LookingForGroup") ~= nil
 end
 
-local function FilterHighlightName(self, event, msg, sender, ...)
-    if not GudaChatDB or not GudaChatDB.highlightName then return false end
-    if not namePattern and not plainName then BuildNameHighlight() end
-    if (not namePattern and not plainName) or not msg or ns.IsSecret(msg) then return false end
-    -- select(5, ...) is arg7 zoneChannelID, select(7, ...) is arg9 channelBaseName
-    if event == "CHAT_MSG_CHANNEL" and IsPublicChannel(select(5, ...), select(7, ...)) then
-        return false
-    end
-
-    -- Color only plain text, never inside existing hyperlinks/[brackets].
+-- Colors the player's name in plain text only, never inside existing hyperlinks or
+-- [brackets]. Returns the new message, or false when the name does not appear.
+local function HighlightMessage(msg)
     local parts = (ns.SplitProtected and ns.SplitProtected(msg)) or { { text = msg, free = true } }
     local changed = false
     for _, part in ipairs(parts) do
@@ -345,9 +384,34 @@ local function FilterHighlightName(self, event, msg, sender, ...)
             end
         end
     end
-    if not changed then return false end
+    return changed and ns.JoinParts(parts) or false
+end
 
-    -- Sound: skip our own messages; throttle (also dedupes multi-frame display).
+local highlightMemo = ns.NewLineMemo()
+
+-- The mention sound plays once per message: memo hits (the same line shown in another chat
+-- frame) return before it, and our own messages and bursts within MENTION_SOUND_THROTTLE
+-- stay silent.
+local function FilterHighlightName(self, event, msg, sender, ...)
+    if not GudaChatDB or not GudaChatDB.highlightName then return false end
+    if not namePattern and not plainName then BuildNameHighlight() end
+    if (not namePattern and not plainName) or not msg or ns.IsSecret(msg) then return false end
+    -- select(5, ...) is arg7 zoneChannelID, select(7, ...) is arg9 channelBaseName
+    if event == "CHAT_MSG_CHANNEL" and IsPublicChannel(select(5, ...), select(7, ...)) then
+        return false
+    end
+
+    local lineID = ns.PlainLineID(select(9, ...))
+    local hit, output = highlightMemo:Get(lineID, msg)
+    if hit then
+        if output then return false, output, sender, ... end
+        return false
+    end
+
+    output = HighlightMessage(msg)
+    highlightMemo:Set(lineID, msg, output)
+    if not output then return false end
+
     local isSelf = ns.SameCharacter(sender, ns.UnitFullName("player"))
     if not isSelf and GudaChatDB.highlightSound and SOUNDKIT and SOUNDKIT.TELL_MESSAGE then
         local now = GetTime()
@@ -356,12 +420,7 @@ local function FilterHighlightName(self, event, msg, sender, ...)
             PlaySound(SOUNDKIT.TELL_MESSAGE)
         end
     end
-
-    local result = ""
-    for _, part in ipairs(parts) do
-        result = result .. part.text
-    end
-    return false, result, sender, ...
+    return false, output, sender, ...
 end
 
 function ns.EnableNameHighlight()

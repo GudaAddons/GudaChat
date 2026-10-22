@@ -4,6 +4,16 @@ local addonName, ns = ...
 -- Scrollbar
 ---------------------------------------------------------------------------
 
+-- Fallback sync period. Scrolling through any ScrollingMessageFrame method updates the bar
+-- at once through the hooks below; the ticker only catches changes no method reports,
+-- such as new lines growing the scroll range. It is parented to its chat frame, so it
+-- stops while the window is hidden.
+local SYNC_INTERVAL = 0.2
+local SCROLL_METHODS = { "ScrollUp", "ScrollDown", "ScrollToTop", "ScrollToBottom", "PageUp", "PageDown" }
+
+local FADE_IN_DURATION = 0.15
+local FADE_OUT_DURATION = 0.25
+
 local function CreateScrollbar(chatFrame)
     if chatFrame.gudaScrollbar then return end
     local slider = CreateFrame("Slider", nil, chatFrame, "BackdropTemplate")
@@ -44,20 +54,30 @@ local function CreateScrollbar(chatFrame)
         end
     end)
 
+    local scrollDown
+
     local function SyncSlider()
         local maxScroll = chatFrame:GetMaxScrollRange()
         slider:SetMinMaxValues(0, maxScroll)
         local offset = chatFrame:GetScrollOffset()
         slider:SetValue(maxScroll - offset)
+        if scrollDown then
+            scrollDown:SetShown(offset > 0)
+        end
     end
 
     hooksecurefunc(chatFrame, "SetScrollOffset", SyncSlider)
+    for _, method in ipairs(SCROLL_METHODS) do
+        if chatFrame[method] then
+            hooksecurefunc(chatFrame, method, SyncSlider)
+        end
+    end
 
-    local ticker = CreateFrame("Frame")
+    local ticker = CreateFrame("Frame", nil, chatFrame)
     local elapsed = 0
     ticker:SetScript("OnUpdate", function(self, dt)
         elapsed = elapsed + dt
-        if elapsed >= 0.2 then
+        if elapsed >= SYNC_INTERVAL then
             elapsed = 0
             SyncSlider()
         end
@@ -75,33 +95,23 @@ local function CreateScrollbar(chatFrame)
 
     slider:SetAlpha(0)
 
-    local sbFadeIn, sbFadeOut
+    local sbFadeIn = ns.CreateFade(slider, 1, FADE_IN_DURATION)
+    local sbFadeOut = ns.CreateFade(slider, 0, FADE_OUT_DURATION)
+
     function slider.FadeIn()
-        if sbFadeOut then sbFadeOut:Stop() end
+        sbFadeOut:Stop()
         if slider:GetAlpha() >= 1 then return end
-        sbFadeIn = slider:CreateAnimationGroup()
-        local anim = sbFadeIn:CreateAnimation("Alpha")
-        anim:SetFromAlpha(slider:GetAlpha())
-        anim:SetToAlpha(1)
-        anim:SetDuration(0.15)
-        sbFadeIn:SetScript("OnFinished", function() slider:SetAlpha(1) end)
-        sbFadeIn:Play()
+        sbFadeIn:PlayFromCurrent()
     end
 
     function slider.FadeOut()
-        if sbFadeIn then sbFadeIn:Stop() end
+        sbFadeIn:Stop()
         if slider:GetAlpha() <= 0 then return end
-        sbFadeOut = slider:CreateAnimationGroup()
-        local anim = sbFadeOut:CreateAnimation("Alpha")
-        anim:SetFromAlpha(slider:GetAlpha())
-        anim:SetToAlpha(0)
-        anim:SetDuration(0.25)
-        sbFadeOut:SetScript("OnFinished", function() slider:SetAlpha(0) end)
-        sbFadeOut:Play()
+        sbFadeOut:PlayFromCurrent()
     end
 
     -- Scroll to bottom button
-    local scrollDown = CreateFrame("Button", nil, chatFrame)
+    scrollDown = CreateFrame("Button", nil, chatFrame)
     scrollDown:SetSize(20, 20)
     scrollDown:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", rightEdge, 2)
     scrollDown:SetFrameStrata("DIALOG")
@@ -132,16 +142,7 @@ local function CreateScrollbar(chatFrame)
     end)
 
     scrollDown:Hide()
-
-    local scrollDownMonitor = CreateFrame("Frame")
-    scrollDownMonitor:SetScript("OnUpdate", function(self, dt)
-        local offset = chatFrame:GetScrollOffset()
-        if offset > 0 then
-            scrollDown:Show()
-        else
-            scrollDown:Hide()
-        end
-    end)
+    SyncSlider()
 
     return slider
 end

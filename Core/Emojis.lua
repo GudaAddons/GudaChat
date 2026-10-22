@@ -245,11 +245,9 @@ local function ReplaceEmoji(text, plain, tex)
 end
 ns.ReplaceEmoji = ReplaceEmoji
 
-local function FilterAddEmojis(self, event, msg, ...)
-    if not GudaChatDB or not GudaChatDB.emojis then return false end
-    if not msg or ns.IsSecret(msg) then return false end
-
-    local size = GudaChatDB.emojiSize or ns.DEFAULT_EMOJI_SIZE
+-- Returns msg with every emoji code in its plain text replaced by the texture, or false
+-- when it has none.
+local function EmojifyMessage(msg, size)
     local parts = SplitProtected(msg)
     local changed = false
     for _, part in ipairs(parts) do
@@ -266,13 +264,24 @@ local function FilterAddEmojis(self, event, msg, ...)
             end
         end
     end
+    return changed and ns.JoinParts(parts) or false
+end
+ns.EmojifyMessage = EmojifyMessage
 
-    if changed then
-        local result = ""
-        for _, part in ipairs(parts) do
-            result = result .. part.text
-        end
-        return false, result, ...
+local emojiMemo = ns.NewLineMemo()
+
+local function FilterAddEmojis(self, event, msg, ...)
+    if not GudaChatDB or not GudaChatDB.emojis then return false end
+    if not msg or ns.IsSecret(msg) then return false end
+
+    local lineID = ns.PlainLineID(select(10, ...))
+    local hit, output = emojiMemo:Get(lineID, msg)
+    if not hit then
+        output = EmojifyMessage(msg, GudaChatDB.emojiSize or ns.DEFAULT_EMOJI_SIZE)
+        emojiMemo:Set(lineID, msg, output)
+    end
+    if output then
+        return false, output, ...
     end
     return false
 end

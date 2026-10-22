@@ -207,6 +207,21 @@ ns.RehideAllTabs = RehideAllTabs
 -- Global background color/opacity
 ---------------------------------------------------------------------------
 
+-- How far a stored window color may drift from ours (the client rounds the saved
+-- values) and still count as the same color.
+local COLOR_TOLERANCE = 0.005
+
+-- True when chat window i already stores this color. FCF_SetWindowColor also saves the
+-- chat window settings, and ApplyGlobalBackground runs on every dock update (every tab
+-- switch), so it is only called when the stored color actually differs.
+local function WindowHasColor(i, color)
+    local _, _, r, g, b = GetChatWindowInfo(i)
+    if type(r) ~= "number" or ns.IsSecret(r) or ns.IsSecret(g) or ns.IsSecret(b) then return false end
+    return math.abs(r - color.r) < COLOR_TOLERANCE
+        and math.abs(g - color.g) < COLOR_TOLERANCE
+        and math.abs(b - color.b) < COLOR_TOLERANCE
+end
+
 local function ApplyGlobalBackground()
     local alpha = GudaChatDB and GudaChatDB.globalBgAlpha or 0
     local color = GudaChatDB and GudaChatDB.globalBgColor or { r = 0.08, g = 0.08, b = 0.08 }
@@ -217,7 +232,7 @@ local function ApplyGlobalBackground()
             bg:SetScript("OnShow", nil)
             bg:Show()
             bg:SetAlpha(alpha)
-            if FCF_SetWindowColor then
+            if FCF_SetWindowColor and not WindowHasColor(i, color) then
                 FCF_SetWindowColor(cf, color.r, color.g, color.b)
             end
             cf.gudaBgAlpha = alpha

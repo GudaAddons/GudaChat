@@ -269,6 +269,11 @@ local TIMESTAMP_OPTIONS = {
 
 local dropdownCounter = 0
 
+-- Range of the loot log and addon log size sliders (History tab)
+local LOG_CAP_MIN = 100
+local LOG_CAP_MAX = 2000
+local LOG_CAP_STEP = 100
+
 -- WowStyle1DropdownTemplate + MenuUtil where the client has them (Retail, Forever and the
 -- modern Classic clients). UIDropDownMenu shares global state with Blizzard's unit popups,
 -- so using it from addon code can taint them; the old template stays only as a fallback.
@@ -779,6 +784,16 @@ local function CreateSettingsFrame()
 
         Add(CreateSlider(tabPanels[3], L["OPT_MAX_MESSAGES"], 500, ns.HISTORY_MAX_LIMIT, 100, GudaChatDB.historyMax or 2000, function(value)
             GudaChatDB.historyMax = value
+        end))
+
+        Add(CreateSlider(tabPanels[3], L["OPT_MAX_LOOT_LOG"], LOG_CAP_MIN, LOG_CAP_MAX, LOG_CAP_STEP, ns.LootLogCap(), function(value)
+            GudaChatDB.lootLogMax = value
+            if GudaChatCharDB then ns.TrimLog(GudaChatCharDB.lootLog, value) end
+        end))
+
+        Add(CreateSlider(tabPanels[3], L["OPT_MAX_ADDON_LOG"], LOG_CAP_MIN, LOG_CAP_MAX, LOG_CAP_STEP, ns.AddonLogCap(), function(value)
+            GudaChatDB.addonLogMax = value
+            if GudaChatCharDB then ns.TrimLog(GudaChatCharDB.addonLog, value) end
         end))
 
         Add(CreateSlider(tabPanels[3], L["OPT_FONT_SIZE"], 8, 24, 1, GudaChatDB.historyFontSize or 14, function(value)

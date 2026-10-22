@@ -26,19 +26,37 @@ local function KillFrame(frame)
 end
 ns.KillFrame = KillFrame
 
+-- True for a Retail 12 / WoW: Forever "secret" value, which addon code must not read,
+-- compare or concatenate. Clients without secret values have no issecretvalue.
+local HAS_SECRET_CHECK = issecretvalue ~= nil
+
+local function IsSecret(value)
+    return HAS_SECRET_CHECK and issecretvalue(value) == true
+end
+ns.IsSecret = IsSecret
+
 -- On modern clients (11.0+), name-returning APIs and CHAT_MSG `sender`/`name` args can be "secret"
 -- strings while our execution is tainted. Indexing them (:match/:lower) or comparing with `==`
--- throws ("a secret string value"). These helpers do those ops inside pcall so a secret value
--- simply yields nil / "no match" instead of erroring the caller. See chat handlers in Filters.lua
--- and Header.lua.
+-- throws ("a secret string value"). These helpers return nil / "no match" for a secret value
+-- instead of erroring the caller. They ask issecretvalue first, which is far cheaper than a
+-- pcall with a fresh closure on every chat message, and keep the pcall path for clients
+-- without it. See chat handlers in Filters.lua and Header.lua.
 local function SafeShortName(name)
     if not name then return nil end
+    if HAS_SECRET_CHECK and type(name) == "string" then
+        if IsSecret(name) then return nil end
+        return name:match("^([^%-]+)") or name
+    end
     local ok, short = pcall(function() return name:match("^([^%-]+)") or name end)
     return ok and short or nil
 end
 ns.SafeShortName = SafeShortName
 
 local function NamesMatch(a, b)
+    if HAS_SECRET_CHECK then
+        if IsSecret(a) or IsSecret(b) then return false end
+        return a == b
+    end
     local ok, equal = pcall(function() return a == b end)
     return ok and equal
 end
@@ -49,17 +67,67 @@ ns.NamesMatch = NamesMatch
 -- a secret string must never be persisted.
 local function SafeName(name)
     if not name then return nil end
+    if HAS_SECRET_CHECK and type(name) == "string" then
+        if IsSecret(name) then return nil end
+        return name
+    end
     local ok, s = pcall(function() return name .. "" end)
     return ok and s or nil
 end
 ns.SafeName = SafeName
 
--- True for a Retail 12 / WoW: Forever "secret" value, which addon code must not read,
--- compare or concatenate. Clients without secret values have no issecretvalue.
-local function IsSecret(value)
-    return issecretvalue ~= nil and issecretvalue(value) == true
+-- Chat message filters run once for every chat frame that shows a message, each time with
+-- the same input. A LineMemo keeps a filter's last result keyed by the message's lineID
+-- (event arg11) and input text, so the second and later frames reuse it instead of redoing
+-- the split, gsub and highlight work. output false means "the filter left the message as is".
+local LineMemo = {}
+LineMemo.__index = LineMemo
+
+function ns.NewLineMemo()
+    return setmetatable({}, LineMemo)
 end
-ns.IsSecret = IsSecret
+
+function LineMemo:Get(lineID, input)
+    if lineID ~= nil and self.lineID == lineID and self.input == input then
+        return true, self.output
+    end
+    return false
+end
+
+function LineMemo:Set(lineID, input, output)
+    self.lineID, self.input, self.output = lineID, input, output
+end
+
+-- The lineID argument as a plain number, or nil when it is missing or secret
+function ns.PlainLineID(lineID)
+    if type(lineID) ~= "number" or IsSecret(lineID) then return nil end
+    return lineID
+end
+
+-- A reusable alpha fade of frame towards toAlpha, created once per frame and direction
+-- (a new AnimationGroup per hover used to pile up for the whole session).
+-- group:PlayFromCurrent() starts it from the frame's current alpha.
+function ns.CreateFade(frame, toAlpha, duration)
+    local group = frame:CreateAnimationGroup()
+    local anim = group:CreateAnimation("Alpha")
+    anim:SetToAlpha(toAlpha)
+    anim:SetDuration(duration)
+    group:SetScript("OnFinished", function() frame:SetAlpha(toAlpha) end)
+    function group:PlayFromCurrent()
+        anim:SetFromAlpha(frame:GetAlpha())
+        self:Play()
+    end
+    return group
+end
+
+-- Concatenates the text of SplitProtected parts in one pass
+function ns.JoinParts(parts)
+    local texts = {}
+    for i, part in ipairs(parts) do
+        texts[i] = part.text
+    end
+    return table.concat(texts)
+end
 
 -- Comparison form of a character name: no realm, no spaces, lower case. Chat senders,
 -- unit names and guild roster names reach us in different shapes ("Name-Realm" on

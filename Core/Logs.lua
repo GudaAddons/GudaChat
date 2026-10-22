@@ -9,17 +9,78 @@ local addonName, ns = ...
 -- divisor, so adding buckets there would shrink every chat channel's cap.
 ---------------------------------------------------------------------------
 
-local function Cap()
-    return GudaChatDB and GudaChatDB.historyMax or 2000
+ns.LOOT_LOG_DEFAULT = 500
+ns.ADDON_LOG_DEFAULT = 300
+
+---------------------------------------------------------------------------
+-- Ring buffer storage
+--
+-- Each log is an array of entries plus a `head` field: the index of the oldest entry.
+-- While the log is below its cap new entries are appended (head stays 1); once full,
+-- the oldest slot is overwritten and head moves on, so a push never shifts the array
+-- (tremove(list, 1) moved every entry on every line before). Arrays saved by older
+-- versions have no head and read as head 1, so they need no migration.
+---------------------------------------------------------------------------
+
+-- Rewrites the log in oldest-first order keeping only the newest `cap` entries, head 1.
+-- Needed only when the cap changes or an unrolled array must grow again.
+local function Normalize(list, cap)
+    local size = #list
+    local head = list.head or 1
+    local ordered = {}
+    for offset = 0, size - 1 do
+        ordered[#ordered + 1] = list[(head - 1 + offset) % size + 1]
+    end
+    local first = math.max(1, #ordered - cap + 1)
+    wipe(list)
+    for i = first, #ordered do
+        list[#list + 1] = ordered[i]
+    end
+    list.head = 1
 end
 
-local function Push(list, entry)
+local function Push(list, cap, entry)
     if type(list) ~= "table" then return end
-    tinsert(list, entry)
-    local max = Cap()
-    while #list > max do
-        tremove(list, 1)
+    local size = #list
+    local head = list.head or 1
+    if size > cap or (size < cap and head ~= 1) then
+        Normalize(list, cap)
+        size, head = #list, 1
     end
+    if size < cap then
+        list[size + 1] = entry
+        list.head = 1
+        return
+    end
+    list[head] = entry
+    list.head = head % size + 1
+end
+
+ns.PushLog = Push
+
+-- Calls fn(entry) for every log entry, oldest first
+function ns.ForEachLogEntry(list, fn)
+    if type(list) ~= "table" then return end
+    local size = #list
+    local head = list.head or 1
+    for offset = 0, size - 1 do
+        fn(list[(head - 1 + offset) % size + 1])
+    end
+end
+
+-- Drops entries beyond the cap, e.g. after the cap was lowered or on load
+function ns.TrimLog(list, cap)
+    if type(list) == "table" and #list > cap then
+        Normalize(list, cap)
+    end
+end
+
+function ns.LootLogCap()
+    return GudaChatDB and GudaChatDB.lootLogMax or ns.LOOT_LOG_DEFAULT
+end
+
+function ns.AddonLogCap()
+    return GudaChatDB and GudaChatDB.addonLogMax or ns.ADDON_LOG_DEFAULT
 end
 
 ---------------------------------------------------------------------------
@@ -168,7 +229,7 @@ lootFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not link then return end
 
     if not GudaChatCharDB then return end
-    Push(GudaChatCharDB.lootLog, {
+    Push(GudaChatCharDB.lootLog, ns.LootLogCap(), {
         time = time(),
         -- The event's message is already the finished, localized chat line
         -- ("You receive loot: [Item]x2.", "Vieta receives loot: [Item]."), so
@@ -284,7 +345,7 @@ local function OnAddMessage(frame, msg)
     local tag = plain:match("^%s*%[(.-)%]")
 
     if not GudaChatCharDB then return end
-    Push(GudaChatCharDB.addonLog, {
+    Push(GudaChatCharDB.addonLog, ns.AddonLogCap(), {
         time = time(),
         tag = tag,
         message = text,

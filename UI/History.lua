@@ -197,7 +197,9 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         classFile = nil
     else
         safeSender = ns.SafeName(sender) or ""
-        level = ns.GetPlayerLevel(sender)
+        if GudaChatDB.showLevel then
+            level = ns.GetPlayerLevel(sender)
+        end
     end
 
     local isOutgoing = channelKey == "WHISPER_INFORM" or channelKey == "BN_WHISPER_INFORM"
@@ -321,6 +323,9 @@ ns.ReplayHistory = ReplayHistory
 ---------------------------------------------------------------------------
 
 local historyFrame
+
+-- Seconds of no typing before the history search runs
+local SEARCH_DELAY = 0.2
 
 local function CreateHistoryFrame()
     local f = CreateFrame("Frame", "GudaChatHistoryPopup", UIParent, "ButtonFrameTemplate")
@@ -572,7 +577,7 @@ local function CreateHistoryFrame()
 
     hooksecurefunc(msgFrame, "SetScrollOffset", SyncHistSlider)
 
-    local histTicker = CreateFrame("Frame")
+    local histTicker = CreateFrame("Frame", nil, f)
     histTicker:SetScript("OnUpdate", function(self, dt)
         self.elapsed = (self.elapsed or 0) + dt
         if self.elapsed >= 0.2 then
@@ -591,34 +596,44 @@ local function CreateHistoryFrame()
         SyncHistSlider()
     end)
 
-    -- Gather and format entries
+    -- Lower-cased search text per entry, computed once and reused on every keystroke. Weak
+    -- keys: entries dropped from the history are collected with their cached text. Kept
+    -- outside the entries themselves, which are live SavedVariables rows.
+    local loweredText = setmetatable({}, { __mode = "k" })
+
+    local function SearchTextOf(entry, kind)
+        local cached = loweredText[entry]
+        if cached then return cached end
+        local raw
+        if kind == "Loot" then
+            raw = (entry.message or entry.item or "") .. " " .. (entry.looter or "") .. " " .. (entry.source or "")
+        elseif kind == "Log" then
+            raw = (entry.tag or "") .. " " .. (entry.message or "")
+        else
+            raw = (entry.message or "") .. "\n" .. (entry.sender or "")
+        end
+        cached = ns.UTF8Lower(raw)
+        loweredText[entry] = cached
+        return cached
+    end
+
+    -- Gather and format entries. UTF8Lower, not string.lower: WoW's lower only folds A-Z,
+    -- so searching Cyrillic was case-sensitive. Both sides must fold the same way.
     local function GatherEntries()
         local results = {}
         local historyDB = GudaChatCharDB and GudaChatCharDB.history or {}
-        -- UTF8Lower, not string.lower: WoW's lower only folds A-Z, so searching
-        -- Cyrillic was case-sensitive. Both sides must fold the same way.
         local searchText = ns.UTF8Lower(searchBox:GetText())
 
-        -- Loot and Log live outside GudaChatCharDB.history and have their own fields
+        local function Collect(entry, kind)
+            if searchText == "" or SearchTextOf(entry, kind):find(searchText, 1, true) then
+                results[#results + 1] = entry
+            end
+        end
+
         if selectedFilter == "Loot" or selectedFilter == "Log" then
             local isLoot = selectedFilter == "Loot"
-            local list = GudaChatCharDB and (isLoot and GudaChatCharDB.lootLog or GudaChatCharDB.addonLog) or {}
-            for _, entry in ipairs(list) do
-                local matchesSearch = searchText == ""
-                if not matchesSearch then
-                    local haystack
-                    if isLoot then
-                        haystack = (entry.message or entry.item or "") .. " "
-                            .. (entry.looter or "") .. " " .. (entry.source or "")
-                    else
-                        haystack = (entry.tag or "") .. " " .. (entry.message or "")
-                    end
-                    matchesSearch = ns.UTF8Lower(haystack):find(searchText, 1, true) ~= nil
-                end
-                if matchesSearch then
-                    tinsert(results, entry)
-                end
-            end
+            local list = GudaChatCharDB and (isLoot and GudaChatCharDB.lootLog or GudaChatCharDB.addonLog)
+            ns.ForEachLogEntry(list, function(entry) Collect(entry, selectedFilter) end)
             return results
         end
 
@@ -627,12 +642,7 @@ local function CreateHistoryFrame()
                 local bucket = historyDB[channelKey]
                 if bucket then
                     for _, entry in ipairs(bucket) do
-                        local matchesSearch = (searchText == "") or
-                            ns.UTF8Lower(entry.message):find(searchText, 1, true) or
-                            ns.UTF8Lower(entry.sender):find(searchText, 1, true)
-                        if matchesSearch then
-                            tinsert(results, entry)
-                        end
+                        Collect(entry, "Chat")
                     end
                 end
             end
@@ -644,12 +654,7 @@ local function CreateHistoryFrame()
             local bucket = historyDB[selectedFilter]
             if bucket then
                 for _, entry in ipairs(bucket) do
-                    local matchesSearch = (searchText == "") or
-                        ns.UTF8Lower(entry.message):find(searchText, 1, true) or
-                        ns.UTF8Lower(entry.sender):find(searchText, 1, true)
-                    if matchesSearch then
-                        tinsert(results, entry)
-                    end
+                    Collect(entry, "Chat")
                 end
             end
         end
@@ -863,13 +868,12 @@ local function CreateHistoryFrame()
 
         local eb = f.copyFrame.editBox
         eb:SetWidth(f.copyFrame.scrollFrame:GetWidth() or 440)
-        eb:SetText("")
         eb:SetMaxLetters(0)
-        for i = #lastEntries, 1, -1 do
-            eb:SetCursorPosition(0)
-            eb:Insert(BalanceColors(FormatEntry(lastEntries[i])) .. "\n")
+        local lines = {}
+        for i, entry in ipairs(lastEntries) do
+            lines[i] = BalanceColors(FormatEntry(entry))
         end
-        eb:SetText(eb:GetText():gsub("^[\n ]+", ""))
+        eb:SetText((table.concat(lines, "\n"):gsub("^[\n ]+", "")))
         f.copyFrame.scrollFrame:UpdateScrollChildRect()
         f.copyFrame:Show()
         eb:SetCursorPosition(0)
@@ -885,13 +889,24 @@ local function CreateHistoryFrame()
         if f.RefreshHistory then f:RefreshHistory() end
     end)
 
+    local searchTimer
+
+    -- Typing refreshes the list once the player pauses for SEARCH_DELAY, not on every key
+    local function ScheduleSearch()
+        if searchTimer then searchTimer:Cancel() end
+        searchTimer = C_Timer.NewTimer(SEARCH_DELAY, function()
+            searchTimer = nil
+            if f:IsShown() and f.RefreshHistory then f:RefreshHistory() end
+        end)
+    end
+
     searchBox:SetScript("OnTextChanged", function(self, userInput)
         if self:GetText() ~= "" then
             clearSearchBtn:Show()
         else
             clearSearchBtn:Hide()
         end
-        if userInput and f.RefreshHistory then f:RefreshHistory() end
+        if userInput then ScheduleSearch() end
     end)
 
     local function SelectChannelTab(id)

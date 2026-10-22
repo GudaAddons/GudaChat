@@ -304,189 +304,198 @@ local function CreateFontSubMenu()
     return f
 end
 
-local function ShowContextMenu(anchor, overrideIndex)
-    if not contextMenu then
-        local f = CreateFrame("Frame", "GudaChatContextMenu", UIParent, "BackdropTemplate")
-        f:SetFrameStrata("TOOLTIP")
-        f:SetFrameLevel(205)
-        ns.ApplyDarkBackdrop(f)
-        f:Hide()
-        tinsert(UISpecialFrames, "GudaChatContextMenu")
-        f:SetScript("OnHide", function()
-            if fontSubMenu then fontSubMenu:Hide() end
-            local iod = _G["GudaChatInlineTabOverflow"]
-            if iod and iod:IsShown() then iod:Hide() end
-            local eod = _G["GudaChatTabOverflow"]
-            if eod and eod:IsShown() then eod:Hide() end
-        end)
-        contextMenu = f
-    end
+local CONTEXT_MENU_WIDTH = 160
+local MENU_ITEM_HEIGHT = 20
 
-    for _, child in ipairs({contextMenu:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
+-- The context menu's items are built once; each ShowContextMenu only re-labels, shows or
+-- hides and re-stacks them (building ~10 new buttons per right-click leaked every one of
+-- them for the rest of the session). contextIndex is the chat window the menu acts on.
+local contextIndex = 1
+local contextItems
+local CONTEXT_LAYOUT = { "rename", "newWindow", "remove", "leave", "display", "font", "background", "settings" }
 
-    local id = overrideIndex or GetSelectedChatFrameIndex()
-    local cf = _G["ChatFrame" .. id]
-    local yOff = -4
-    local maxW = 160
-
-    -- Helper to close a window, routing its content back to General
-    local function RemoveWindow()
-        local chatFrame = _G["ChatFrame" .. id]
-        if chatFrame then
-            if chatFrame.isTemporary then
-                -- Temporary whisper windows: clear exclusion lists so
-                -- whispers route back to General / Whispers windows
-                local target = chatFrame.chatTarget
-                if FCF_PopInWindow then
-                    FCF_PopInWindow(chatFrame)
-                elseif FCF_RestoreChatsToFrame then
-                    FCF_RestoreChatsToFrame(ChatFrame1, chatFrame)
-                    FCF_Close(chatFrame)
-                else
-                    -- Manual fallback: clear exclusion list entries
-                    if target then
-                        -- Remove from all docked frames' exclusion lists
-                        ns.ForEachChatWindow(function(cf)
-                            if cf.excludePrivateMessageList then
-                                cf.excludePrivateMessageList[strlower(target)] = nil
-                            end
-                            if cf.excludeBNPrivateMessageList then
-                                cf.excludeBNPrivateMessageList[strlower(target)] = nil
-                            end
-                        end)
-                    end
-                    FCF_Close(chatFrame)
-                end
-                -- Ensure General receives whispers again
-                if not GudaChatDB.whisperTab then
-                    ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
-                    ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
-                end
+-- Closes chat window id and routes its content back to General. Temporary whisper windows
+-- are popped back in (clearing their exclusion lists, so whispers reach General or the
+-- Whispers window again; the manual fallback clears those lists itself). Permanent windows
+-- first hand their message groups and channels to General. Whispers are re-added to
+-- General only while the Whispers tab is off.
+local function RemoveWindow(id)
+    local chatFrame = _G["ChatFrame" .. id]
+    if chatFrame then
+        if chatFrame.isTemporary then
+            local target = chatFrame.chatTarget
+            if FCF_PopInWindow then
+                FCF_PopInWindow(chatFrame)
+            elseif FCF_RestoreChatsToFrame then
+                FCF_RestoreChatsToFrame(ChatFrame1, chatFrame)
+                FCF_Close(chatFrame)
             else
-                -- Permanent windows: move messages/channels to General, then close
-                if GetChatWindowMessages then
-                    local msgs = { GetChatWindowMessages(id) }
-                    for _, msgGroup in ipairs(msgs) do
-                        ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
-                        if AddChatWindowMessages then
-                            AddChatWindowMessages(1, msgGroup)
+                if target then
+                    ns.ForEachChatWindow(function(cf)
+                        if cf.excludePrivateMessageList then
+                            cf.excludePrivateMessageList[strlower(target)] = nil
                         end
-                    end
-                end
-                if GetChatWindowChannels then
-                    local channels = { GetChatWindowChannels(id) }
-                    for i = 1, #channels, 2 do
-                        local chName = channels[i]
-                        if type(chName) == "string" then
-                            if AddChatWindowChannel then
-                                AddChatWindowChannel(1, chName)
-                            end
-                            if ChatFrame1.channelList and not tContains(ChatFrame1.channelList, chName) then
-                                tinsert(ChatFrame1.channelList, chName)
-                            end
-                            if ChatFrame1.zoneChannelList and not tContains(ChatFrame1.zoneChannelList, chName) then
-                                tinsert(ChatFrame1.zoneChannelList, chName)
-                            end
+                        if cf.excludeBNPrivateMessageList then
+                            cf.excludeBNPrivateMessageList[strlower(target)] = nil
                         end
-                    end
+                    end)
                 end
                 FCF_Close(chatFrame)
             end
-        end
-        contextMenu:Hide()
-        SafeSelectDockFrame(ChatFrame1)
-    end
-
-    -------------------------------------------------------------------
-    -- Actions
-    -------------------------------------------------------------------
-    local renameBtn = CreateContextMenuItem(contextMenu, ns.Blizz(RENAME, "Rename Window"), function()
-        local chatFrame = _G["ChatFrame" .. id]
-        if chatFrame then
-            ns._renamingFrame = chatFrame
-            ns._renamingIndex = id
-            StaticPopup_Show("GUDACHAT_RENAME_WINDOW")
-        end
-        contextMenu:Hide()
-    end)
-    renameBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    renameBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
-
-    local newWinBtn = CreateContextMenuItem(contextMenu, L["MENU_NEW_WINDOW"], function()
-        if FCF_NewChatWindow then
-            FCF_NewChatWindow()
-        elseif FCF_OpenNewWindow then
-            FCF_OpenNewWindow()
-        end
-        contextMenu:Hide()
-    end)
-    newWinBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    newWinBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
-
-    if id ~= 1 then
-        -- Use "Close Whisper Window" for temp whisper tabs, "Remove Window" otherwise
-        local isTemp = cf and cf.isTemporary
-        local removeLabel = isTemp and ns.Blizz(CLOSE, "Close Whisper Window")
-            or ns.Blizz(REMOVE, "Remove Window")
-        local removeBtn = CreateContextMenuItem(contextMenu, removeLabel, function()
-            RemoveWindow()
-        end)
-        removeBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-        removeBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-        yOff = yOff - 20
-
-        -- "Leave Channel" for channel-based windows
-        if not isTemp then
-            local tabName = GetChatTabName(id)
-            if tabName and GetChannelName then
-                local chNum = GetChannelName(tabName)
-                if chNum and chNum > 0 then
-                    local leaveBtn = CreateContextMenuItem(contextMenu, L["MENU_LEAVE"]:format(tabName), function()
-                        LeaveChannelByName(tabName)
-                        RemoveWindow()
-                    end)
-                    leaveBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-                    leaveBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-                    yOff = yOff - 20
+            if not GudaChatDB.whisperTab then
+                ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
+                ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
+            end
+        else
+            if GetChatWindowMessages then
+                local msgs = { GetChatWindowMessages(id) }
+                for _, msgGroup in ipairs(msgs) do
+                    ChatFrame_AddMessageGroup(ChatFrame1, msgGroup)
+                    if AddChatWindowMessages then
+                        AddChatWindowMessages(1, msgGroup)
+                    end
                 end
             end
+            if GetChatWindowChannels then
+                local channels = { GetChatWindowChannels(id) }
+                for i = 1, #channels, 2 do
+                    local chName = channels[i]
+                    if type(chName) == "string" then
+                        if AddChatWindowChannel then
+                            AddChatWindowChannel(1, chName)
+                        end
+                        if ChatFrame1.channelList and not tContains(ChatFrame1.channelList, chName) then
+                            tinsert(ChatFrame1.channelList, chName)
+                        end
+                        if ChatFrame1.zoneChannelList and not tContains(ChatFrame1.zoneChannelList, chName) then
+                            tinsert(ChatFrame1.zoneChannelList, chName)
+                        end
+                    end
+                end
+            end
+            FCF_Close(chatFrame)
         end
     end
+    contextMenu:Hide()
+    SafeSelectDockFrame(ChatFrame1)
+end
 
-    -------------------------------------------------------------------
-    -- Display section
-    -------------------------------------------------------------------
-    local displaySep = CreateContextMenuItem(contextMenu, ns.Blizz(DISPLAY, "Display"), nil, true)
-    displaySep:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    displaySep:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
+-- The channel a channel-based window can leave, or nil
+local function LeaveableChannel(id)
+    local tabName = GetChatTabName(id)
+    if not (tabName and GetChannelName) then return nil end
+    local chNum = GetChannelName(tabName)
+    if chNum and chNum > 0 then return tabName end
+    return nil
+end
 
-    local fontBtn = CreateContextMenuItem(contextMenu, ns.Blizz(FONT_SIZE, "Font Size"), nil, false, true)
-    fontBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    fontBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
+local function ShowFrameBackground(chatFrame, alpha)
+    local bg = _G[chatFrame:GetName() .. "Background"]
+    if not bg then return end
+    bg:SetScript("OnShow", nil)
+    bg:Show()
+    bg:SetAlpha(alpha)
+end
 
+-- Like ShowFrameBackground, but an alpha of 0 hides the background and keeps it hidden
+local function RestoreFrameBackground(chatFrame, alpha)
+    if alpha > 0 then
+        ShowFrameBackground(chatFrame, alpha)
+        return
+    end
+    local bg = _G[chatFrame:GetName() .. "Background"]
+    if not bg then return end
+    bg:Hide()
+    bg:SetScript("OnShow", function(self) self:Hide() end)
+end
+
+-- Opens the color picker for one window's background. The modern picker
+-- (SetupColorPickerAndShow) works in alpha; the old one in opacity, which is 1 - alpha.
+local function OpenBackgroundPicker(chatFrame)
+    local cr, cg, cb = 0, 0, 0
+    if FCF_GetCurrentChatFrameBackgroundColor then
+        cr, cg, cb = FCF_GetCurrentChatFrameBackgroundColor(chatFrame)
+    end
+    local ca = chatFrame.gudaBgAlpha or 0.25
+
+    local modernPicker = ColorPickerFrame.SetupColorPickerAndShow ~= nil
+    local info = {}
+    info.r = cr
+    info.g = cg
+    info.b = cb
+    info.opacity = modernPicker and ca or (1 - ca)
+    info.hasOpacity = true
+    info.swatchFunc = function()
+        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+        if FCF_SetWindowColor then
+            FCF_SetWindowColor(chatFrame, nr, ng, nb)
+        end
+        ShowFrameBackground(chatFrame, chatFrame.gudaBgAlpha or 0.25)
+    end
+    info.opacityFunc = function()
+        local newAlpha
+        if modernPicker then
+            newAlpha = ColorPickerFrame:GetColorAlpha() or ca
+        else
+            newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or 0)
+        end
+        if FCF_SetWindowAlpha then
+            FCF_SetWindowAlpha(chatFrame, newAlpha)
+        end
+        chatFrame.gudaBgAlpha = newAlpha
+        ShowFrameBackground(chatFrame, newAlpha)
+    end
+    info.cancelFunc = function(prev)
+        if FCF_SetWindowColor then
+            FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
+        end
+        local prevAlpha = ca
+        if modernPicker and prev.a then
+            prevAlpha = prev.a
+        elseif not modernPicker and prev.opacity then
+            prevAlpha = 1 - prev.opacity
+        end
+        if FCF_SetWindowAlpha then
+            FCF_SetWindowAlpha(chatFrame, prevAlpha)
+        end
+        chatFrame.gudaBgAlpha = prevAlpha
+        RestoreFrameBackground(chatFrame, prevAlpha)
+    end
+
+    if ColorPickerFrame.SetupColorPickerAndShow then
+        ColorPickerFrame:SetupColorPickerAndShow(info)
+    else
+        ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
+        ColorPickerFrame.hasOpacity = info.hasOpacity
+        ColorPickerFrame.opacity = info.opacity
+        ColorPickerFrame.func = info.swatchFunc
+        ColorPickerFrame.opacityFunc = info.opacityFunc
+        ColorPickerFrame.cancelFunc = info.cancelFunc
+        ColorPickerFrame.previousValues = { r = info.r, g = info.g, b = info.b, opacity = info.opacity }
+        ColorPickerFrame:Hide()
+        ColorPickerFrame:Show()
+    end
+end
+
+local function AddContextItem(key, label, onClick, isSeparator, hasArrow)
+    local item = CreateContextMenuItem(contextMenu, label, onClick, isSeparator, hasArrow)
+    contextItems[key] = item
+    return item
+end
+
+local function BuildFontItem()
     local fsm = fontSubMenu or CreateFontSubMenu()
-
+    local fontBtn = AddContextItem("font", ns.Blizz(FONT_SIZE, "Font Size"), nil, false, true)
     fontBtn:SetScript("OnEnter", function(self)
-        local curCf = _G["ChatFrame" .. id]
+        local curCf = _G["ChatFrame" .. contextIndex]
         if curCf then
             local _, curSize = curCf:GetFont()
             curSize = math.floor(curSize + 0.5)
-            for _, child in ipairs({fsm:GetChildren()}) do
+            for _, child in ipairs({ fsm:GetChildren() }) do
                 if child.check then
                     local sizeStr = child.label and child.label:GetText()
                     local sz = sizeStr and tonumber(sizeStr:match("(%d+)"))
-                    if sz == curSize then
-                        child.check:Show()
-                    else
-                        child.check:Hide()
-                    end
+                    child.check:SetShown(sz == curSize)
                 end
             end
         end
@@ -501,25 +510,21 @@ local function ShowContextMenu(anchor, overrideIndex)
             end
         end)
     end)
+end
 
-    local bgBtn = CreateContextMenuItem(contextMenu, ns.Blizz(BACKGROUND, "Background"))
-    bgBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    bgBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
+local function BuildBackgroundItem()
+    local bgBtn = AddContextItem("background", ns.Blizz(BACKGROUND, "Background"), function()
+        local chatFrame = _G["ChatFrame" .. contextIndex]
+        if not chatFrame then return end
+        contextMenu:Hide()
+        OpenBackgroundPicker(chatFrame)
+    end)
 
     local swatch = bgBtn:CreateTexture(nil, "ARTWORK")
     swatch:SetSize(14, 14)
     swatch:SetPoint("RIGHT", bgBtn, "RIGHT", -8, 0)
     swatch:SetTexture("Interface\\Buttons\\WHITE8x8")
-
-    local r, g, b, a = 0, 0, 0, 0.5
-    if cf then
-        if FCF_GetCurrentChatFrameBackgroundColor then
-            r, g, b = FCF_GetCurrentChatFrameBackgroundColor(cf)
-        end
-        a = cf.gudaBgAlpha or 0.25
-    end
-    swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
+    bgBtn.swatch = swatch
 
     local swatchBorder = bgBtn:CreateTexture(nil, "OVERLAY")
     swatchBorder:SetSize(16, 16)
@@ -528,131 +533,130 @@ local function ShowContextMenu(anchor, overrideIndex)
     swatchBorder:SetVertexColor(0.5, 0.5, 0.5, 0.8)
     swatchBorder:SetDrawLayer("ARTWORK", -1)
 
-    bgBtn:SetScript("OnClick", function()
-        local chatFrame = _G["ChatFrame" .. id]
-        if not chatFrame then return end
-        contextMenu:Hide()
-
-        local cr, cg, cb = 0, 0, 0
-        if FCF_GetCurrentChatFrameBackgroundColor then
-            cr, cg, cb = FCF_GetCurrentChatFrameBackgroundColor(chatFrame)
-        end
-        local ca = chatFrame.gudaBgAlpha or 0.25
-
-        local modernPicker = ColorPickerFrame.SetupColorPickerAndShow ~= nil
-        local info = {}
-        info.r = cr
-        info.g = cg
-        info.b = cb
-        info.opacity = modernPicker and ca or (1 - ca)
-        info.hasOpacity = true
-        info.swatchFunc = function()
-            local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-            if FCF_SetWindowColor then
-                FCF_SetWindowColor(chatFrame, nr, ng, nb)
-            end
-            local bg = _G[chatFrame:GetName() .. "Background"]
-            if bg then
-                bg:SetScript("OnShow", nil)
-                bg:Show()
-                bg:SetAlpha(chatFrame.gudaBgAlpha or 0.25)
-            end
-        end
-        info.opacityFunc = function()
-            local newAlpha
-            if modernPicker then
-                newAlpha = ColorPickerFrame:GetColorAlpha() or ca
-            else
-                newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or 0)
-            end
-            if FCF_SetWindowAlpha then
-                FCF_SetWindowAlpha(chatFrame, newAlpha)
-            end
-            chatFrame.gudaBgAlpha = newAlpha
-            local bg = _G[chatFrame:GetName() .. "Background"]
-            if bg then
-                bg:SetScript("OnShow", nil)
-                bg:Show()
-                bg:SetAlpha(newAlpha)
-            end
-        end
-        info.cancelFunc = function(prev)
-            if FCF_SetWindowColor then
-                FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
-            end
-            local prevAlpha = ca
-            if modernPicker and prev.a then
-                prevAlpha = prev.a
-            elseif not modernPicker and prev.opacity then
-                prevAlpha = 1 - prev.opacity
-            end
-            if FCF_SetWindowAlpha then
-                FCF_SetWindowAlpha(chatFrame, prevAlpha)
-            end
-            chatFrame.gudaBgAlpha = prevAlpha
-            local bg = _G[chatFrame:GetName() .. "Background"]
-            if bg then
-                if prevAlpha <= 0 then
-                    bg:Hide()
-                    bg:SetScript("OnShow", function(self) self:Hide() end)
-                else
-                    bg:SetScript("OnShow", nil)
-                    bg:Show()
-                    bg:SetAlpha(prevAlpha)
-                end
-            end
-        end
-
-        if ColorPickerFrame.SetupColorPickerAndShow then
-            ColorPickerFrame:SetupColorPickerAndShow(info)
-        else
-            ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
-            ColorPickerFrame.hasOpacity = info.hasOpacity
-            ColorPickerFrame.opacity = info.opacity
-            ColorPickerFrame.func = info.swatchFunc
-            ColorPickerFrame.opacityFunc = info.opacityFunc
-            ColorPickerFrame.cancelFunc = info.cancelFunc
-            ColorPickerFrame.previousValues = { r = info.r, g = info.g, b = info.b, opacity = info.opacity }
-            ColorPickerFrame:Hide()
-            ColorPickerFrame:Show()
-        end
-    end)
-
     bgBtn:SetScript("OnEnter", function()
-        if fsm then fsm:Hide() end
+        if fontSubMenu then fontSubMenu:Hide() end
     end)
+end
 
-    -------------------------------------------------------------------
-    -- Settings
-    -------------------------------------------------------------------
-    local settBtn = CreateContextMenuItem(contextMenu, ns.Blizz(SETTINGS, "Settings"), function()
+local function UpdateBackgroundSwatch(cf)
+    local r, g, b, a = 0, 0, 0, 0.5
+    if cf then
+        if FCF_GetCurrentChatFrameBackgroundColor then
+            r, g, b = FCF_GetCurrentChatFrameBackgroundColor(cf)
+        end
+        a = cf.gudaBgAlpha or 0.25
+    end
+    contextItems.background.swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
+end
+
+-- Clicking anywhere outside the menu (and its font submenu) closes both. The watcher is a
+-- child of the menu, so it only runs while the menu is open.
+local function CreateContextCloser(menu)
+    local closer = CreateFrame("Frame", nil, menu)
+    closer:SetScript("OnUpdate", function()
+        local overMenu = menu:IsMouseOver()
+        local overFont = fontSubMenu and fontSubMenu:IsShown() and fontSubMenu:IsMouseOver()
+        if not overMenu and not overFont and IsMouseButtonDown("LeftButton") then
+            menu:Hide()
+            if fontSubMenu then fontSubMenu:Hide() end
+        end
+    end)
+end
+
+local function BuildContextMenu()
+    local f = CreateFrame("Frame", "GudaChatContextMenu", UIParent, "BackdropTemplate")
+    f:SetFrameStrata("TOOLTIP")
+    f:SetFrameLevel(205)
+    ns.ApplyDarkBackdrop(f)
+    f:Hide()
+    tinsert(UISpecialFrames, "GudaChatContextMenu")
+    f:SetScript("OnHide", function()
+        if fontSubMenu then fontSubMenu:Hide() end
+        local iod = _G["GudaChatInlineTabOverflow"]
+        if iod and iod:IsShown() then iod:Hide() end
+        local eod = _G["GudaChatTabOverflow"]
+        if eod and eod:IsShown() then eod:Hide() end
+    end)
+    contextMenu = f
+    contextItems = {}
+    CreateContextCloser(f)
+
+    AddContextItem("rename", ns.Blizz(RENAME, "Rename Window"), function()
+        local chatFrame = _G["ChatFrame" .. contextIndex]
+        if chatFrame then
+            ns._renamingFrame = chatFrame
+            ns._renamingIndex = contextIndex
+            StaticPopup_Show("GUDACHAT_RENAME_WINDOW")
+        end
+        contextMenu:Hide()
+    end)
+    AddContextItem("newWindow", L["MENU_NEW_WINDOW"], function()
+        if FCF_NewChatWindow then
+            FCF_NewChatWindow()
+        elseif FCF_OpenNewWindow then
+            FCF_OpenNewWindow()
+        end
+        contextMenu:Hide()
+    end)
+    AddContextItem("remove", "", function()
+        RemoveWindow(contextIndex)
+    end)
+    AddContextItem("leave", "", function(self)
+        LeaveChannelByName(self.channelName)
+        RemoveWindow(contextIndex)
+    end)
+    AddContextItem("display", ns.Blizz(DISPLAY, "Display"), nil, true)
+    BuildFontItem()
+    BuildBackgroundItem()
+    AddContextItem("settings", ns.Blizz(SETTINGS, "Settings"), function()
         if ChatConfigFrame and ChatConfigFrame.Show then
             ShowUIPanel(ChatConfigFrame)
         end
         contextMenu:Hide()
     end)
-    settBtn:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
-    settBtn:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 20
+end
 
-    contextMenu:SetSize(maxW, math.abs(yOff) + 4)
+-- "Close Whisper Window" for temporary whisper tabs, "Remove Window" otherwise; General
+-- (window 1) can't be removed, and only channel windows get "Leave".
+local function ShowContextMenu(anchor, overrideIndex)
+    if not contextMenu then BuildContextMenu() end
+
+    local id = overrideIndex or GetSelectedChatFrameIndex()
+    contextIndex = id
+    local cf = _G["ChatFrame" .. id]
+    local isTemp = cf and cf.isTemporary
+    local channelName = id ~= 1 and not isTemp and LeaveableChannel(id) or nil
+
+    local visible = {
+        rename = true, newWindow = true, display = true, font = true, background = true, settings = true,
+        remove = id ~= 1,
+        leave = channelName ~= nil,
+    }
+    contextItems.remove.label:SetText(isTemp and ns.Blizz(CLOSE, "Close Whisper Window")
+        or ns.Blizz(REMOVE, "Remove Window"))
+    contextItems.leave.channelName = channelName
+    if channelName then
+        contextItems.leave.label:SetText(L["MENU_LEAVE"]:format(channelName))
+    end
+    UpdateBackgroundSwatch(cf)
+
+    local yOff = -4
+    for _, key in ipairs(CONTEXT_LAYOUT) do
+        local item = contextItems[key]
+        item:SetShown(visible[key])
+        if visible[key] then
+            item:ClearAllPoints()
+            item:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 0, yOff)
+            item:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", 0, yOff)
+            yOff = yOff - MENU_ITEM_HEIGHT
+        end
+    end
+
+    contextMenu:SetSize(CONTEXT_MENU_WIDTH, math.abs(yOff) + 4)
     contextMenu:ClearAllPoints()
     contextMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
     contextMenu:Show()
 end
-
--- Close context menu + font submenu when clicking outside
-local contextCloser = CreateFrame("Frame")
-contextCloser:SetScript("OnUpdate", function()
-    if contextMenu and contextMenu:IsShown() then
-        local overMenu = contextMenu:IsMouseOver()
-        local overFont = fontSubMenu and fontSubMenu:IsShown() and fontSubMenu:IsMouseOver()
-        if not overMenu and not overFont and IsMouseButtonDown("LeftButton") then
-            contextMenu:Hide()
-            if fontSubMenu then fontSubMenu:Hide() end
-        end
-    end
-end)
 
 ---------------------------------------------------------------------------
 -- Combat log filtering (My Actions / What Happened to Me?)
@@ -667,9 +671,25 @@ local combatLogFilter = "mine"
 
 -- Subtab bar UI
 local combatSubTabs
+local combatSubTabList = {}
 
+-- White for the active filter's subtab, grey for the other
+local function UpdateCombatSubTabColors()
+    for _, t in ipairs(combatSubTabList) do
+        if t.key == combatLogFilter then
+            t.btn.text:SetTextColor(1, 1, 1, 1)
+        else
+            t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+        end
+    end
+end
+
+-- Switches the combat log to "mine" (My Actions) or "tome" (What Happened to Me?). Only
+-- called when the player picks a subtab and once at login: refiltering rebuilds the whole
+-- combat log, and the player's choice must survive switching to other tabs.
 local function SwitchCombatLogFilter(key)
     combatLogFilter = key
+    UpdateCombatSubTabColors()
     if not Blizzard_CombatLog_Filters then return end
     local filters = Blizzard_CombatLog_Filters.filters
     if not filters then return end
@@ -777,7 +797,6 @@ local function CreateCombatSubTabs(header)
     bar:SetAlpha(0)
     bar:Hide()
 
-    local tabs = {}
     local tabDefs = {
         -- These are Blizzard's own combat-log filter names, already localized and
         -- read a few lines up for the filter lookup itself
@@ -799,40 +818,20 @@ local function CreateCombatSubTabs(header)
         btn:SetPoint("LEFT", bar, "LEFT", xOff, 0)
         xOff = xOff + btn:GetWidth() + 8
 
-        local function UpdateColors()
-            for _, t in ipairs(tabs) do
-                if t.key == combatLogFilter then
-                    t.btn.text:SetTextColor(1, 1, 1, 1)
-                else
-                    t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
-                end
-            end
-        end
-
         btn:SetScript("OnClick", function()
             SwitchCombatLogFilter(def.key)
-            UpdateColors()
         end)
 
         btn:SetScript("OnEnter", function(self)
             self.text:SetTextColor(0.9, 0.9, 0.9, 1)
             if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
         end)
-        btn:SetScript("OnLeave", function()
-            UpdateColors()
-        end)
+        btn:SetScript("OnLeave", UpdateCombatSubTabColors)
 
-        tinsert(tabs, { key = def.key, btn = btn })
+        tinsert(combatSubTabList, { key = def.key, btn = btn })
     end
 
-    for _, t in ipairs(tabs) do
-        if t.key == combatLogFilter then
-            t.btn.text:SetTextColor(1, 1, 1, 1)
-        else
-            t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
-        end
-    end
-
+    UpdateCombatSubTabColors()
     combatSubTabs = bar
 
     -- Apply the default filter so combat log shows messages on login
@@ -851,8 +850,33 @@ end
 local chatSubTabs
 local chatSubTabButtons = {}
 
+-- Header and tab bar fade timings, and how often their hover monitors poll the mouse.
+-- The monitors are children of the bar they watch, so they stop while it is hidden.
+local FADE_IN_DURATION = 0.15
+local FADE_OUT_DURATION = 0.25
+local HOVER_CHECK_INTERVAL = 0.05
+
 -- Tab blink state: tracks which frameIndex values have unread messages
 local blinkingTabs = {}
+
+-- One tab switch reaches both tab strips through several paths (the dock hook, the
+-- frame-selected notifier and UpdateSubTabsForFrame), and a burst of chat can blink
+-- several tabs in one frame. Requests are collected and both strips rebuilt once, on the
+-- next frame. Drag-and-drop and settings changes still refresh directly.
+local tabRefreshQueued = false
+
+local function FlushTabRefresh()
+    tabRefreshQueued = false
+    if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
+    if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
+end
+
+local function RequestTabRefresh()
+    if tabRefreshQueued then return end
+    tabRefreshQueued = true
+    C_Timer.After(0, FlushTabRefresh)
+end
+ns.RequestTabRefresh = RequestTabRefresh
 
 -- Chat events that should trigger tab blink notifications
 local BLINK_EVENTS = {
@@ -961,8 +985,7 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     end
 
     if changed then
-        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
-        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
+        RequestTabRefresh()
         if ns.ShowTabBar then ns.ShowTabBar() end
         if GudaChatDB.inlineTabBar and ns.chatHeader then
             if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
@@ -1136,6 +1159,96 @@ local function SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
     SaveTabOrder(order)
 end
 
+---------------------------------------------------------------------------
+-- Widget reuse for the tab strips and their overflow menus
+--
+-- Tab strips are rebuilt on every tab switch, blink and window change. Frames can never
+-- be freed in WoW, so the old SetParent(nil)-and-recreate approach leaked every button,
+-- FontString and animation it ever made. Buttons now go back to a pool and are
+-- reconfigured on the next refresh; each strip keeps one "more" button and its overflow
+-- menu keeps its item buttons.
+---------------------------------------------------------------------------
+
+local measureFont
+
+-- Width of a tab label in GameFontNormalSmall, measured with one shared FontString
+local function MeasureTabText(text)
+    if not measureFont then
+        measureFont = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        measureFont:SetAlpha(0)
+    end
+    measureFont:SetText(text)
+    return measureFont:GetStringWidth()
+end
+
+local function NewButtonPool()
+    return { free = {} }
+end
+
+-- A tab button with its label and its looping unread-blink animation, created once
+local function AcquireTabButton(pool, parent)
+    local btn = tremove(pool.free)
+    if btn then
+        btn:SetParent(parent)
+        btn:Show()
+        return btn
+    end
+    btn = CreateFrame("Button", nil, parent)
+    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+    btn.text = text
+    local blinkAG = text:CreateAnimationGroup()
+    blinkAG:SetLooping("BOUNCE")
+    local fade = blinkAG:CreateAnimation("Alpha")
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(0.2)
+    fade:SetDuration(0.5)
+    fade:SetSmoothing("IN_OUT")
+    btn.blinkAG = blinkAG
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    return btn
+end
+
+local function ReleaseTabButtons(pool, list)
+    for _, btn in ipairs(list) do
+        btn:Hide()
+        btn:ClearAllPoints()
+        btn:SetScript("OnUpdate", nil)
+        btn.blinkAG:Stop()
+        btn.blinking = nil
+        btn.tabIdx = nil
+        tinsert(pool.free, btn)
+    end
+    wipe(list)
+end
+
+-- The menu's idx-th item button (label at btn.text), created the first time it is needed
+local function GetMenuItem(menu, idx, height)
+    menu.items = menu.items or {}
+    local item = menu.items[idx]
+    if not item then
+        item = CreateFrame("Button", nil, menu)
+        local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint("LEFT", item, "LEFT", 8, 0)
+        item.text = text
+        item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        menu.items[idx] = item
+    end
+    item:SetHeight(height)
+    return item
+end
+
+-- Hides the menu's item buttons from idx on
+local function HideMenuItemsFrom(menu, idx)
+    if not menu.items then return end
+    for i = idx, #menu.items do
+        menu.items[i]:Hide()
+    end
+end
+
+local subTabPool = NewButtonPool()
+local subTabMoreBtn
+
 local function PruneBlinksToTabs(allTabs)
     local rendered = {}
     for _, def in ipairs(allTabs) do
@@ -1151,11 +1264,8 @@ local function RefreshChatSubTabs(header)
         return
     end
 
-    for _, btn in ipairs(chatSubTabButtons) do
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(chatSubTabButtons)
+    ReleaseTabButtons(subTabPool, chatSubTabButtons)
+    if subTabMoreBtn then subTabMoreBtn:Hide() end
     if overflowDropdown then overflowDropdown:Hide() end
 
     local selectedIndex = GetSelectedChatFrameIndex()
@@ -1210,14 +1320,10 @@ local function RefreshChatSubTabs(header)
     local xOff = EXT_FIRST_GAP
     local fitCount = #allTabs  -- assume all fit
 
-    -- Measure total width needed
-    local tempFont = chatSubTabs:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local widths = {}
     for idx, def in ipairs(allTabs) do
-        tempFont:SetText(def.name)
-        widths[idx] = tempFont:GetStringWidth() + 8
+        widths[idx] = MeasureTabText(def.name) + 8
     end
-    tempFont:Hide()
 
     -- Find which tab is selected
     local selectedTabIdx
@@ -1353,14 +1459,12 @@ local function RefreshChatSubTabs(header)
     end
 
     local function CreateTabBtn(def, parent, tabIdx)
-        local btn = CreateFrame("Button", nil, parent)
+        local btn = AcquireTabButton(subTabPool, parent)
         btn:SetHeight(16)
         btn.tabIdx = tabIdx
 
-        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+        local text = btn.text
         text:SetText(def.name)
-        btn.text = text
 
         local col = def.col
         if IsSelectedFrame(def.cf) then
@@ -1369,7 +1473,6 @@ local function RefreshChatSubTabs(header)
             text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
         end
 
-        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         btn:SetScript("OnClick", function(self, button)
             if dragState.dragging then
                 FinishTabDrag(self)
@@ -1380,7 +1483,7 @@ local function RefreshChatSubTabs(header)
             else
                 if blinkingTabs[def.frameIndex] then
                     blinkingTabs[def.frameIndex] = nil
-                    if self.blinkAG then self.blinkAG:Stop() end
+                    self.blinkAG:Stop()
                 end
                 SafeSelectDockFrame(def.cf)
             end
@@ -1445,19 +1548,10 @@ local function RefreshChatSubTabs(header)
             end
         end)
 
-        -- Blink animation for unread messages
         if blinkingTabs[def.frameIndex] then
             btn.blinking = true
-            local blinkAG = text:CreateAnimationGroup()
-            blinkAG:SetLooping("BOUNCE")
-            local fade = blinkAG:CreateAnimation("Alpha")
-            fade:SetFromAlpha(1)
-            fade:SetToAlpha(0.2)
-            fade:SetDuration(0.5)
-            fade:SetSmoothing("IN_OUT")
-            blinkAG:Play()
+            btn.blinkAG:Play()
             text:SetTextColor(col[1], col[2], col[3], 1)
-            btn.blinkAG = blinkAG
         end
 
         return btn
@@ -1474,23 +1568,27 @@ local function RefreshChatSubTabs(header)
 
     -- 4) Create overflow button if there are hidden tabs
     if fitCount < #allTabs then
-        local moreBtn = CreateFrame("Button", nil, chatSubTabs)
-        moreBtn:SetSize(12, 12)
-        moreBtn:SetPoint("RIGHT", chatSubTabs, "RIGHT", -6, 0)
+        if not subTabMoreBtn then
+            subTabMoreBtn = CreateFrame("Button", nil, chatSubTabs)
+            subTabMoreBtn:SetSize(12, 12)
+            subTabMoreBtn:SetPoint("RIGHT", chatSubTabs, "RIGHT", -6, 0)
 
-        local moreIcon = moreBtn:CreateTexture(nil, "OVERLAY")
-        moreIcon:SetAllPoints()
-        moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
-        moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-        moreBtn.icon = moreIcon
+            local moreIcon = subTabMoreBtn:CreateTexture(nil, "OVERLAY")
+            moreIcon:SetAllPoints()
+            moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
+            moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            subTabMoreBtn.icon = moreIcon
 
-        moreBtn:SetScript("OnEnter", function(self)
-            self.icon:SetVertexColor(1, 1, 1, 1)
-            if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-        end)
-        moreBtn:SetScript("OnLeave", function(self)
-            self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
-        end)
+            subTabMoreBtn:SetScript("OnEnter", function(self)
+                self.icon:SetVertexColor(1, 1, 1, 1)
+                if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
+            end)
+            subTabMoreBtn:SetScript("OnLeave", function(self)
+                self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            end)
+        end
+        local moreBtn = subTabMoreBtn
+        moreBtn:Show()
 
         moreBtn:SetScript("OnClick", function(self)
             if overflowDropdown and overflowDropdown:IsShown() then
@@ -1506,12 +1604,6 @@ local function RefreshChatSubTabs(header)
                 overflowDropdown:EnableMouse(true)
             end
 
-            -- Clear old children
-            for _, child in ipairs({ overflowDropdown:GetChildren() }) do
-                child:Hide()
-                child:SetParent(nil)
-            end
-
             local itemHeight = 18
             local padding = 6
             local maxW = 60
@@ -1519,13 +1611,9 @@ local function RefreshChatSubTabs(header)
 
             for idx = fitCount + 1, #allTabs do
                 local def = allTabs[idx]
-                local item = CreateFrame("Button", nil, overflowDropdown)
-                item:SetHeight(itemHeight)
-
-                local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                text:SetPoint("LEFT", item, "LEFT", 8, 0)
+                local item = GetMenuItem(overflowDropdown, #items + 1, itemHeight)
+                local text = item.text
                 text:SetText(def.name)
-                item.text = text
 
                 local col = def.col
                 if def.frameIndex == selectedIndex then
@@ -1544,7 +1632,6 @@ local function RefreshChatSubTabs(header)
                         self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                     end
                 end)
-                item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
                 item:SetScript("OnClick", function(self, button)
                     if button == "RightButton" then
                         ShowContextMenu(self, def.frameIndex)
@@ -1558,6 +1645,7 @@ local function RefreshChatSubTabs(header)
                 if w > maxW then maxW = w end
                 tinsert(items, item)
             end
+            HideMenuItemsFrom(overflowDropdown, #items + 1)
 
             local totalH = #items * itemHeight + padding * 2
             overflowDropdown:SetSize(maxW, totalH)
@@ -1567,14 +1655,13 @@ local function RefreshChatSubTabs(header)
 
             for i, item in ipairs(items) do
                 item:SetWidth(maxW)
+                item:ClearAllPoints()
                 item:SetPoint("TOPLEFT", overflowDropdown, "TOPLEFT", 0, -padding - (i - 1) * itemHeight)
                 item:Show()
             end
 
             overflowDropdown:Show()
         end)
-
-        tinsert(chatSubTabButtons, moreBtn)
     end
 end
 ns.RefreshChatSubTabs = RefreshChatSubTabs
@@ -1593,7 +1680,11 @@ local function CreateChatSubTabs(header)
 
     -- Independent hover fade for the tab bar
     local tabBarHovering = false
-    local tabBarFadeIn, tabBarFadeOut
+    local tabBarFadeIn = ns.CreateFade(bar, 1, FADE_IN_DURATION)
+    local tabBarFadeOut = ns.CreateFade(bar, 0, FADE_OUT_DURATION)
+    tabBarFadeOut:HookScript("OnFinished", function()
+        if overflowDropdown then overflowDropdown:Hide() end
+    end)
     local tabBarHideGen = 0
 
     local function ShowTabBar()
@@ -1601,14 +1692,8 @@ local function CreateChatSubTabs(header)
         if tabBarHovering then return end
         tabBarHovering = true
         tabBarHideGen = tabBarHideGen + 1
-        if tabBarFadeOut then tabBarFadeOut:Stop() end
-        tabBarFadeIn = bar:CreateAnimationGroup()
-        local anim = tabBarFadeIn:CreateAnimation("Alpha")
-        anim:SetFromAlpha(bar:GetAlpha())
-        anim:SetToAlpha(1)
-        anim:SetDuration(0.15)
-        tabBarFadeIn:SetScript("OnFinished", function() bar:SetAlpha(1) end)
-        tabBarFadeIn:Play()
+        tabBarFadeOut:Stop()
+        tabBarFadeIn:PlayFromCurrent()
     end
 
     local function HideTabBar()
@@ -1631,23 +1716,17 @@ local function CreateChatSubTabs(header)
                 tabBarHovering = true
                 return
             end
-            if tabBarFadeIn then tabBarFadeIn:Stop() end
-            tabBarFadeOut = bar:CreateAnimationGroup()
-            local anim = tabBarFadeOut:CreateAnimation("Alpha")
-            anim:SetFromAlpha(bar:GetAlpha())
-            anim:SetToAlpha(0)
-            anim:SetDuration(0.25)
-            tabBarFadeOut:SetScript("OnFinished", function()
-                bar:SetAlpha(0)
-                if overflowDropdown then overflowDropdown:Hide() end
-            end)
-            tabBarFadeOut:Play()
+            tabBarFadeIn:Stop()
+            tabBarFadeOut:PlayFromCurrent()
         end)
     end
 
-    local tabBarMonitor = CreateFrame("Frame")
-    tabBarMonitor:SetScript("OnUpdate", function()
-        if not bar:IsShown() then return end
+    local tabBarMonitor = CreateFrame("Frame", nil, bar)
+    local sinceHoverCheck = 0
+    tabBarMonitor:SetScript("OnUpdate", function(self, elapsed)
+        sinceHoverCheck = sinceHoverCheck + elapsed
+        if sinceHoverCheck < HOVER_CHECK_INTERVAL then return end
+        sinceHoverCheck = 0
         if ns.hideHeaderForInput then
             if tabBarHovering then
                 tabBarHovering = false
@@ -1862,7 +1941,14 @@ local function CreateChatHeader(parentFrame)
     hoverZone:SetFrameStrata("BACKGROUND")
     hoverZone:EnableMouse(false)
 
-    local fadeIn, fadeOut
+    local fadeIn = ns.CreateFade(header, 1, FADE_IN_DURATION)
+    fadeIn:HookScript("OnFinished", function()
+        if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(1) end
+    end)
+    local fadeOut = ns.CreateFade(header, 0, FADE_OUT_DURATION)
+    fadeOut:HookScript("OnFinished", function()
+        if combatSubTabs then combatSubTabs:SetAlpha(0) end
+    end)
     local isHovering = false
     local hideTimerGen = 0  -- generation counter to invalidate stale timers
 
@@ -1899,17 +1985,8 @@ local function CreateChatHeader(parentFrame)
         if isHovering then return end
         isHovering = true
         hideTimerGen = hideTimerGen + 1  -- invalidate any pending hide timer
-        if fadeOut then fadeOut:Stop() end
-        fadeIn = header:CreateAnimationGroup()
-        local anim = fadeIn:CreateAnimation("Alpha")
-        anim:SetFromAlpha(header:GetAlpha())
-        anim:SetToAlpha(1)
-        anim:SetDuration(0.15)
-        fadeIn:SetScript("OnFinished", function()
-            header:SetAlpha(1)
-            if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(1) end
-        end)
-        fadeIn:Play()
+        fadeOut:Stop()
+        fadeIn:PlayFromCurrent()
         if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
         ns.FadeInScrollbar()
     end
@@ -1931,29 +2008,23 @@ local function CreateChatHeader(parentFrame)
                 isHovering = true
                 return
             end
-            if fadeIn then fadeIn:Stop() end
-            fadeOut = header:CreateAnimationGroup()
-            local anim = fadeOut:CreateAnimation("Alpha")
-            anim:SetFromAlpha(header:GetAlpha())
-            anim:SetToAlpha(0)
-            anim:SetDuration(0.25)
-            fadeOut:SetScript("OnFinished", function()
-                header:SetAlpha(0)
-                if combatSubTabs then combatSubTabs:SetAlpha(0) end
-            end)
-            fadeOut:Play()
+            fadeIn:Stop()
+            fadeOut:PlayFromCurrent()
             if combatSubTabs and combatSubTabs:IsShown() then combatSubTabs:SetAlpha(header:GetAlpha()) end
             ns.FadeOutScrollbar()
         end)
     end
 
-    -- Detect hover via OnUpdate
-    local monitor = CreateFrame("Frame")
-    monitor:SetScript("OnUpdate", function()
+    local monitor = CreateFrame("Frame", nil, header)
+    local sinceHoverCheck = 0
+    monitor:SetScript("OnUpdate", function(self, elapsed)
+        sinceHoverCheck = sinceHoverCheck + elapsed
+        if sinceHoverCheck < HOVER_CHECK_INTERVAL then return end
+        sinceHoverCheck = 0
         if ns.hideHeaderForInput then
             if isHovering then
                 isHovering = false
-                if fadeIn then fadeIn:Stop() end
+                fadeIn:Stop()
                 header:SetAlpha(0)
                 if combatSubTabs then combatSubTabs:SetAlpha(0) end
                 ns.FadeOutScrollbar()
@@ -2033,10 +2104,6 @@ local function CreateChatHeader(parentFrame)
     end
 
     local function RefreshDropdown()
-        for _, mb in ipairs(menuButtons) do
-            mb:Hide()
-            mb:SetParent(nil)
-        end
         wipe(menuButtons)
 
         local yOff = -4
@@ -2049,12 +2116,15 @@ local function CreateChatHeader(parentFrame)
                 local name = GetChatTabName(i)
                 local isDocked = cf.isDocked or (i == 1)
                 if isDocked and i ~= 2 then
-                    local mb = CreateFrame("Button", nil, dropdown)
-                    mb:SetHeight(20)
+                    local mb = GetMenuItem(dropdown, #menuButtons + 1, 20)
+                    mb:RegisterForClicks("LeftButtonUp")
+                    mb:ClearAllPoints()
                     mb:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 4, yOff)
                     mb:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -4, yOff)
+                    mb:Show()
 
-                    local mbText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    local mbText = mb.text
+                    mbText:ClearAllPoints()
                     mbText:SetPoint("LEFT", mb, "LEFT", 6, 0)
                     mbText:SetText(name)
 
@@ -2089,6 +2159,7 @@ local function CreateChatHeader(parentFrame)
                 end
             end
         end
+        HideMenuItemsFrom(dropdown, #menuButtons + 1)
 
         dropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
     end
@@ -2244,8 +2315,7 @@ local function CreateChatHeader(parentFrame)
         end
         UpdateTabLabelBtnWidth()
         UpdateIconHighlights(cf)
-        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
-        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
+        RequestTabRefresh()
     end
     hooksecurefunc("FCF_SelectDockFrame", UpdateHeaderForFrame)
     ns.OnFrameSelected(UpdateHeaderForFrame)
@@ -2495,13 +2565,11 @@ local function CreateChatHeader(parentFrame)
         insertIdx = nil,
     }
 
+    local inlineTabPool = NewButtonPool()
+
     local function RefreshInlineTabs()
-        -- Clean up existing inline buttons
-        for _, btn in ipairs(inlineTabButtons) do
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-        wipe(inlineTabButtons)
+        ReleaseTabButtons(inlineTabPool, inlineTabButtons)
+        if inlineMoreBtn then inlineMoreBtn:Hide() end
         if inlineOverflowDropdown then inlineOverflowDropdown:Hide() end
 
         if not GudaChatDB.inlineTabBar then
@@ -2566,14 +2634,10 @@ local function CreateChatHeader(parentFrame)
         local totalSpace = rightEdge - leftEdge
         if totalSpace < 60 then return end
 
-        -- Measure tab widths
-        local tempFont = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         local widths = {}
         for idx, def in ipairs(allTabs) do
-            tempFont:SetText(def.name)
-            widths[idx] = tempFont:GetStringWidth() + 8
+            widths[idx] = MeasureTabText(def.name) + 8
         end
-        tempFont:Hide()
 
         -- Pixel budget: first tab gap=8, subsequent gap=6, plus 6px right margin
         local TAB_GAP = 6
@@ -2705,14 +2769,12 @@ local function CreateChatHeader(parentFrame)
         for idx = 1, fitCount do
             local def = allTabs[idx]
             local col = def.col
-            local btn = CreateFrame("Button", nil, header)
+            local btn = AcquireTabButton(inlineTabPool, header)
             btn:SetHeight(16)
             btn.tabIdx = idx
 
-            local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+            local text = btn.text
             text:SetText(def.name)
-            btn.text = text
 
             if IsSelectedFrame(def.cf) then
                 text:SetTextColor(col[1], col[2], col[3], 1)
@@ -2720,7 +2782,6 @@ local function CreateChatHeader(parentFrame)
                 text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
             end
 
-            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             btn:SetScript("OnClick", function(self, button)
                 if inlineDragState.dragging then
                     FinishTabDrag(self)
@@ -2731,7 +2792,7 @@ local function CreateChatHeader(parentFrame)
                 else
                     if blinkingTabs[def.frameIndex] then
                         blinkingTabs[def.frameIndex] = nil
-                        if self.blinkAG then self.blinkAG:Stop() end
+                        self.blinkAG:Stop()
                     end
                     SafeSelectDockFrame(def.cf)
                 end
@@ -2794,19 +2855,10 @@ local function CreateChatHeader(parentFrame)
                 end
             end)
 
-            -- Blink animation for unread messages
             if blinkingTabs[def.frameIndex] then
                 btn.blinking = true
-                local blinkAG = text:CreateAnimationGroup()
-                blinkAG:SetLooping("BOUNCE")
-                local fade = blinkAG:CreateAnimation("Alpha")
-                fade:SetFromAlpha(1)
-                fade:SetToAlpha(0.2)
-                fade:SetDuration(0.5)
-                fade:SetSmoothing("IN_OUT")
-                blinkAG:Play()
+                btn.blinkAG:Play()
                 text:SetTextColor(col[1], col[2], col[3], 1)
-                btn.blinkAG = blinkAG
             end
 
             btn:SetWidth(widths[idx])
@@ -2818,23 +2870,28 @@ local function CreateChatHeader(parentFrame)
 
         -- Overflow button if there are hidden tabs
         if fitCount < #allTabs then
-            local moreBtn = CreateFrame("Button", nil, header)
-            moreBtn:SetSize(12, 12)
+            if not inlineMoreBtn then
+                inlineMoreBtn = CreateFrame("Button", nil, header)
+                inlineMoreBtn:SetSize(12, 12)
+
+                local moreIcon = inlineMoreBtn:CreateTexture(nil, "OVERLAY")
+                moreIcon:SetAllPoints()
+                moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
+                moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
+                inlineMoreBtn.icon = moreIcon
+
+                inlineMoreBtn:SetScript("OnEnter", function(self)
+                    self.icon:SetVertexColor(1, 1, 1, 1)
+                    if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
+                end)
+                inlineMoreBtn:SetScript("OnLeave", function(self)
+                    self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+                end)
+            end
+            local moreBtn = inlineMoreBtn
+            moreBtn:ClearAllPoints()
             moreBtn:SetPoint("RIGHT", chatTypeBtn, "LEFT", -marginRight, 0)
-
-            local moreIcon = moreBtn:CreateTexture(nil, "OVERLAY")
-            moreIcon:SetAllPoints()
-            moreIcon:SetTexture(ns.ASSET_PATH .. "more.png")
-            moreIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            moreBtn.icon = moreIcon
-
-            moreBtn:SetScript("OnEnter", function(self)
-                self.icon:SetVertexColor(1, 1, 1, 1)
-                if chatHeader and not ns.hideHeaderForInput then chatHeader:SetAlpha(1) end
-            end)
-            moreBtn:SetScript("OnLeave", function(self)
-                self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            end)
+            moreBtn:Show()
 
             moreBtn:SetScript("OnClick", function(self)
                 if inlineOverflowDropdown and inlineOverflowDropdown:IsShown() then
@@ -2873,11 +2930,6 @@ local function CreateChatHeader(parentFrame)
                     end)
                 end
 
-                for _, child in ipairs({ inlineOverflowDropdown:GetChildren() }) do
-                    child:Hide()
-                    child:SetParent(nil)
-                end
-
                 local itemHeight = 18
                 local padding = 6
                 local maxW = 60
@@ -2886,13 +2938,9 @@ local function CreateChatHeader(parentFrame)
 
                 for oidx = fitCount + 1, #allTabs do
                     local def = allTabs[oidx]
-                    local item = CreateFrame("Button", nil, inlineOverflowDropdown)
-                    item:SetHeight(itemHeight)
-
-                    local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    text:SetPoint("LEFT", item, "LEFT", 8, 0)
+                    local item = GetMenuItem(inlineOverflowDropdown, #items + 1, itemHeight)
+                    local text = item.text
                     text:SetText(def.name)
-                    item.text = text
 
                     local col = def.col
                     if def.frameIndex == selectedIndex then
@@ -2911,7 +2959,6 @@ local function CreateChatHeader(parentFrame)
                             self.text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
                         end
                     end)
-                    item:RegisterForClicks("LeftButtonUp", "RightButtonUp")
                     item:SetScript("OnClick", function(self, button)
                         if button == "RightButton" then
                             ShowContextMenu(self, def.frameIndex)
@@ -2925,6 +2972,7 @@ local function CreateChatHeader(parentFrame)
                     if w > maxW then maxW = w end
                     tinsert(items, item)
                 end
+                HideMenuItemsFrom(inlineOverflowDropdown, #items + 1)
 
                 local totalH = #items * itemHeight + padding * 2
                 inlineOverflowDropdown:SetSize(maxW, totalH)
@@ -2934,15 +2982,13 @@ local function CreateChatHeader(parentFrame)
 
                 for i, item in ipairs(items) do
                     item:SetWidth(maxW)
+                    item:ClearAllPoints()
                     item:SetPoint("TOPLEFT", inlineOverflowDropdown, "TOPLEFT", 0, -padding - (i - 1) * itemHeight)
                     item:Show()
                 end
 
                 inlineOverflowDropdown:Show()
             end)
-
-            inlineMoreBtn = moreBtn
-            tinsert(inlineTabButtons, moreBtn)
         end
     end
     ns.RefreshInlineTabs = RefreshInlineTabs
@@ -2968,22 +3014,21 @@ local function CreateChatHeader(parentFrame)
     UpdateSubTabsForFrame = function(cf)
         if combatSubTabs then
             if cf == ChatFrame2 then
+                UpdateCombatSubTabColors()
                 combatSubTabs:Show()
                 combatSubTabs:SetAlpha(chatHeader and chatHeader:GetAlpha() or 1)
             else
                 combatSubTabs:Hide()
-                SwitchCombatLogFilter("mine")
             end
         end
         if chatSubTabs and GudaChatDB.showTabBar then
             if cf == ChatFrame2 then
                 chatSubTabs:Hide()
             else
-                RefreshChatSubTabs(chatHeader)
                 chatSubTabs:Show()
             end
         end
-        RefreshInlineTabs()
+        RequestTabRefresh()
     end
 
     hooksecurefunc("FCF_SelectDockFrame", function(cf)
@@ -2994,12 +3039,7 @@ local function CreateChatHeader(parentFrame)
     local chatSubTabHooks = { "FCF_OpenNewWindow", "FCF_Close", "FCF_DockFrame", "FCF_UnDockFrame", "FCF_SetWindowName" }
     for _, funcName in ipairs(chatSubTabHooks) do
         if _G[funcName] then
-            hooksecurefunc(funcName, function()
-                if chatSubTabs and GudaChatDB.showTabBar then
-                    RefreshChatSubTabs(header)
-                end
-                RefreshInlineTabs()
-            end)
+            hooksecurefunc(funcName, RequestTabRefresh)
         end
     end
 
