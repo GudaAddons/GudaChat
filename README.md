@@ -57,7 +57,7 @@ Access settings with `/gc` or the header gear icon. Three tabs of options:
 - Custom context menu (right-click the tab name) for renaming, creating, and removing chat windows, font size, and background color
 - Sleek custom scrollbar with scroll-to-bottom button
 - Drag-to-move via the header bar with lockable position
-- Works across Classic, Cataclysm, Wrath, and Retail
+- Works on Retail, MoP Classic, TBC Anniversary, Classic Era and WoW: Forever
 
 ## Slash Commands
 

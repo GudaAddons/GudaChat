@@ -1,0 +1,135 @@
+# GudaChat: architecture and development guide
+
+GudaChat replaces the look of Blizzard's chat frame (tabs, buttons, input bar, scrollbar) with its own clean UI. It does not replace Blizzard's chat logic: messages, channels and windows stay Blizzard's, and GudaChat adds filters, hooks and its own frames around them.
+
+Read this before changing code. The taint rules below exist because breaking them crashed the chat on Retail 12.
+
+## Files and load order
+
+Load order is the order in `GudaChat.toc`. Every file starts with `local addonName, ns = ...` and shares the `ns` table.
+
+| File | What it does |
+|------|--------------|
+| `Locales.lua` | All translations (`ns.Locales.enUS`, `deDE`, ...). esMX copies esES and overrides a few keys. |
+| `Core/Locales.lua` | Builds `ns.L`: English first, then the client's language on top. A missing key returns the key name. |
+| `Core/Constants.lua` | Shared helpers and constants: client detection, secret-value helpers, name comparison, `LineMemo`, `CreateFade`, backdrops, `ForEachChatWindow` / `ForEachChatFrame`, chat position helpers, copy popup, `UTF8Lower`, `ns.Blizz`, `ns.SlashCmd`. |
+| `Core/Emojis.lua` | Emoji data, picker, `SplitProtected` (splits a message into plain text and links), emoji replacement filter. |
+| `Core/EditBox.lua` | Input bar style and position, emoji button. Runs once per edit box (`eb.gudaStyled`). |
+| `Core/Filters.lua` | Class colours, player level, copyable URL links, own-name highlight and mention sound. Link click handling. |
+| `Core/Logs.lua` | Loot log and addon message log (ring buffers), loot line parsing. |
+| `Core/Chrome.lua` | Hides Blizzard's chat chrome (tabs, buttons, dock manager), lock state, window colours. |
+| `UI/Scrollbar.lua` | Thin scrollbar and scroll-to-bottom button per chat frame. |
+| `UI/Header.lua` | Hover header bar, tab bars (separate and inline), context menu, chat type and emote menus, whisper tab, combat log sub-tabs, tab blink. The biggest file; a split into smaller files is planned for 1.5.0. |
+| `UI/History.lua` | History capture, the history viewer (search, channel tabs, copy), replay at login. |
+| `UI/Settings.lua` | Settings window (General, Messages, History, Notifications). |
+| `GudaChat.lua` | Slash command, saved data defaults and migrations, login setup, logout handling. |
+| `tests/` | Offline tests. Not in the TOC, so the game never loads them. |
+
+## Saved data
+
+| Variable | Scope | Contents |
+|----------|-------|----------|
+| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `useGlobalBg`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`. On WoW: Forever also `charCopies` (see below). |
+| `GudaChatCharDB` | Character | `history` (one bucket per channel, keyed by channel label), `lootLog`, `addonLog` (ring buffers with a `head` field), `logSchema`, `savedAt`. |
+
+- Defaults and one-time migrations run in `GudaChat.lua` at `ADDON_LOADED`. Older versions kept history and logs in `GudaChatDB`; the first character that logs in takes them over.
+- The history cap (`historyMax`, 500 to 4000) is shared by the channel buckets. The loot log (`lootLogMax`, default 500) and the addon log (`addonLogMax`, default 300) have their own caps.
+- Never save a secret value. Use `ns.SafeName` before storing any chat argument.
+
+### WoW: Forever and lost saved data
+
+Forever often does not load SavedVariables back after a full restart, and the player-side fix (Forever Data Protect) only restores account-wide files. So on Forever only:
+
+- At `PLAYER_LOGOUT`, `GudaChatCharDB` is stamped with `savedAt` and copied into `GudaChatDB.charCopies[<character GUID>]`.
+- At `ADDON_LOADED`, the copy replaces `GudaChatCharDB` when it is newer or the character file is missing.
+
+This is the same design as GudaBags (`Core/Database.lua`).
+
+## Clients and detection
+
+Supported: Retail (12.x), MoP Classic (5.5.x), TBC Anniversary (2.5.x), Classic Era (1.15.x) and WoW: Forever (1.60.x, Interface 16001). One TOC lists all of them.
+
+| Flag (`Core/Constants.lua`) | Meaning |
+|------|---------|
+| `ns.IS_RETAIL` | Interface 110000 or higher. |
+| `ns.IS_FOREVER` | Interface 16000 to 19999. Forever has no `WOW_PROJECT_ID`. |
+| `ns.HAS_MAINLINE_CHAT` | Retail or Forever. Both run Blizzard's Mainline chat code, so use this flag, not `IS_RETAIL`, for chat behaviour (link clicks, the 13 px right gutter `CHAT_EDGE_PAD`). |
+
+Prefer feature checks (`if SomeFunction then`, `DoesTemplateExist`) over version checks. Moved Blizzard functions go through `ns.OpenChat`, `ns.SendTell` and `ns.PerformEmote`.
+
+### Secret values
+
+On Retail 12 and on Forever, some chat arguments (message, sender, GUID, level) can be "secret": addon code cannot read, compare or join them, and trying throws an error.
+
+- Every chat filter starts with `if not msg or ns.IsSecret(msg) then return false end`.
+- Use `ns.SafeName`, `ns.SafeShortName`, `ns.NamesMatch`, `ns.CompactName` and `ns.SameCharacter` for names. They return nil or "no match" for secret values.
+
+### Names
+
+Compare characters with `ns.SameCharacter(a, b)`. It ignores the realm, spaces and case, so it works for `Name-Realm` (Classic, Retail) and for Forever's two-part names (`Given Family`, `GivenFamily`). `ns.UnitFullName(unit)` returns `Given Family` on Forever, where `UnitName` returns the two parts as two values.
+
+## Taint rules
+
+Taint is what happens when addon code touches something Blizzard's protected code later uses. On Retail 12 it ends in "secret value" crashes and "Interface action failed" errors.
+
+1. Never replace a Blizzard method or global function (`frame.Show = ...`, `FCF_StartDragging = ...`). Use `hooksecurefunc` or `frame:HookScript` instead.
+2. Never write Blizzard tables or fields (`UIPARENT_MANAGED_FRAME_POSITIONS`, `editBox.chatFrame`). Store our own data under `gudaXxx` names.
+3. To hide a Blizzard frame, use `ns.KillFrame` (reparent to a hidden frame), never override `Show`.
+4. Do not call `FCF_SelectDockFrame` from addon code. Use `ns.SafeSelectDockFrame`. It writes exactly two Blizzard values, on purpose: `GENERAL_CHAT_DOCK.selected`, so Blizzard's dock updates keep our tab on top, and `SELECTED_CHAT_FRAME`, which Blizzard's chat input and window options read. GudaChat reads its own `ns.GetUserSelectedFrame()` instead of those globals.
+5. `ChatFrame2:Show()` triggers protected code. It is shown once outside combat and then toggled with alpha (`ns.SetCombatLogVisible`). In combat the show waits for `PLAYER_REGEN_ENABLED`.
+6. Link clicks: Retail and Forever add a `HookScript("OnHyperlinkClick")` handler and hide a stray tooltip with a `hooksecurefunc("SetItemRef")` post-hook. **Classic exception:** Classic's `SetItemRef` errors with "Unknown link type" on our `gudachat:` links before any hook could run, so on Classic only the chat frame's `OnHyperlinkClick` script is wrapped and our links never reach `SetItemRef`.
+7. Menus: use `WowStyle1DropdownTemplate` + `MenuUtil` where the client has them. `UIDropDownMenu` shares global state with Blizzard's unit menus.
+8. The timestamp option sets the CVar only and applies after `/reload`; writing `CHAT_TIMESTAMP_FORMAT` from addon code would taint every chat message.
+
+## Whisper tab and routing
+
+With the Whispers tab on, `ApplyWhisperRouting` (UI/Header.lua):
+
+- saves the player's `whisperMode` CVar once in `origWhisperMode` and sets it to `inline`, so whispers do not pop out into their own windows;
+- removes the `WHISPER` and `BN_WHISPER` groups from General, so whispers show only in the Whispers tab.
+
+Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were lost, nothing could undo them and General would stop showing whispers. So `UndoWhisperRoutingForLogout` puts both back at every `PLAYER_LOGOUT`, and `ApplyWhisperRouting` sets them again at login. Closing the Whispers window turns the feature off.
+
+## Performance patterns
+
+Chat code runs for every message, often once per chat frame, so keep it cheap.
+
+- **Memoized filters:** `ns.NewLineMemo()` keeps a filter's last result per message line ID. A message shown in three chat frames is processed once.
+- **No string building in loops:** collect parts in a table and use `table.concat` (`ns.JoinParts`).
+- **Pools:** menus, tab buttons and dropdown items are created once and reused. Never `SetParent(nil)` and recreate on refresh.
+- **One refresh per change:** tab bar updates go through `ns.RequestTabRefresh()`, which runs once on the next frame however many hooks ask for it.
+- **One fade per frame:** `ns.CreateFade(frame, alpha, duration)` makes the animation once; call `:PlayFromCurrent()`.
+- **No per-frame work:** hover checks run every 0.05 s and are children of their frame, so they stop when it hides. Timers stop while their window is hidden.
+- **Caches:** player levels are cached (also "not found") for 60 s; the guild level map is rebuilt only on `GUILD_ROSTER_UPDATE`.
+- **Ring buffers:** `ns.PushLog` overwrites the oldest entry instead of shifting the array.
+- **History search** waits 0.2 s after the last key press; Copy builds the text once.
+
+## Languages
+
+- Never hard-code text players see. Add a key to `Locales.lua` for **all 11 languages** in the same change: enUS, deDE, esES, esMX, frFR, itIT, koKR, ptBR, ruRU, zhCN, zhTW.
+- Keep the same format codes (`%s`, `%d`, `|cff...|r`) in every language. The tests check this.
+- Use Blizzard's own translated globals where one fits exactly, through `ns.Blizz(GLOBAL, "English fallback")`.
+- Do not translate player names, channel names, emoji codes or slash commands.
+- English is simple; translations say the same thing in the same simple way.
+
+## Code style
+
+- No comments inside function bodies and none at the end of a line. Explain the why in a comment block above the function or constant.
+- Commit messages are a title only, for example `fix: whisper tab blink`.
+
+## Tests
+
+Offline tests run with Lua 5.1 (the version WoW uses) in WSL, from the addon folder:
+
+```
+lua5.1 tests/run.lua
+```
+
+- `tests/harness.lua` stubs the WoW API and loads the real addon files (locales, Constants, Emojis, Filters, Logs) into a fresh namespace. `H.Load({ interface = 16001, locale = "ruRU", name = "Joob", family = "Stabber" })` loads them as a given client.
+- Suites: locale parity and used keys, name comparison and client flags, chat filters (links, highlight, secret messages, memo), emojis, loot parsing and ring buffers.
+- The exit code is 1 when a test fails.
+- UI behaviour needs the real client: see `tests/IN_GAME_CHECKLIST.md`.
+
+## Copying to the game clients
+
+The repository lives in the Anniversary client's AddOns folder. `git sync` (a git alias for `.git/sync.sh`) copies the addon to `_classic_`, `_classic_era_`, `_retail_`, `_forever_` and `_classic_beta_`. It deletes the old copy first and skips `.git` and `tmp`.
