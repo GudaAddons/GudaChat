@@ -65,8 +65,24 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 - [ ] History viewer: themed window, channel tabs switch the filter, its position is remembered, Copy still opens the copy window.
 - [ ] Whisper tab turned off by closing the Whispers window: the switch in Settings turns off too.
 
+### Whisper icon (2.0)
+- [ ] Off by default: no icon until "Show whisper icon" is turned on (Settings > Tabs & Alerts).
+- [ ] A received whisper shows the icon with badge 1 and a short pulse; a second whisper from the same person keeps 1; a whisper from someone else makes it 2. Your own whispers never count.
+- [ ] Hover: the list shows each person (class colour; BattleTag for Battle.net friends), time, last message on one line and an unread dot; it hides shortly after the mouse leaves icon and list.
+- [ ] Click the icon: reply panel for the newest unread person, cursor in the box. Click a row: reply panel for that person.
+- [ ] Enter sends and closes; Shift+Enter sends and stays open; Escape and × close. The reply shows in the panel and in chat.
+- [ ] Send a whisper to a cross-realm player (Name-Realm) and to a Battle.net friend from the panel; both arrive.
+- [ ] Whispering someone from normal chat (/w, R) marks them read and lowers the badge.
+- [ ] "Always show icon" keeps it at 0; "Hide in combat" hides it in combat and shows unread ones after.
+- [ ] Drag the icon, /reload: same place. "Reset position" puts it back above the chat window.
+- [ ] Key Bindings > GudaChat > Whisper ring: bind a key. The settings row shows the key.
+- [ ] Tap the key: reply panel at the cursor for the latest person. Hold: ring of up to 8 people at the cursor (unread first, class icons, Battle.net icon for friends); the pointed one is highlighted and named in the centre; release on it opens the reply at the cursor; release in the centre cancels. Works in combat without errors.
+- [ ] Switching the theme restyles icon, badge, list, panel and ring live.
+- [ ] No typing or casting is interrupted when a whisper arrives (the panel never takes focus by itself).
+
 ## WoW: Forever only
 
+- [ ] Whisper icon with two-part names ("Given Family"): the person appears once, the reply reaches them, and whispering them from chat marks them read.
 - [ ] The addon loads (not "out of date") and the right edge of header, input bar and scrollbar lines up with the text (13 px gutter).
 - [ ] Messages with secret values (system messages, some whispers): no Lua errors from GudaChat filters.
 - [ ] Two-part names ("Given Family"): own messages do not blink tabs; whisper windows match their sender; the history whisper link opens a whisper to the full name.

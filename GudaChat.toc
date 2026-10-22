@@ -19,6 +19,7 @@ Core\Emojis.lua
 Core\EditBox.lua
 Core\Filters.lua
 Core\Logs.lua
+Core\WhisperModel.lua
 Core\Chrome.lua
 UI\Widgets.lua
 UI\Controls.lua
@@ -33,4 +34,5 @@ UI\Scrollbar.lua
 UI\Header.lua
 UI\History.lua
 UI\Settings.lua
+UI\WhisperIcon.lua
 GudaChat.lua

@@ -280,6 +280,18 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.bgFromTheme == nil then
             GudaChatDB.bgFromTheme = isFreshInstall
         end
+        if type(GudaChatDB.whisperIcon) ~= "table" then
+            GudaChatDB.whisperIcon = {}
+        end
+        if GudaChatDB.whisperIcon.enabled == nil then
+            GudaChatDB.whisperIcon.enabled = false
+        end
+        if GudaChatDB.whisperIcon.alwaysShow == nil then
+            GudaChatDB.whisperIcon.alwaysShow = false
+        end
+        if GudaChatDB.whisperIcon.hideInCombat == nil then
+            GudaChatDB.whisperIcon.hideInCombat = false
+        end
         ns.Theme.Init(isFreshInstall)
         self:UnregisterEvent("ADDON_LOADED")
 
@@ -475,6 +487,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ns.SetupWhisperFrame()
         end
         ns.CreateChatHeader(ChatFrame1)
+        ns.InitWhisperIcon()
         ns.ApplyLockState()
         ns.ApplyChatMargins()
         -- The saved position is restored above, before the clamp insets exist. If it no

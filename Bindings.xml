@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="GUDACHAT_WHISPER_RING" header="GUDACHAT" runOnUp="true">
+		GudaChat_WhisperRingKey(keystate)
+	</Binding>
+</Bindings>

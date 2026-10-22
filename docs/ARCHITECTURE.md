@@ -18,6 +18,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `Core/EditBox.lua` | Input bar style and position, emoji button. Runs once per edit box (`eb.gudaStyled`). |
 | `Core/Filters.lua` | Class colours, player level, copyable URL links, own-name highlight and mention sound. Link click handling. |
 | `Core/Logs.lua` | Loot log and addon message log (ring buffers), loot line parsing. |
+| `Core/WhisperModel.lua` | Pure data for the whisper icon: received whispers per person (`ns.NewWhisperModel`, `ns.WhisperKey`), unread count, newest-first list, "latest" person, ring order, and the ring geometry and tap helpers. No frames, so the tests cover it. |
 | `Core/Chrome.lua` | Hides Blizzard's chat chrome (tabs, buttons, dock manager), lock state, window colours. |
 | `UI/Widgets.lua` | Shared widgets: icon buttons, menu items (`ns.CreateMenuItem`, reusable `ns.GetMenuItem`), click-outside closers, `ns.ShowColorPicker` (both picker generations), fade and hover timings. |
 | `UI/Controls.lua` | Themed controls for the settings and history windows: `ns.CreateThemedWindow`, `ns.CreateScrollArea`, `ns.CreateCard`, `ns.CreateSettingsRow`, `ns.CreateToggle`, `ns.CreateSlider`, `ns.CreateDropdown`, `ns.CreateSwatch`, `ns.CreateThemedButton`, `ns.CreateTextTabs`, and `ns.OnRestyle`. |
@@ -31,15 +32,17 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `UI/Scrollbar.lua` | Thin scrollbar and scroll-to-bottom button per chat frame. |
 | `UI/Header.lua` | The header bar itself: hover fade, drag to move, icon buttons, tab label and window dropdown, inline tab setup. |
 | `UI/History.lua` | History capture, the history viewer (search, channel tabs, copy), replay at login. |
+| `UI/WhisperIcon.lua` | Whisper icon with unread badge, hover list, reply panel, whisper ring, the "Whisper ring" key binding handler and the Whisper icon settings card. See "Whisper icon". |
 | `UI/Settings.lua` | Settings window: sidebar pages Appearance, Chat, Messages, Tabs & Alerts, History & Logs, About (see "Settings window"). Chat font options and helpers. |
 | `GudaChat.lua` | Slash command, saved data defaults and migrations, login setup, logout handling. |
+| `Bindings.xml` | The "Whisper ring" key binding under Key Bindings > GudaChat (unbound by default). The game loads it by itself; it is not in the TOC. |
 | `tests/` | Offline tests. Not in the TOC, so the game never loads them. |
 
 ## Saved data
 
 | Variable | Scope | Contents |
 |----------|-------|----------|
-| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`. On WoW: Forever also `charCopies` (see below). |
+| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`, `whisperIcon` (`enabled`, `alwaysShow`, `hideInCombat`, saved icon `point`/`relPoint`/`x`/`y`). On WoW: Forever also `charCopies` (see below). |
 | `GudaChatCharDB` | Character | `history` (one bucket per channel, keyed by channel label), `lootLog`, `addonLog` (ring buffers with a `head` field), `logSchema`, `savedAt`. |
 
 - Defaults and one-time migrations run in `GudaChat.lua` at `ADDON_LOADED`. Older versions kept history and logs in `GudaChatDB`; the first character that logs in takes them over.
@@ -130,6 +133,15 @@ Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were
 - **Live restyle.** Controls register with `ns.OnRestyle(fn)`, which runs `fn` once and again after every theme or accent change. Nothing in the window runs per frame, except while the mouse drags a slider.
 - **Appearance page.** Theme cards with thumbnails drawn in each theme's own colours (`ns.Theme.ColorOf`), the accent (class colour, class swatches, custom colour; Classic and Blizzard show a note instead), a live preview of the chat built from the themed widgets, the chat font and size, and the background (override, opacity, colour).
 
+## Whisper icon
+
+Off by default (`GudaChatDB.whisperIcon.enabled`). Received whispers still show in chat as usual; the icon only adds a quick way to answer.
+
+- **Data.** `Core/WhisperModel.lua` keeps this session's received whispers (`CHAT_MSG_WHISPER`, `CHAT_MSG_BN_WHISPER`; never the player's own) for up to 10 people, newest first, with the last 5 lines each, including the player's replies from the `*_INFORM` events. Characters are keyed `pc:` + `ns.CompactName` (so the Forever name shapes meet), Battle.net friends `bn:` + account id (arg13) and shown by BattleTag (`ns.BattleTagFor`). A secret sender is ignored; a secret message counts but keeps no text.
+- **Icon.** Themed button (default above the right side of the chat window, drag to move). The badge counts PEOPLE with unread whispers; the icon hides at 0 unless "Always show icon" is on, and in combat when "Hide in combat" is on (it comes back on `PLAYER_REGEN_ENABLED`). A new whisper pulses it for 3 s (one animation, made once).
+- **Hover list and reply.** Hovering shows the list; a click on a row, or on the icon (the newest unread person, else the newest), opens the reply panel with that conversation. Enter sends (`SendChatMessage(..., "WHISPER", nil, target)` with the name as received; `BNSendWhisper` for friends) and closes, Shift+Enter keeps it open, Escape or × closes. Opening a person or whispering them from anywhere marks them read. The reply box only takes the keyboard when the player opens it.
+- **Whisper ring.** `Bindings.xml` binds `GudaChat_WhisperRingKey(keystate)` with `runOnUp`. Holding the key (longer than `ns.WHISPER_TAP_TIME` or moving the cursor) opens a ring of up to 8 people at the cursor, unread first; the slot under the cursor (`ns.RingSlotAt`) is highlighted and named in the centre, and releasing over it opens the reply panel at the cursor. Releasing in the centre cancels. A quick tap replies to the latest person. The only `OnUpdate` runs while the key is held. Plain frames only, so it is safe in combat.
+
 ## Performance patterns
 
 Chat code runs for every message, often once per chat frame, so keep it cheap.
@@ -166,7 +178,7 @@ lua5.1 tests/run.lua
 ```
 
 - `tests/harness.lua` stubs the WoW API and loads the real addon files (locales, Constants, Emojis, Filters, Logs) into a fresh namespace. `H.Load({ interface = 16001, locale = "ruRU", name = "Joob", family = "Stabber" })` loads them as a given client.
-- Suites: locale parity and used keys, name comparison and client flags, chat filters (links, highlight, secret messages, memo), emojis, loot parsing and ring buffers.
+- Suites: locale parity and used keys, name comparison and client flags, chat filters (links, highlight, secret messages, memo), emojis, loot parsing and ring buffers, themes, slider helpers, and the whisper model (unread people, order, limits, latest, read on reply, Battle.net and Forever keys, secret values, ring geometry and tap).
 - The exit code is 1 when a test fails.
 - UI behaviour needs the real client: see `tests/IN_GAME_CHECKLIST.md`.
 

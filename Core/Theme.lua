@@ -116,6 +116,8 @@ Theme.THEMES = {
             checkMark = { 1, 0.82, 0, 1 },
             fieldBg = { 0.05, 0.05, 0.05, 0.85 },
             buttonText = { 0.9, 0.9, 0.9, 1 },
+            badgeBg = { 0.8, 0.6, 0, 1 },
+            badgeText = { 0, 0, 0, 1 },
         },
     },
 
@@ -195,6 +197,8 @@ Theme.THEMES = {
             checkMark = { 1, 1, 1, 1 },
             fieldBg = { 0.047, 0.051, 0.067, 0.9 },
             buttonText = MODERN_TEXT,
+            badgeBg = Accent(1),
+            badgeText = { 0.07, 0.07, 0.09, 1 },
         },
     },
 
@@ -270,6 +274,8 @@ Theme.THEMES = {
             checkMark = BLIZZARD_GOLD,
             fieldBg = { 0, 0, 0, 0.9 },
             buttonText = BLIZZARD_GOLD,
+            badgeBg = { 0.56, 0.1, 0.06, 1 },
+            badgeText = BLIZZARD_GOLD,
         },
     },
 }

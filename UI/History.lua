@@ -135,6 +135,7 @@ local function BattleTagFor(bnSenderID)
     end
     return nil
 end
+ns.BattleTagFor = BattleTagFor
 
 -- The sender part of a history line and whether it can be whispered from history.
 -- Battle.net senders are shown as plain text (the BattleTag without its #number), and
