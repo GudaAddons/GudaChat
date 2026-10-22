@@ -6,10 +6,7 @@ local L = ns.L
 ---------------------------------------------------------------------------
 
 local MENU_MIN_WIDTH = 60
-local LABEL_COLOR = { 0.8, 0.8, 0.8, 1 }
-local LABEL_HOVER_COLOR = { 1, 0.8, 0, 1 }
-local CMD_COLOR = { 0.5, 0.5, 0.5, 1 }
-local CMD_HOVER_COLOR = { 0.8, 0.6, 0, 1 }
+local C = ns.Theme.C
 
 -- "/bye" rather than "/goodbye": both are the same emote, but the token is BYE, so this
 -- is also correct via the upper-case fallback on a client whose localized command table
@@ -89,15 +86,15 @@ local function AddCommandRow(menu, yOff, label, rightText)
     mb:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, yOff)
     mb:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -4, yOff)
 
-    local labelText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local labelText = mb:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
     labelText:SetPoint("LEFT", mb, "LEFT", 6, 0)
     labelText:SetText(label)
-    labelText:SetTextColor(unpack(LABEL_COLOR))
+    ns.Paint(labelText, C.chatTypeLabel)
 
-    local cmdText = mb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local cmdText = mb:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
     cmdText:SetPoint("RIGHT", mb, "RIGHT", -6, 0)
     cmdText:SetText(rightText)
-    cmdText:SetTextColor(unpack(CMD_COLOR))
+    ns.Paint(cmdText, C.chatTypeCmd)
 
     mb.labelText = labelText
     mb.cmdText = cmdText
@@ -106,8 +103,8 @@ local function AddCommandRow(menu, yOff, label, rightText)
 end
 
 local function HighlightRow(mb, on)
-    mb.labelText:SetTextColor(unpack(on and LABEL_HOVER_COLOR or LABEL_COLOR))
-    mb.cmdText:SetTextColor(unpack(on and CMD_HOVER_COLOR or CMD_COLOR))
+    ns.Paint(mb.labelText, on and C.chatTypeLabelHover or C.chatTypeLabel)
+    ns.Paint(mb.cmdText, on and C.chatTypeCmdHover or C.chatTypeCmd)
 end
 
 local function MenuFrame(name, parent)

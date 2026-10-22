@@ -14,7 +14,7 @@ ns.HOVER_CHECK_INTERVAL = 0.05
 local MENU_ITEM_HEIGHT = 20
 ns.MENU_ITEM_HEIGHT = MENU_ITEM_HEIGHT
 
-local ICON_COLOR_NORMAL = { 0.7, 0.7, 0.7, 0.9 }
+local C = ns.Theme.C
 
 local function SetTooltipFontSize(size)
     if GameTooltipTextLeft1 then
@@ -38,11 +38,11 @@ local function CreateIconButton(parent, texturePath, size, tooltip)
     local icon = btn:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
     icon:SetTexture(texturePath)
-    icon:SetVertexColor(unpack(ICON_COLOR_NORMAL))
+    ns.Paint(icon, C.iconNormal)
     btn.icon = icon
 
     btn:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
+        ns.Paint(self.icon, C.iconHover)
         if tooltip then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(tooltip, 1, 1, 1)
@@ -52,7 +52,7 @@ local function CreateIconButton(parent, texturePath, size, tooltip)
         RevealHeader()
     end)
     btn:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(unpack(ICON_COLOR_NORMAL))
+        ns.Paint(self.icon, C.iconNormal)
         GameTooltip:Hide()
     end)
 
@@ -67,16 +67,16 @@ local function CreateMenuItem(parent, label, onClick, isSeparator, hasArrow, isC
     btn:SetHeight(MENU_ITEM_HEIGHT)
 
     if isSeparator then
-        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local text = btn:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
         text:SetPoint("LEFT", btn, "LEFT", 8, 0)
         text:SetText(label)
-        text:SetTextColor(0.9, 0.75, 0.3)
+        ns.Paint(text, C.menuTitle)
         btn:EnableMouse(false)
         btn.label = text
         return btn
     end
 
-    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local text = btn:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlightSmall")
     text:SetPoint("LEFT", btn, "LEFT", 8, 0)
     text:SetText(label)
     btn.label = text
@@ -91,16 +91,16 @@ local function CreateMenuItem(parent, label, onClick, isSeparator, hasArrow, isC
     end
 
     if hasArrow then
-        local arrow = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local arrow = btn:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlightSmall")
         arrow:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
         arrow:SetText(">")
-        arrow:SetTextColor(0.7, 0.7, 0.7)
+        ns.Paint(arrow, C.menuArrow)
     end
 
     local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetAllPoints()
     highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
-    highlight:SetVertexColor(1, 1, 1, 0.1)
+    ns.Paint(highlight, C.menuHover)
 
     btn:SetScript("OnClick", function(self)
         if onClick then onClick(self) end
@@ -118,7 +118,7 @@ local function GetMenuItem(menu, idx, height)
     local item = menu.items[idx]
     if not item then
         item = CreateFrame("Button", nil, menu)
-        local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local text = item:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
         text:SetPoint("LEFT", item, "LEFT", 8, 0)
         item.text = text
         item:RegisterForClicks("LeftButtonUp", "RightButtonUp")

@@ -12,6 +12,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 |------|--------------|
 | `Locales.lua` | All translations (`ns.Locales.enUS`, `deDE`, ...). esMX copies esES and overrides a few keys. |
 | `Core/Locales.lua` | Builds `ns.L`: English first, then the client's language on top. A missing key returns the key name. |
+| `Core/Theme.lua` | Themes (Classic, Modern Dark, Blizzard): the palette `ns.Theme.C`, `ns.ApplyDarkBackdrop` / `ns.SetPanelBorder` (themed panels), `ns.Paint` (themed text and textures), `Theme.PaintTab`, theme font objects, live switching. Loaded before Constants. See "Themes". |
 | `Core/Constants.lua` | Shared helpers and constants: client detection, secret-value helpers, name comparison, `LineMemo`, `CreateFade`, backdrops, `ForEachChatWindow` / `ForEachChatFrame`, chat position helpers, copy popup, `UTF8Lower`, `ns.Blizz`, `ns.SlashCmd`. |
 | `Core/Emojis.lua` | Emoji data, picker, `SplitProtected` (splits a message into plain text and links), emoji replacement filter. |
 | `Core/EditBox.lua` | Input bar style and position, emoji button. Runs once per edit box (`eb.gudaStyled`). |
@@ -37,7 +38,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 
 | Variable | Scope | Contents |
 |----------|-------|----------|
-| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `useGlobalBg`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`. On WoW: Forever also `charCopies` (see below). |
+| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`. On WoW: Forever also `charCopies` (see below). |
 | `GudaChatCharDB` | Character | `history` (one bucket per channel, keyed by channel label), `lootLog`, `addonLog` (ring buffers with a `head` field), `logSchema`, `savedAt`. |
 
 - Defaults and one-time migrations run in `GudaChat.lua` at `ADDON_LOADED`. Older versions kept history and logs in `GudaChatDB`; the first character that logs in takes them over.
@@ -97,6 +98,25 @@ With the Whispers tab on, `ApplyWhisperRouting` (UI/Whisper.lua):
 - removes the `WHISPER` and `BN_WHISPER` groups from General, so whispers show only in the Whispers tab.
 
 Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were lost, nothing could undo them and General would stop showing whispers. So `UndoWhisperRoutingForLogout` puts both back at every `PLAYER_LOGOUT`, and `ApplyWhisperRouting` sets them again at login. Closing the Whispers window turns the feature off.
+
+## Themes
+
+`Core/Theme.lua` holds three themes as plain data (colours, backdrop style, font file), so GudaBags and GudaDamage can reuse the format:
+
+| Theme | Look |
+|-------|------|
+| `classic` | GudaChat 1.x, unchanged: flat 1px frames, gold accent, tab text in each tab's chat colour. |
+| `modern` | Modern Dark: flat dark panels with rounded corners and a soft shadow (`Assets/Theme/rounded.png`, `rounded-border.png`, `shadow.png`, cut into nine slices), FiraSans labels (game font on zhCN, zhTW and koKR), the accent for state (focus, active tab underline, icons, scrollbar). |
+| `blizzard` | The game's own art by path, nothing shipped: tooltip background and edges for bars and menus, the dialog box for popups, gold `NORMAL_FONT_COLOR` text, a blue-white hover highlight, the red panel button left untinted. |
+
+- **Palette.** `ns.Theme.C` has one `{ r, g, b, a }` table per token (`panelBg`, `headerBg`, `iconActive`, `tabLabel`, `scrollThumb`, ...). A theme switch refills these tables in place, so code that keeps a reference always reads the current colour. Never write colour literals in UI code; add a token to all three themes instead (the tests check that every theme defines every token).
+- **Themed frames.** `ns.ApplyDarkBackdrop(frame, bgToken, borderToken, noShadow)` styles a BackdropTemplate frame and remembers it; `ns.SetPanelBorder` changes only the border (focus). `ns.Paint(region, token)` colours a FontString, EditBox, texture or backdrop and remembers the last token. Both registries have weak keys.
+- **Tabs.** `Theme.PaintTab(text, chatColour, state)` (active, inactive, hover, drag): Classic dims the chat colour, the other themes use the `tab*` tokens. Modern Dark adds an accent underline under the selected tab.
+- **Fonts.** UI text uses GudaChat's font objects (`GudaChatFontNormalSmall`, `GudaChatFontHighlightSmall`, `GudaChatFontHighlight`, `GudaChatFontDisableSmall`), copies of the game's. A theme with a `uiFont` swaps their font file; FontStrings follow live. The chat message font option is separate.
+- **Accent.** `GudaChatDB.accent` is `"class"` (default) or `{ r, g, b }`. Only Modern Dark uses it; Classic and Blizzard keep their gold.
+- **Live switching.** `ns.Theme.Set(name)` and `ns.Theme.SetAccent(value)` refill the palette, restyle every remembered panel and painted region, update the fonts and run the `Theme.OnChange` listeners (the tab strips rebuild, the chat background follows the theme). Nothing runs per frame.
+- **Defaults.** Fresh installs start with `modern`; profiles from 1.x (no `theme` field) get `classic`, so nothing changes for existing players.
+- **Chat background.** Each theme has a default (`Theme.chatBg`). It is used while `GudaChatDB.bgFromTheme` is set (fresh installs); the first time the player changes the opacity or colour, `ns.TakeOverChatBackground` copies the shown values into `globalBgColor` / `globalBgAlpha` and the player's own values win from then on. `ns.GetChatBackground` returns what is in use.
 
 ## Performance patterns
 

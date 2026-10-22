@@ -128,7 +128,7 @@ local function AttachEditBoxBehaviour(eb, index)
             if GudaChatDB and GudaChatDB.transparentInput then
                 self.gudaBg:SetAlpha(0)
             else
-                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_GOLDEN_A))
+                ns.SetPanelBorder(self.gudaBg, ns.Theme.C.accentBorder)
             end
         end
     end)
@@ -140,7 +140,7 @@ local function AttachEditBoxBehaviour(eb, index)
             if GudaChatDB and GudaChatDB.transparentInput then
                 self.gudaBg:SetAlpha(0)
             else
-                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
+                ns.SetPanelBorder(self.gudaBg, ns.Theme.C.panelBorder)
             end
         end
         local picker = _G["GudaChatEmojiPicker"]
@@ -182,7 +182,7 @@ local function StyleEditBox(chatFrame, index)
         local bg = CreateFrame("Frame", nil, eb, "BackdropTemplate")
         bg:SetAllPoints(eb)
         bg:SetFrameLevel(eb:GetFrameLevel() - 1)
-        ns.ApplyDarkBackdrop(bg, ns.COLOR_HEADER_BG, ns.COLOR_DARK_BORDER)
+        ns.ApplyDarkBackdrop(bg, ns.Theme.C.headerBg, ns.Theme.C.panelBorder)
         eb.gudaBg = bg
     end
 
@@ -192,7 +192,7 @@ local function StyleEditBox(chatFrame, index)
 
     local header = _G["ChatFrame" .. index .. "EditBoxHeader"]
     if header then
-        header:SetTextColor(0.6, 0.6, 0.6)
+        ns.Paint(header, ns.Theme.C.dimText)
         header:ClearAllPoints()
         header:SetPoint("LEFT", eb, "LEFT", 4, 0)
     end
@@ -219,7 +219,7 @@ function ns.ApplyTransparentInput()
                 eb.gudaBg:SetAlpha(0)
             else
                 eb.gudaBg:SetAlpha(1)
-                eb.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
+                ns.SetPanelBorder(eb.gudaBg, ns.Theme.C.panelBorder)
             end
         end
     end)

@@ -22,14 +22,15 @@ local OVERFLOW_ITEM_HEIGHT = 18
 local OVERFLOW_PADDING = 6
 local OVERFLOW_MIN_WIDTH = 60
 local OVERFLOW_HIDE_DELAY = 0.3
-local DRAG_INDICATOR_COLOR = { 0.8, 0.6, 0.0, 1 }
+local C = ns.Theme.C
+local UNDERLINE_HEIGHT = 1
 
 local measureFont
 
--- Width of a tab label in GameFontNormalSmall, measured with one shared FontString
+-- Width of a tab label in GudaChatFontNormalSmall, measured with one shared FontString
 local function MeasureTabText(text)
     if not measureFont then
-        measureFont = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        measureFont = UIParent:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
         measureFont:SetAlpha(0)
     end
     measureFont:SetText(text)
@@ -45,7 +46,7 @@ local function AcquireTabButton(pool, parent)
         return btn
     end
     btn = CreateFrame("Button", nil, parent)
-    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local text = btn:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
     text:SetPoint("LEFT", btn, "LEFT", 0, 0)
     btn.text = text
     local blinkAG = text:CreateAnimationGroup()
@@ -73,11 +74,28 @@ local function ReleaseTabButtons(pool, list)
     wipe(list)
 end
 
+-- The thin accent line under the selected tab, for themes that mark it (Modern Dark)
+local function GetUnderline(text)
+    local btn = text:GetParent()
+    if not btn.underline then
+        local line = btn:CreateTexture(nil, "OVERLAY")
+        line:SetTexture("Interface\\Buttons\\WHITE8x8")
+        line:SetHeight(UNDERLINE_HEIGHT)
+        line:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -2)
+        line:SetPoint("TOPRIGHT", text, "BOTTOMRIGHT", 0, -2)
+        btn.underline = line
+    end
+    return btn.underline
+end
+
 local function SetTabTextColor(text, col, active)
-    if active then
-        text:SetTextColor(col[1], col[2], col[3], 1)
-    else
-        text:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+    ns.Theme.PaintTab(text, col, active and "active" or "inactive")
+    local btn = text:GetParent()
+    if active and ns.Theme.HasTabUnderline() then
+        ns.Paint(GetUnderline(text), C.tabUnderline)
+        btn.underline:Show()
+    elseif btn.underline then
+        btn.underline:Hide()
     end
 end
 
@@ -157,7 +175,7 @@ function Strip:GetDragIndicator()
     if not self.dragIndicator then
         local indicator = self.config.parent:CreateTexture(nil, "OVERLAY")
         indicator:SetTexture("Interface\\Buttons\\WHITE8x8")
-        indicator:SetVertexColor(unpack(DRAG_INDICATOR_COLOR))
+        ns.Paint(indicator, C.dragIndicator)
         indicator:SetSize(2, 14)
         indicator:Hide()
         self.dragIndicator = indicator
@@ -259,7 +277,7 @@ function Strip:StartPendingDrag(btn, col)
                 state.dragging = true
                 state.sourceIdx = state.pendingIdx
                 state.sourceBtn = self
-                self.text:SetTextColor(col[1] * 0.3, col[2] * 0.3, col[3] * 0.3, 0.5)
+                ns.Theme.PaintTab(self.text, col, "drag")
             end
         end
         if state.dragging then
@@ -299,7 +317,7 @@ function Strip:CreateTabButton(def, tabIdx)
         end
     end)
     btn:SetScript("OnEnter", function(self)
-        self.text:SetTextColor(col[1], col[2], col[3], 1)
+        ns.Theme.PaintTab(self.text, col, "hover")
         ns.RevealHeader()
     end)
     btn:SetScript("OnLeave", function(self)
@@ -311,7 +329,7 @@ function Strip:CreateTabButton(def, tabIdx)
     if ns.IsTabBlinking(def.frameIndex) then
         btn.blinking = true
         btn.blinkAG:Play()
-        btn.text:SetTextColor(col[1], col[2], col[3], 1)
+        ns.Theme.PaintTab(btn.text, col, "active")
     end
     return btn
 end
@@ -323,14 +341,14 @@ function Strip:GetMoreButton()
         local icon = btn:CreateTexture(nil, "OVERLAY")
         icon:SetAllPoints()
         icon:SetTexture(ns.ASSET_PATH .. "more.png")
-        icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+        ns.Paint(icon, C.iconDim)
         btn.icon = icon
         btn:SetScript("OnEnter", function(self)
-            self.icon:SetVertexColor(1, 1, 1, 1)
+            ns.Paint(self.icon, C.iconHover)
             ns.RevealHeader()
         end)
         btn:SetScript("OnLeave", function(self)
-            self.icon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            ns.Paint(self.icon, C.iconDim)
         end)
         local strip = self
         btn:SetScript("OnClick", function(clicked)
@@ -374,7 +392,7 @@ function Strip:GetOverflowMenu()
         local menu = CreateFrame("Frame", self.config.overflowName, UIParent, "BackdropTemplate")
         menu:SetFrameStrata("TOOLTIP")
         menu:SetClampedToScreen(true)
-        ns.ApplyDarkBackdrop(menu, ns.COLOR_DARK_BG, ns.COLOR_DARK_BORDER)
+        ns.ApplyDarkBackdrop(menu, C.panelBg, C.panelBorder)
         menu:EnableMouse(true)
         if self.config.overflowAutoHide then
             self:AddOverflowAutoHide(menu)
@@ -402,7 +420,7 @@ function Strip:ToggleOverflow(moreBtn)
         item.text:SetText(def.name)
         SetTabTextColor(item.text, col, def.frameIndex == selectedIndex)
         item:SetScript("OnEnter", function(self)
-            self.text:SetTextColor(col[1], col[2], col[3], 1)
+            ns.Theme.PaintTab(self.text, col, "hover")
         end)
         item:SetScript("OnLeave", function(self)
             SetTabTextColor(self.text, col, def.frameIndex == ns.GetSelectedChatFrameIndex())
@@ -485,8 +503,6 @@ end
 ---------------------------------------------------------------------------
 
 local TAB_BAR_HEIGHT = 20
-local TAB_BAR_BG = { 0.05, 0.05, 0.05, 0.75 }
-local TAB_BAR_BORDER = { 0.25, 0.25, 0.25, 0.5 }
 local TAB_BAR_FIRST_GAP = 6
 local TAB_BAR_DEFAULT_WIDTH = 300
 local TAB_BAR_HIDE_DELAY = 0.3
@@ -576,7 +592,7 @@ function ns.CreateChatSubTabs(header)
     bar:SetPoint("BOTTOMRIGHT", header, "TOPRIGHT", 0, -1)
     bar:SetFrameStrata("MEDIUM")
     bar:SetFrameLevel(101)
-    ns.ApplyDarkBackdrop(bar, TAB_BAR_BG, TAB_BAR_BORDER)
+    ns.ApplyDarkBackdrop(bar, C.barBg, C.barBorder)
     bar:EnableMouse(true)
     bar:SetAlpha(0)
 

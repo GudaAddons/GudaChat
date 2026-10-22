@@ -222,9 +222,39 @@ local function WindowHasColor(i, color)
         and math.abs(b - color.b) < COLOR_TOLERANCE
 end
 
+local DEFAULT_BG_COLOR = { r = 0.08, g = 0.08, b = 0.08 }
+
+-- The chat background colour and opacity in use. While GudaChatDB.bgFromTheme is set
+-- (fresh installs, until the player picks a colour or opacity) the theme's default is
+-- used; otherwise the player's own globalBgColor / globalBgAlpha.
+local function GetChatBackground()
+    if GudaChatDB and GudaChatDB.bgFromTheme then
+        local bg = ns.Theme.chatBg
+        return bg, bg.a
+    end
+    return (GudaChatDB and GudaChatDB.globalBgColor) or DEFAULT_BG_COLOR, (GudaChatDB and GudaChatDB.globalBgAlpha) or 0
+end
+ns.GetChatBackground = GetChatBackground
+
+-- Makes the background the player's own from now on, starting from what is shown
+-- (called before the player changes the colour or opacity)
+function ns.TakeOverChatBackground()
+    if not GudaChatDB.bgFromTheme then return end
+    local color, alpha = GetChatBackground()
+    GudaChatDB.globalBgColor = { r = color.r, g = color.g, b = color.b }
+    GudaChatDB.globalBgAlpha = alpha
+    GudaChatDB.bgFromTheme = false
+end
+
+-- True when the one-background-for-all-windows option is on and it is visible
+function ns.WantsGlobalBackground()
+    if not (GudaChatDB and GudaChatDB.useGlobalBg) then return false end
+    local _, alpha = GetChatBackground()
+    return alpha > 0
+end
+
 local function ApplyGlobalBackground()
-    local alpha = GudaChatDB and GudaChatDB.globalBgAlpha or 0
-    local color = GudaChatDB and GudaChatDB.globalBgColor or { r = 0.08, g = 0.08, b = 0.08 }
+    local color, alpha = GetChatBackground()
     ns.ForEachChatWindow(function(cf, i)
         local bg = _G["ChatFrame" .. i .. "Background"]
         if not bg then return end

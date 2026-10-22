@@ -99,7 +99,7 @@ local function SetUpLateChatFrame(cf)
     if GudaChatDB.hideScrollbar and cf.gudaScrollbar then
         cf.gudaScrollbar:Hide()
     end
-    if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+    if ns.WantsGlobalBackground() then
         ns.ApplyGlobalBackground()
     end
 end
@@ -114,6 +114,17 @@ local function StripRealmFromTab(tab)
     end
 end
 
+-- After a theme or accent change: rebuild the tab strips in the new colours, and follow
+-- the theme's chat background while the player has not chosen their own
+ns.Theme.OnChange(function()
+    if ns.RequestTabRefresh and ns.chatHeader then
+        ns.RequestTabRefresh()
+    end
+    if GudaChatDB and GudaChatDB.bgFromTheme and GudaChatDB.useGlobalBg and ns.chatHeader then
+        ns.ApplyGlobalBackground()
+    end
+end)
+
 ---------------------------------------------------------------------------
 -- Initialization
 ---------------------------------------------------------------------------
@@ -124,6 +135,7 @@ loader:RegisterEvent("PLAYER_ENTERING_WORLD")
 loader:RegisterEvent("PLAYER_LOGOUT")
 loader:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
+        local isFreshInstall = GudaChatDB == nil
         GudaChatDB = GudaChatDB or {}
         if GudaChatDB.fading == nil then
             GudaChatDB.fading = false
@@ -265,6 +277,10 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.notifications.generalTab == nil then
             GudaChatDB.notifications.generalTab = true
         end
+        if GudaChatDB.bgFromTheme == nil then
+            GudaChatDB.bgFromTheme = isFreshInstall
+        end
+        ns.Theme.Init(isFreshInstall)
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_LOGOUT" then
@@ -277,11 +293,12 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        ns.Theme.Refresh()
         ns.ForEachChatWindow(function(cf, i)
             ns.StripChatChrome(i)
             cf.gudaSetUp = true
         end)
-        if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+        if ns.WantsGlobalBackground() then
             ns.ApplyGlobalBackground()
         end
 
@@ -472,7 +489,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                 ns.ReapplyChatFrame1Geometry()
                 -- Blizzard's dock update restores each window's own stored color, clobbering our
                 -- global background (same reason ApplyChatMargins is re-applied here). Re-apply it.
-                if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+                if ns.WantsGlobalBackground() then
                     ns.ApplyGlobalBackground()
                 end
                 KeepCombatLogShown()
@@ -482,7 +499,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         -- The initial ApplyGlobalBackground above runs before our FCF_DockUpdate hook is
         -- installed, so a dock update during init can recolor after us. Re-apply once more
         -- after init settles to lock in the saved color on load.
-        if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+        if ns.WantsGlobalBackground() then
             C_Timer.After(0.2, ns.ApplyGlobalBackground)
         end
 

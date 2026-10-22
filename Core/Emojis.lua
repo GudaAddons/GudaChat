@@ -74,7 +74,7 @@ local function CreateEmojiPicker()
     f:SetFrameLevel(200)
     f:SetClampedToScreen(true)
 
-    ns.ApplyDarkBackdrop(f, ns.COLOR_DARK_BG, { 0.3, 0.3, 0.3, 0.8 })
+    ns.ApplyDarkBackdrop(f, ns.Theme.C.pickerBg, ns.Theme.C.pickerBorder)
 
     for i, entry in ipairs(pickerItems) do
         local col = (i - 1) % COLS
@@ -92,7 +92,7 @@ local function CreateEmojiPicker()
         local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
         highlight:SetAllPoints()
         highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
-        highlight:SetVertexColor(1, 1, 1, 0.15)
+        ns.Paint(highlight, ns.Theme.C.pickerHover)
 
         btn:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")

@@ -13,6 +13,7 @@
 Locales.lua
 Core\Locales.lua
 
+Core\Theme.lua
 Core\Constants.lua
 Core\Emojis.lua
 Core\EditBox.lua

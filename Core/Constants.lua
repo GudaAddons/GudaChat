@@ -177,19 +177,8 @@ ns.PerformEmote = DoEmote or (C_ChatInfo and C_ChatInfo.PerformEmote)
 local ASSET_PATH = "Interface\\AddOns\\GudaChat\\Assets\\"
 ns.ASSET_PATH = ASSET_PATH
 
-local COLOR_DARK_BG       = { 0.08, 0.08, 0.08, 0.95 }
-local COLOR_DARK_BORDER   = { 0.3,  0.3,  0.3,  0.6  }
-local COLOR_GOLDEN_A      = { 0.8,  0.6,  0.0,  0.8  }
-local COLOR_COPY_BG       = { 0.1,  0.1,  0.1,  0.95 }
-local COLOR_HEADER_BG     = { 0.05, 0.05, 0.05, 0.85 }
-local COLOR_HEADER_BORDER = { 0.25, 0.25, 0.25, 0.5  }
-
-ns.COLOR_DARK_BG       = COLOR_DARK_BG
-ns.COLOR_DARK_BORDER   = COLOR_DARK_BORDER
-ns.COLOR_GOLDEN_A      = COLOR_GOLDEN_A
-ns.COLOR_COPY_BG       = COLOR_COPY_BG
-ns.COLOR_HEADER_BG     = COLOR_HEADER_BG
-ns.COLOR_HEADER_BORDER = COLOR_HEADER_BORDER
+-- UI colours live in the theme palette (Core/Theme.lua, loaded first)
+local C = ns.Theme.C
 
 local BACKDROP_DARK = {
     bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -208,13 +197,6 @@ ns.BACKDROP_FLAT = BACKDROP_FLAT
 ---------------------------------------------------------------------------
 -- Shared helpers
 ---------------------------------------------------------------------------
-
-local function ApplyDarkBackdrop(frame, bgColor, borderColor)
-    frame:SetBackdrop(BACKDROP_DARK)
-    frame:SetBackdropColor(unpack(bgColor or COLOR_DARK_BG))
-    frame:SetBackdropBorderColor(unpack(borderColor or COLOR_DARK_BORDER))
-end
-ns.ApplyDarkBackdrop = ApplyDarkBackdrop
 
 local function ForEachChatWindow(fn)
     for i = 1, NUM_CHAT_WINDOWS do
@@ -342,12 +324,12 @@ local function CreateCloseButton(parent)
     btn:SetSize(12, 12)
     btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, -4)
     btn:SetNormalTexture(ASSET_PATH .. "close.png")
-    btn:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
+    ns.Paint(btn:GetNormalTexture(), C.iconDim)
     btn:SetScript("OnEnter", function(self)
-        self:GetNormalTexture():SetVertexColor(1, 1, 1)
+        ns.Paint(self:GetNormalTexture(), C.iconHover)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:GetNormalTexture():SetVertexColor(0.6, 0.6, 0.6)
+        ns.Paint(self:GetNormalTexture(), C.iconDim)
     end)
     btn:SetScript("OnClick", function() parent:Hide() end)
     return btn
@@ -378,7 +360,7 @@ local function CreateCopyPopupFrame(globalName, width, height, multiLine)
     f:SetSize(width, height)
     f:SetPoint("CENTER")
     f:SetFrameStrata("TOOLTIP")
-    ApplyDarkBackdrop(f, COLOR_COPY_BG, COLOR_GOLDEN_A)
+    ns.ApplyDarkBackdrop(f, C.copyBg, C.accentBorder)
     f:EnableMouse(true)
     f:SetMovable(true)
     f:RegisterForDrag("LeftButton")
@@ -391,10 +373,10 @@ local function CreateCopyPopupFrame(globalName, width, height, multiLine)
 
     CreateCloseButton(f)
 
-    local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local label = f:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
     label:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -6)
     label:SetText(multiLine and ns.L["COPY_HINT"] or ns.L["COPY_HINT_SHORT"])
-    label:SetTextColor(0.6, 0.6, 0.6)
+    ns.Paint(label, C.dimText)
 
     if multiLine then
         local scrollFrame = CreateFrame("ScrollFrame", globalName .. "Scroll", f, "UIPanelScrollFrameTemplate")
@@ -402,10 +384,10 @@ local function CreateCopyPopupFrame(globalName, width, height, multiLine)
         scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 8)
 
         local eb = CreateFrame("EditBox", nil, scrollFrame)
-        eb:SetFontObject(GameFontHighlight)
+        eb:SetFontObject(GudaChatFontHighlight)
         eb:SetMultiLine(true)
         eb:SetAutoFocus(false)
-        eb:SetTextColor(0.9, 0.9, 0.9)
+        ns.Paint(eb, C.editText)
         eb:SetMaxLetters(0)
         eb:SetScript("OnEscapePressed", function() f:Hide() end)
         eb:SetScript("OnEnter", function(self)

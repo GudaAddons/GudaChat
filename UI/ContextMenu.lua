@@ -338,7 +338,7 @@ local function BuildBackgroundItem()
     swatchBorder:SetSize(16, 16)
     swatchBorder:SetPoint("CENTER", swatch, "CENTER", 0, 0)
     swatchBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
-    swatchBorder:SetVertexColor(0.5, 0.5, 0.5, 0.8)
+    ns.Paint(swatchBorder, ns.Theme.C.swatchBorder)
     swatchBorder:SetDrawLayer("ARTWORK", -1)
 
     bgBtn:SetScript("OnEnter", function()

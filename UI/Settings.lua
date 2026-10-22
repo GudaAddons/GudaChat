@@ -25,7 +25,7 @@ local function CreateCheckbox(parent, label, checked, onClick)
         onClick(self:GetChecked())
     end)
 
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local text = container:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlight")
     text:SetPoint("LEFT", cb, "RIGHT", 4, 0)
     text:SetText(label)
 
@@ -41,17 +41,18 @@ local function CreateSeparator(parent, label)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(20)
 
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local text = container:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
     text:SetPoint("LEFT", container, "LEFT", 0, 0)
     text:SetJustifyH("LEFT")
-    text:SetTextColor(0.9, 0.75, 0.3)
+    ns.Paint(text, ns.Theme.C.separatorText)
     text:SetText(label)
 
     local line = container:CreateTexture(nil, "ARTWORK")
     line:SetHeight(1)
     line:SetPoint("LEFT", text, "RIGHT", 6, 0)
     line:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-    line:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+    line:SetTexture("Interface\\Buttons\\WHITE8x8")
+    ns.Paint(line, ns.Theme.C.separatorLine)
 
     return container
 end
@@ -60,7 +61,7 @@ local function CreateSlider(parent, label, minVal, maxVal, step, currentVal, onC
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(36)
 
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local text = container:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlight")
     text:SetPoint("LEFT", container, "LEFT", 0, 0)
     text:SetText(label)
 
@@ -99,7 +100,7 @@ local function CreateSlider(parent, label, minVal, maxVal, step, currentVal, onC
         slider.High:SetText("")
         slider:SetValue(currentVal)
 
-        valueText = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        valueText = container:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlight")
         valueText:SetPoint("LEFT", slider, "RIGHT", 5, 0)
         valueText:SetWidth(40)
         valueText:SetJustifyH("LEFT")
@@ -304,7 +305,7 @@ local function CreateDropdown(parent, label, options, currentValue, onChange)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(30)
 
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local text = container:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlight")
     text:SetPoint("LEFT", container, "LEFT", 0, 0)
     text:SetText(label)
     container.label = text
@@ -356,13 +357,65 @@ local function AddNote(container, note)
     local label = container.label
     label:ClearAllPoints()
     label:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -4)
-    local noteText = container:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    local noteText = container:CreateFontString(nil, "OVERLAY", "GudaChatFontDisableSmall")
     noteText:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
     noteText:SetPoint("RIGHT", container, "RIGHT", -(DROPDOWN_WIDTH + 8), 0)
     noteText:SetJustifyH("LEFT")
     noteText:SetWordWrap(false)
     noteText:SetText(note)
     container:SetHeight(container:GetHeight() + NOTE_HEIGHT)
+    return container
+end
+
+-- "Accent colour" row: a swatch showing the current accent that opens the colour picker.
+-- Picking a colour turns "Use my class colour" off; Cancel restores the previous accent.
+local ACCENT_SWATCH_SIZE = 20
+
+local function CreateAccentSwatch(parent)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetHeight(30)
+
+    local text = container:CreateFontString(nil, "OVERLAY", "GudaChatFontHighlight")
+    text:SetPoint("LEFT", container, "LEFT", 0, 0)
+    text:SetText(L["OPT_ACCENT_COLOR"])
+    container.label = text
+
+    local swatch = CreateFrame("Button", nil, container)
+    swatch:SetSize(ACCENT_SWATCH_SIZE, ACCENT_SWATCH_SIZE)
+    swatch:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+    local swatchTex = swatch:CreateTexture(nil, "ARTWORK")
+    swatchTex:SetAllPoints()
+    swatchTex:SetTexture("Interface\\Buttons\\WHITE8x8")
+    local swatchBorder = swatch:CreateTexture(nil, "ARTWORK", nil, -1)
+    swatchBorder:SetSize(ACCENT_SWATCH_SIZE + 2, ACCENT_SWATCH_SIZE + 2)
+    swatchBorder:SetPoint("CENTER")
+    swatchBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
+    ns.Paint(swatchBorder, ns.Theme.C.swatchBorder)
+
+    function container.Update()
+        swatchTex:SetVertexColor(ns.Theme.ResolveAccent(GudaChatDB.accent))
+    end
+    container.Update()
+
+    swatch:SetScript("OnClick", function()
+        local previous = GudaChatDB.accent
+        local r, g, b = ns.Theme.ResolveAccent(previous)
+        ns.ShowColorPicker({
+            r = r, g = g, b = b,
+            hasOpacity = false,
+            swatchFunc = function()
+                local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                ns.Theme.SetAccent({ r = nr, g = ng, b = nb })
+                container.Update()
+                if container.onPicked then container.onPicked() end
+            end,
+            cancelFunc = function()
+                ns.Theme.SetAccent(previous)
+                container.Update()
+                if container.onPicked then container.onPicked() end
+            end,
+        })
+    end)
     return container
 end
 
@@ -489,6 +542,33 @@ local function CreateSettingsFrame()
     do
         local Add, AddPair = BuildPanel(tabPanels[1])
 
+        Add(CreateSeparator(tabPanels[1], L["SEC_APPEARANCE"]))
+
+        local themeOptions = {
+            { label = L["THEME_CLASSIC"], value = "classic" },
+            { label = L["THEME_MODERN"], value = "modern" },
+            { label = L["THEME_BLIZZARD"], value = "blizzard" },
+        }
+        Add(CreateDropdown(tabPanels[1], L["OPT_THEME"], themeOptions, ns.Theme.Current(), function(value)
+            ns.Theme.Set(value)
+        end))
+
+        local accentSwatch = CreateAccentSwatch(tabPanels[1])
+        Add(AddNote(accentSwatch, L["NOTE_ACCENT_MODERN"]))
+        local classAccent = CreateCheckbox(tabPanels[1], L["OPT_ACCENT_CLASS"], GudaChatDB.accent == "class", function(checked)
+            if checked then
+                ns.Theme.SetAccent("class")
+            else
+                local r, g, b = ns.Theme.ResolveAccent(GudaChatDB.accent)
+                ns.Theme.SetAccent({ r = r, g = g, b = b })
+            end
+            accentSwatch.Update()
+        end)
+        accentSwatch.onPicked = function()
+            classAccent.checkbox:SetChecked(GudaChatDB.accent == "class")
+        end
+        Add(classAccent)
+
         Add(CreateSeparator(tabPanels[1], L["SEC_CHAT_WINDOW"]))
 
         AddPair(
@@ -595,8 +675,10 @@ local function CreateSettingsFrame()
             local bgRow = CreateFrame("Frame", nil, tabPanels[1])
             bgRow:SetHeight(36)
 
-            local bgAlphaPercent = math.floor((GudaChatDB.globalBgAlpha or 0) * 100)
+            local shownBgColor, shownBgAlpha = ns.GetChatBackground()
+            local bgAlphaPercent = math.floor(shownBgAlpha * 100)
             local bgSlider = CreateSlider(bgRow, ns.Blizz(OPACITY, "Opacity"), 0, 100, 5, bgAlphaPercent, function(value)
+                ns.TakeOverChatBackground()
                 GudaChatDB.globalBgAlpha = value / 100
                 if GudaChatDB.useGlobalBg then
                     ns.ApplyGlobalBackground()
@@ -607,7 +689,7 @@ local function CreateSettingsFrame()
             bgSlider:SetPoint("TOPLEFT", bgRow, "TOPLEFT", 0, 0)
             bgSlider:SetPoint("RIGHT", bgRow, "RIGHT", -34, 0)
 
-            local bgColor = GudaChatDB.globalBgColor or { r = 0.08, g = 0.08, b = 0.08 }
+            local bgColor = shownBgColor
             local swatch = CreateFrame("Button", nil, bgRow)
             swatch:SetSize(20, 20)
             swatch:SetPoint("RIGHT", bgRow, "RIGHT", 0, 0)
@@ -615,16 +697,17 @@ local function CreateSettingsFrame()
             local swatchTex = swatch:CreateTexture(nil, "ARTWORK")
             swatchTex:SetAllPoints()
             swatchTex:SetTexture("Interface\\Buttons\\WHITE8x8")
-            swatchTex:SetVertexColor(bgColor.r, bgColor.g, bgColor.b, math.max(GudaChatDB.globalBgAlpha or 0, 0.3))
+            swatchTex:SetVertexColor(bgColor.r, bgColor.g, bgColor.b, math.max(shownBgAlpha, 0.3))
 
             local swatchBorder = swatch:CreateTexture(nil, "OVERLAY")
             swatchBorder:SetSize(22, 22)
             swatchBorder:SetPoint("CENTER", swatch, "CENTER")
             swatchBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
-            swatchBorder:SetVertexColor(0.5, 0.5, 0.5, 0.8)
+            ns.Paint(swatchBorder, ns.Theme.C.swatchBorder)
             swatchBorder:SetDrawLayer("ARTWORK", -1)
 
             swatch:SetScript("OnClick", function()
+                ns.TakeOverChatBackground()
                 local info = {}
                 info.r = GudaChatDB.globalBgColor.r
                 info.g = GudaChatDB.globalBgColor.g

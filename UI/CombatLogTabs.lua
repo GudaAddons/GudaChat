@@ -10,8 +10,7 @@ local addonName, ns = ...
 ---------------------------------------------------------------------------
 
 local SUBTAB_BAR_HEIGHT = 20
-local SUBTAB_BAR_BG = { 0.05, 0.05, 0.05, 0.75 }
-local SUBTAB_BAR_BORDER = { 0.25, 0.25, 0.25, 0.5 }
+local C = ns.Theme.C
 local FILTER_RETRY_DELAY = 1
 
 local combatLogFilter = "mine"
@@ -21,9 +20,9 @@ local combatSubTabList = {}
 local function UpdateCombatSubTabColors()
     for _, t in ipairs(combatSubTabList) do
         if t.key == combatLogFilter then
-            t.btn.text:SetTextColor(1, 1, 1, 1)
+            ns.Paint(t.btn.text, C.subtabActive)
         else
-            t.btn.text:SetTextColor(0.5, 0.5, 0.5, 0.8)
+            ns.Paint(t.btn.text, C.subtabInactive)
         end
     end
 end
@@ -124,7 +123,7 @@ function ns.CreateCombatSubTabs(header)
     bar:SetFrameStrata("MEDIUM")
     bar:SetFrameLevel(101)
 
-    ns.ApplyDarkBackdrop(bar, SUBTAB_BAR_BG, SUBTAB_BAR_BORDER)
+    ns.ApplyDarkBackdrop(bar, C.barBg, C.barBorder)
     bar:EnableMouse(true)
     bar:SetAlpha(0)
     bar:Hide()
@@ -139,7 +138,7 @@ function ns.CreateCombatSubTabs(header)
         local btn = CreateFrame("Button", nil, bar)
         btn:SetHeight(16)
 
-        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local text = btn:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
         text:SetPoint("LEFT", btn, "LEFT", 0, 0)
         text:SetText(def.label)
         btn.text = text
@@ -152,7 +151,7 @@ function ns.CreateCombatSubTabs(header)
             SwitchCombatLogFilter(def.key)
         end)
         btn:SetScript("OnEnter", function(self)
-            self.text:SetTextColor(0.9, 0.9, 0.9, 1)
+            ns.Paint(self.text, C.subtabHover)
             ns.RevealHeader()
         end)
         btn:SetScript("OnLeave", UpdateCombatSubTabColors)

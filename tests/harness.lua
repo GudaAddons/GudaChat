@@ -14,6 +14,7 @@ H.SECRET = "<secret value>"
 H.FILES = {
     "Locales.lua",
     "Core/Locales.lua",
+    "Core/Theme.lua",
     "Core/Constants.lua",
     "Core/Emojis.lua",
     "Core/Filters.lua",

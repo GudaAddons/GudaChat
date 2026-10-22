@@ -17,10 +17,7 @@ local TAB_LABEL_MIN_WIDTH = 40
 local DROPDOWN_ITEM_HEIGHT = 20
 local DROPDOWN_MIN_WIDTH = 60
 
-local ICON_ACTIVE = { 1, 1, 1, 1 }
-local ICON_INACTIVE = { 0.7, 0.7, 0.7, 0.9 }
-local TAB_LABEL_COLOR = { 0.6, 0.45, 0.0, 0.8 }
-local TAB_LABEL_HOVER_COLOR = { 1, 0.8, 0, 1 }
+local C = ns.Theme.C
 
 -- True when the mouse is over the scrollbar of a visible chat frame
 local function IsOverScrollbar()
@@ -198,16 +195,16 @@ local function RefreshTabDropdown(dropdown, onPicked)
 
             local col = ns.GetTabColor(name, i)
             if selectedIdx == i then
-                mbText:SetTextColor(col[1], col[2], col[3], 1)
+                ns.Theme.PaintTab(mbText, col, "active")
             else
-                mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                ns.Theme.PaintTab(mbText, col, "inactive")
             end
             mb:SetScript("OnEnter", function()
-                mbText:SetTextColor(col[1], col[2], col[3], 1)
+                ns.Theme.PaintTab(mbText, col, "hover")
             end)
             mb:SetScript("OnLeave", function()
                 if ns.GetSelectedChatFrameIndex() ~= i then
-                    mbText:SetTextColor(col[1] * 0.5, col[2] * 0.5, col[3] * 0.5, 0.8)
+                    ns.Theme.PaintTab(mbText, col, "inactive")
                 end
             end)
             mb:SetScript("OnClick", function()
@@ -274,9 +271,9 @@ local function CreateHeaderControls(header)
     ns.historyBtn = historyBtn
     controls.historyBtn = historyBtn
 
-    local tabLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local tabLabel = header:CreateFontString(nil, "OVERLAY", "GudaChatFontNormalSmall")
     tabLabel:SetPoint("CENTER", header, "CENTER", 0, 0)
-    tabLabel:SetTextColor(unpack(TAB_LABEL_COLOR))
+    ns.Paint(tabLabel, C.tabLabel)
     tabLabel:SetText(ns.GetChatTabName(1))
     controls.tabLabel = tabLabel
 
@@ -308,7 +305,7 @@ local function CreateHeaderControls(header)
         end
     end)
     tabLabelBtn:SetScript("OnEnter", function(self)
-        tabLabel:SetTextColor(unpack(TAB_LABEL_HOVER_COLOR))
+        ns.Paint(tabLabel, C.tabLabelHover)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText(L["TIP_TAB_SWITCH"], 0.7, 0.7, 0.7)
         ns.SetTooltipFontSize(12)
@@ -316,7 +313,7 @@ local function CreateHeaderControls(header)
         ns.RevealHeader()
     end)
     tabLabelBtn:SetScript("OnLeave", function()
-        tabLabel:SetTextColor(unpack(TAB_LABEL_COLOR))
+        ns.Paint(tabLabel, C.tabLabel)
         GameTooltip:Hide()
     end)
     controls.tabLabelBtn = tabLabelBtn
@@ -357,15 +354,15 @@ local function AddIconHighlights(controls)
     local logoBtn, combatBtn = controls.logoBtn, controls.combatBtn
 
     function controls.UpdateIconHighlights(cf)
-        logoBtn.icon:SetVertexColor(unpack(cf == ChatFrame1 and ICON_ACTIVE or ICON_INACTIVE))
-        combatBtn.icon:SetVertexColor(unpack(cf == ChatFrame2 and ICON_ACTIVE or ICON_INACTIVE))
+        ns.Paint(logoBtn.icon, cf == ChatFrame1 and C.iconActive or C.iconInactive)
+        ns.Paint(combatBtn.icon, cf == ChatFrame2 and C.iconActive or C.iconInactive)
     end
 
     logoBtn:HookScript("OnLeave", function()
-        if ns.GetSelectedChatFrame() == ChatFrame1 then logoBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+        if ns.GetSelectedChatFrame() == ChatFrame1 then ns.Paint(logoBtn.icon, C.iconActive) end
     end)
     combatBtn:HookScript("OnLeave", function()
-        if ns.GetSelectedChatFrame() == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
+        if ns.GetSelectedChatFrame() == ChatFrame2 then ns.Paint(combatBtn.icon, C.iconActive) end
     end)
 end
 
@@ -469,7 +466,7 @@ local function CreateChatHeader(parentFrame)
     header:SetFrameStrata("MEDIUM")
     header:SetFrameLevel(100)
     header:SetAlpha(0)
-    ns.ApplyDarkBackdrop(header, ns.COLOR_HEADER_BG, ns.COLOR_HEADER_BORDER)
+    ns.ApplyDarkBackdrop(header, C.headerBg, C.headerBorder)
     header:EnableMouse(true)
 
     AddHeaderHoverFade(header, parentFrame)

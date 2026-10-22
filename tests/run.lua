@@ -47,6 +47,7 @@ local SUITES = {
     "test_filters",
     "test_emojis",
     "test_logs",
+    "test_theme",
 }
 
 for _, suite in ipairs(SUITES) do
