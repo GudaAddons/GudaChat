@@ -160,11 +160,31 @@ local function SaveIconPosition()
     end
 end
 
--- Back to the default spot above the right side of the chat window
+-- The quick reply window remembers where the player dragged it (settings.reply). Until it
+-- has been dragged it opens next to the icon or at the cursor, as before.
+local function RestoreReplyPosition(frame)
+    local saved = Settings() and Settings().reply
+    if not saved or not saved.point then return false end
+    frame:ClearAllPoints()
+    frame:SetPoint(saved.point, UIParent, saved.relPoint or saved.point, saved.x or 0, saved.y or 0)
+    return true
+end
+
+local function SaveReplyPosition(frame)
+    local settings = Settings()
+    local point, _, relPoint, x, y = frame:GetPoint(1)
+    if settings and point then
+        settings.reply = { point = point, relPoint = relPoint, x = x, y = y }
+    end
+end
+
+-- Back to the default spots: the icon above the right side of the chat window, the quick
+-- reply window next to the icon or at the cursor
 function ns.ResetWhisperIconPosition()
     local settings = Settings()
     if not settings then return end
     settings.point, settings.relPoint, settings.x, settings.y = nil, nil, nil, nil
+    settings.reply = nil
     if icon then RestoreIconPosition() end
 end
 
@@ -239,6 +259,14 @@ local function CreateReply()
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
     f:EnableMouse(true)
+    f:SetMovable(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        self:SetUserPlaced(false)
+        SaveReplyPosition(self)
+    end)
     ns.ApplyDarkBackdrop(f)
     tinsert(UISpecialFrames, "GudaChatWhisperReply")
 
@@ -302,19 +330,22 @@ local function CreateReply()
     return f
 end
 
--- Opens the reply panel for one person, next to the icon (where = "icon") or at the
--- cursor (where = "cursor"), and puts the cursor in its reply box. Only called from a
--- click or the ring key, so the panel never takes the keyboard by itself.
+-- Opens the reply panel for one person and puts the cursor in its reply box. It opens where
+-- the player last dragged it; before that, next to the icon (where = "icon") or at the
+-- cursor (where = "cursor"). Only called from a click or the ring key, so the panel never
+-- takes the keyboard by itself.
 local function OpenReply(key, where)
     if not model:Get(key) then return end
     if list then list:Hide() end
     reply.key = key
     model:MarkRead(key)
     FillReply()
-    if where == "cursor" then
-        AnchorAtCursor(reply)
-    else
-        AnchorBesideIcon(reply)
+    if not RestoreReplyPosition(reply) then
+        if where == "cursor" then
+            AnchorAtCursor(reply)
+        else
+            AnchorBesideIcon(reply)
+        end
     end
     reply:Show()
     reply.box:SetFocus()
