@@ -97,7 +97,7 @@ local function GetChatTabName(index)
         local name = tab.Text and tab.Text:GetText() or tab:GetText()
         if name and name ~= "" then return name end
     end
-    return "Chat " .. index
+    return string.format(L["CHAT_WINDOW_NUMBER"], index)
 end
 
 local function SetTooltipFontSize(size)
@@ -257,7 +257,7 @@ local function CreateFontSubMenu()
 
     local yOff = -4
     for _, size in ipairs(FONT_SIZES) do
-        local btn = CreateContextMenuItem(f, size .. " pt", nil, false, false, true)
+        local btn = CreateContextMenuItem(f, string.format(L["FONT_SIZE_POINTS"], size), nil, false, false, true)
         btn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, yOff)
         btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, yOff)
 
@@ -713,17 +713,11 @@ local function SwitchCombatLogFilter(key)
     end
 
     -- 2) Search by hasQuickButton text (retail uses this)
-    if not idx then
+    if not idx and targetName then
         for i, filter in ipairs(filters) do
-            if filter.hasQuickButton then
-                local qbName = filter.quickButtonName or filter.name or ""
-                if key == "mine" and (qbName == "Self" or qbName:find("My Actions") or qbName:find("Self")) then
-                    idx = i
-                    break
-                elseif key == "tome" and (qbName == "Me" or qbName:find("What [Hh]appened") or qbName:find("Me")) then
-                    idx = i
-                    break
-                end
+            if filter.hasQuickButton and filter.quickButtonName == targetName then
+                idx = i
+                break
             end
         end
     end
@@ -1298,7 +1292,7 @@ local function RefreshChatSubTabs(header)
             if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                 local idx = cf:GetID()
                 local tab = _G[frameName .. "Tab"]
-                local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ("Chat " .. idx)
+                local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or string.format(L["CHAT_WINDOW_NUMBER"], idx)
                 local whisperInfo = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and ChatTypeInfo["WHISPER"]
                 local col = whisperInfo and { whisperInfo.r, whisperInfo.g, whisperInfo.b } or GetTabColor(name, idx)
                 tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
@@ -2614,7 +2608,7 @@ local function CreateChatHeader(parentFrame)
                 if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                     local idx = cf:GetID()
                     local tab = _G[frameName .. "Tab"]
-                    local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or ("Chat " .. idx)
+                    local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or string.format(L["CHAT_WINDOW_NUMBER"], idx)
                     local whisperInfo = (cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER") and ChatTypeInfo["WHISPER"]
                     local col = whisperInfo and { whisperInfo.r, whisperInfo.g, whisperInfo.b } or GetTabColor(name, idx)
                     tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })

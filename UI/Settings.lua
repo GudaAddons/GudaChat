@@ -307,6 +307,7 @@ local function CreateDropdown(parent, label, options, currentValue, onChange)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("LEFT", container, "LEFT", 0, 0)
     text:SetText(label)
+    container.label = text
 
     if DoesTemplateExist and DoesTemplateExist("WowStyle1DropdownTemplate") and MenuUtil then
         container.dropdown = CreateModernDropdown(container, options, currentValue, onChange)
@@ -344,6 +345,24 @@ local function CreateDropdown(parent, label, options, currentValue, onChange)
     end
 
     container.dropdown = dd
+    return container
+end
+
+-- A small grey hint under a dropdown's label, e.g. that a setting applies after /reload.
+-- The label moves up and the row grows by NOTE_HEIGHT so the next control is not covered.
+local NOTE_HEIGHT = 12
+
+local function AddNote(container, note)
+    local label = container.label
+    label:ClearAllPoints()
+    label:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -4)
+    local noteText = container:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    noteText:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+    noteText:SetPoint("RIGHT", container, "RIGHT", -(DROPDOWN_WIDTH + 8), 0)
+    noteText:SetJustifyH("LEFT")
+    noteText:SetWordWrap(false)
+    noteText:SetText(note)
+    container:SetHeight(container:GetHeight() + NOTE_HEIGHT)
     return container
 end
 
@@ -527,9 +546,9 @@ local function CreateSettingsFrame()
         end))
 
         local currentTimestamp = GetCVar("showTimestamps") or "none"
-        Add(CreateDropdown(tabPanels[1], L["OPT_TIMESTAMPS"], TIMESTAMP_OPTIONS, currentTimestamp, function(value)
+        Add(AddNote(CreateDropdown(tabPanels[1], L["OPT_TIMESTAMPS"], TIMESTAMP_OPTIONS, currentTimestamp, function(value)
             SetCVar("showTimestamps", value)
-        end))
+        end), L["NOTE_APPLIES_AFTER_RELOAD"]))
 
         Add(CreateSeparator(tabPanels[1], L["SEC_INPUT_BAR"]))
 

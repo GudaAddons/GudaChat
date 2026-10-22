@@ -130,6 +130,20 @@ L["LOADED"] = "loaded — type |cffffd200/gc|r for settings"
 L["CMD_HEADER"] = "commands:"
 L["CMD_OPEN_SETTINGS"] = "open settings"
 
+L["CHAT_WINDOW_NUMBER"] = "Chat %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Applies after /reload"
+L["HISTORY_SHORT_SAY"] = "S"
+L["HISTORY_SHORT_YELL"] = "Y"
+L["HISTORY_SHORT_GUILD"] = "G"
+L["HISTORY_SHORT_OFFICER"] = "O"
+L["HISTORY_SHORT_WHISPER"] = "W"
+L["HISTORY_SHORT_PARTY"] = "P"
+L["HISTORY_SHORT_RAID"] = "R"
+L["HISTORY_SHORT_INSTANCE"] = "I"
+L["HISTORY_SHORT_LOOT"] = "L"
+L["HISTORY_SHORT_LOG"] = "D"
+
 ---------------------------------------------------------------------------
 -- Deutsch
 ---------------------------------------------------------------------------
@@ -237,6 +251,20 @@ L["EMOTE_APPLAUD"] = "Applaudieren"
 L["LOADED"] = "geladen — |cffffd200/gc|r für Einstellungen"
 L["CMD_HEADER"] = "Befehle:"
 L["CMD_OPEN_SETTINGS"] = "Einstellungen öffnen"
+
+L["CHAT_WINDOW_NUMBER"] = "Chat %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Gilt nach /reload"
+L["HISTORY_SHORT_SAY"] = "S"
+L["HISTORY_SHORT_YELL"] = "Sch"
+L["HISTORY_SHORT_GUILD"] = "G"
+L["HISTORY_SHORT_OFFICER"] = "O"
+L["HISTORY_SHORT_WHISPER"] = "F"
+L["HISTORY_SHORT_PARTY"] = "Gr"
+L["HISTORY_SHORT_RAID"] = "SZ"
+L["HISTORY_SHORT_INSTANCE"] = "I"
+L["HISTORY_SHORT_LOOT"] = "B"
+L["HISTORY_SHORT_LOG"] = "P"
 
 ---------------------------------------------------------------------------
 -- Français
@@ -346,6 +374,20 @@ L["LOADED"] = "chargé — tapez |cffffd200/gc|r pour les options"
 L["CMD_HEADER"] = "commandes :"
 L["CMD_OPEN_SETTINGS"] = "ouvrir les options"
 
+L["CHAT_WINDOW_NUMBER"] = "Discussion %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Appliqué après /reload"
+L["HISTORY_SHORT_SAY"] = "D"
+L["HISTORY_SHORT_YELL"] = "C"
+L["HISTORY_SHORT_GUILD"] = "G"
+L["HISTORY_SHORT_OFFICER"] = "O"
+L["HISTORY_SHORT_WHISPER"] = "Ch"
+L["HISTORY_SHORT_PARTY"] = "Gr"
+L["HISTORY_SHORT_RAID"] = "R"
+L["HISTORY_SHORT_INSTANCE"] = "I"
+L["HISTORY_SHORT_LOOT"] = "B"
+L["HISTORY_SHORT_LOG"] = "J"
+
 ---------------------------------------------------------------------------
 -- Русский
 ---------------------------------------------------------------------------
@@ -454,6 +496,20 @@ L["LOADED"] = "загружен — введите |cffffd200/gc|r для нас
 L["CMD_HEADER"] = "команды:"
 L["CMD_OPEN_SETTINGS"] = "открыть настройки"
 
+L["CHAT_WINDOW_NUMBER"] = "Чат %d"
+L["FONT_SIZE_POINTS"] = "%d пт"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Работает после /reload"
+L["HISTORY_SHORT_SAY"] = "С"
+L["HISTORY_SHORT_YELL"] = "К"
+L["HISTORY_SHORT_GUILD"] = "Г"
+L["HISTORY_SHORT_OFFICER"] = "О"
+L["HISTORY_SHORT_WHISPER"] = "Ш"
+L["HISTORY_SHORT_PARTY"] = "Гр"
+L["HISTORY_SHORT_RAID"] = "Р"
+L["HISTORY_SHORT_INSTANCE"] = "П"
+L["HISTORY_SHORT_LOOT"] = "Д"
+L["HISTORY_SHORT_LOG"] = "Ж"
+
 ---------------------------------------------------------------------------
 -- Español (EU)
 ---------------------------------------------------------------------------
@@ -561,6 +617,20 @@ L["EMOTE_APPLAUD"] = "Ovacionar"
 L["LOADED"] = "cargado — escribe |cffffd200/gc|r para las opciones"
 L["CMD_HEADER"] = "comandos:"
 L["CMD_OPEN_SETTINGS"] = "abrir opciones"
+
+L["CHAT_WINDOW_NUMBER"] = "Chat %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Se aplica tras /reload"
+L["HISTORY_SHORT_SAY"] = "D"
+L["HISTORY_SHORT_YELL"] = "G"
+L["HISTORY_SHORT_GUILD"] = "H"
+L["HISTORY_SHORT_OFFICER"] = "O"
+L["HISTORY_SHORT_WHISPER"] = "S"
+L["HISTORY_SHORT_PARTY"] = "Gr"
+L["HISTORY_SHORT_RAID"] = "B"
+L["HISTORY_SHORT_INSTANCE"] = "E"
+L["HISTORY_SHORT_LOOT"] = "Bo"
+L["HISTORY_SHORT_LOG"] = "R"
 
 ---------------------------------------------------------------------------
 -- Español (AL)
@@ -683,6 +753,20 @@ L["LOADED"] = "carregado — digite |cffffd200/gc|r para as opções"
 L["CMD_HEADER"] = "comandos:"
 L["CMD_OPEN_SETTINGS"] = "abrir opções"
 
+L["CHAT_WINDOW_NUMBER"] = "Bate-papo %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Vale após /reload"
+L["HISTORY_SHORT_SAY"] = "D"
+L["HISTORY_SHORT_YELL"] = "G"
+L["HISTORY_SHORT_GUILD"] = "Gu"
+L["HISTORY_SHORT_OFFICER"] = "O"
+L["HISTORY_SHORT_WHISPER"] = "S"
+L["HISTORY_SHORT_PARTY"] = "Gr"
+L["HISTORY_SHORT_RAID"] = "R"
+L["HISTORY_SHORT_INSTANCE"] = "I"
+L["HISTORY_SHORT_LOOT"] = "Sa"
+L["HISTORY_SHORT_LOG"] = "Re"
+
 ---------------------------------------------------------------------------
 -- Italiano
 ---------------------------------------------------------------------------
@@ -790,6 +874,20 @@ L["EMOTE_APPLAUD"] = "Applaudire"
 L["LOADED"] = "caricato — digita |cffffd200/gc|r per le opzioni"
 L["CMD_HEADER"] = "comandi:"
 L["CMD_OPEN_SETTINGS"] = "apri opzioni"
+
+L["CHAT_WINDOW_NUMBER"] = "Chat %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "Si applica dopo /reload"
+L["HISTORY_SHORT_SAY"] = "D"
+L["HISTORY_SHORT_YELL"] = "U"
+L["HISTORY_SHORT_GUILD"] = "G"
+L["HISTORY_SHORT_OFFICER"] = "Uf"
+L["HISTORY_SHORT_WHISPER"] = "S"
+L["HISTORY_SHORT_PARTY"] = "Gr"
+L["HISTORY_SHORT_RAID"] = "In"
+L["HISTORY_SHORT_INSTANCE"] = "Is"
+L["HISTORY_SHORT_LOOT"] = "B"
+L["HISTORY_SHORT_LOG"] = "R"
 
 ---------------------------------------------------------------------------
 -- 简体中文
@@ -899,6 +997,20 @@ L["LOADED"] = "已加载 — 输入 |cffffd200/gc|r 打开设置"
 L["CMD_HEADER"] = "命令："
 L["CMD_OPEN_SETTINGS"] = "打开设置"
 
+L["CHAT_WINDOW_NUMBER"] = "聊天 %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "在 /reload 后生效"
+L["HISTORY_SHORT_SAY"] = "说"
+L["HISTORY_SHORT_YELL"] = "喊"
+L["HISTORY_SHORT_GUILD"] = "会"
+L["HISTORY_SHORT_OFFICER"] = "官"
+L["HISTORY_SHORT_WHISPER"] = "密"
+L["HISTORY_SHORT_PARTY"] = "队"
+L["HISTORY_SHORT_RAID"] = "团"
+L["HISTORY_SHORT_INSTANCE"] = "副"
+L["HISTORY_SHORT_LOOT"] = "拾"
+L["HISTORY_SHORT_LOG"] = "日志"
+
 ---------------------------------------------------------------------------
 -- 繁體中文
 ---------------------------------------------------------------------------
@@ -1007,6 +1119,20 @@ L["LOADED"] = "已載入 — 輸入 |cffffd200/gc|r 開啟設定"
 L["CMD_HEADER"] = "指令："
 L["CMD_OPEN_SETTINGS"] = "開啟設定"
 
+L["CHAT_WINDOW_NUMBER"] = "聊天 %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "在 /reload 後生效"
+L["HISTORY_SHORT_SAY"] = "說"
+L["HISTORY_SHORT_YELL"] = "喊"
+L["HISTORY_SHORT_GUILD"] = "會"
+L["HISTORY_SHORT_OFFICER"] = "官"
+L["HISTORY_SHORT_WHISPER"] = "密"
+L["HISTORY_SHORT_PARTY"] = "隊"
+L["HISTORY_SHORT_RAID"] = "團"
+L["HISTORY_SHORT_INSTANCE"] = "副"
+L["HISTORY_SHORT_LOOT"] = "拾"
+L["HISTORY_SHORT_LOG"] = "日誌"
+
 ---------------------------------------------------------------------------
 -- 한국어
 ---------------------------------------------------------------------------
@@ -1114,3 +1240,17 @@ L["EMOTE_APPLAUD"] = "갈채 보내기"
 L["LOADED"] = "불러왔습니다 — |cffffd200/gc|r 입력 시 설정 열기"
 L["CMD_HEADER"] = "명령어:"
 L["CMD_OPEN_SETTINGS"] = "설정 열기"
+
+L["CHAT_WINDOW_NUMBER"] = "대화창 %d"
+L["FONT_SIZE_POINTS"] = "%d pt"
+L["NOTE_APPLIES_AFTER_RELOAD"] = "/reload 후에 적용됩니다"
+L["HISTORY_SHORT_SAY"] = "말"
+L["HISTORY_SHORT_YELL"] = "외"
+L["HISTORY_SHORT_GUILD"] = "길"
+L["HISTORY_SHORT_OFFICER"] = "관"
+L["HISTORY_SHORT_WHISPER"] = "귓"
+L["HISTORY_SHORT_PARTY"] = "파"
+L["HISTORY_SHORT_RAID"] = "공"
+L["HISTORY_SHORT_INSTANCE"] = "인"
+L["HISTORY_SHORT_LOOT"] = "전"
+L["HISTORY_SHORT_LOG"] = "로"

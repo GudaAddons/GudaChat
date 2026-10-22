@@ -368,17 +368,17 @@ local function CreateHistoryFrame()
     end
 
     local channelTabDefs = {
-        { key = "All",      short = "All" },
-        { key = "Say",      short = "S" },
-        { key = "Yell",     short = "Y" },
-        { key = "Guild",    short = "G" },
-        { key = "Officer",  short = "O" },
-        { key = "Whisper",  short = "W" },
-        { key = "Party",    short = "P" },
-        { key = "Raid",     short = "R" },
-        { key = "Instance", short = "I" },
-        { key = "Loot",     short = "L" },
-        { key = "Log",      short = "D" },
+        { key = "All",      short = ns.Blizz(ALL, "All") },
+        { key = "Say",      short = L["HISTORY_SHORT_SAY"] },
+        { key = "Yell",     short = L["HISTORY_SHORT_YELL"] },
+        { key = "Guild",    short = L["HISTORY_SHORT_GUILD"] },
+        { key = "Officer",  short = L["HISTORY_SHORT_OFFICER"] },
+        { key = "Whisper",  short = L["HISTORY_SHORT_WHISPER"] },
+        { key = "Party",    short = L["HISTORY_SHORT_PARTY"] },
+        { key = "Raid",     short = L["HISTORY_SHORT_RAID"] },
+        { key = "Instance", short = L["HISTORY_SHORT_INSTANCE"] },
+        { key = "Loot",     short = L["HISTORY_SHORT_LOOT"] },
+        { key = "Log",      short = L["HISTORY_SHORT_LOG"] },
     }
 
     local channelTabs = {}
