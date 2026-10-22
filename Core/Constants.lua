@@ -293,8 +293,18 @@ ns.CHAT_MSG_CHANNELS = {
 
 ns.DEFAULT_EMOJI_SIZE = 12
 
+local INTERFACE_VERSION = tonumber((select(4, GetBuildInfo()))) or 0
+
 -- Detect Retail client (interface >= 110000)
-ns.IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 110000
+ns.IS_RETAIL = INTERFACE_VERSION >= 110000
+
+-- WoW: Forever ("Camelot", Interface 16001) has a Vanilla-shaped version number but runs
+-- the Mainline (Retail) chat frame code and enforces secret values, so wherever Retail
+-- behaviour is needed the check is IS_RETAIL or IS_FOREVER. Same range test as GudaBags.
+ns.IS_FOREVER = INTERFACE_VERSION >= 16000 and INTERFACE_VERSION < 20000
+
+-- Clients running the Mainline chat frame code: Retail and Forever.
+ns.HAS_MAINLINE_CHAT = ns.IS_RETAIL or ns.IS_FOREVER
 
 -- Detect the modern (Dragonflight 10.0+) client engine. True on retail AND on the
 -- Cataclysm/MoP-era "Classic" clients, which share retail's chat engine but report low
@@ -309,7 +319,7 @@ ns.IS_MODERN = ns.IS_RETAIL or (Settings ~= nil) or false
 -- Deliberately NOT gated on IS_MODERN: that is also true on MoP Classic and Classic Era
 -- (both expose the Settings API) while they run legacy chat-frame geometry with no gutter,
 -- which made the header/tab bar/input bar render 13px wider than the chat window there.
-ns.CHAT_EDGE_PAD = ns.IS_RETAIL and 13 or 0
+ns.CHAT_EDGE_PAD = ns.HAS_MAINLINE_CHAT and 13 or 0
 
 -- Custom scrollbar width (UI/Scrollbar.lua)
 ns.SCROLLBAR_W = 6
