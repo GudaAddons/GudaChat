@@ -447,6 +447,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if UIParent_ManageFramePositions then
             hooksecurefunc("UIParent_ManageFramePositions", ReapplyChatFrame1Geometry)
         end
+        ns.HookEditModeChatPosition()
 
         -- Lock position after initial setup so UIParentPanelManager can't move it
         ns.cf1PositionLocked = true

@@ -334,6 +334,42 @@ local function SettleChatPosition()
 end
 ns.SettleChatPosition = SettleChatPosition
 
+-- Edit Mode (clients that have it) places ChatFrame1 from its own layout: on entering and
+-- leaving Edit Mode and whenever it applies the chat system's anchor. GudaChat's saved
+-- position wins: every such placement is followed by ReapplyChatFrame1Geometry. Dragging
+-- the chat inside Edit Mode is the player choosing a new spot, so that drag unlocks the
+-- re-apply and its end is saved as the GudaChat position. Only post-hooks are used, so no
+-- Blizzard method or field is replaced.
+local function ReapplyNextFrame()
+    C_Timer.After(0, function()
+        if ns.ReapplyChatFrame1Geometry then ns.ReapplyChatFrame1Geometry() end
+    end)
+end
+
+local function OnEditModeDragStop()
+    SaveChatPosition()
+    ns.cf1PositionLocked = true
+end
+
+local function HookEditModeChatPosition()
+    if ns.editModeHooked then return end
+    ns.editModeHooked = true
+    for _, method in ipairs({ "ApplySystemAnchor", "UpdateSystem" }) do
+        if type(ChatFrame1[method]) == "function" then
+            hooksecurefunc(ChatFrame1, method, ReapplyNextFrame)
+        end
+    end
+    if type(ChatFrame1.OnDragStart) == "function" and type(ChatFrame1.OnDragStop) == "function" then
+        hooksecurefunc(ChatFrame1, "OnDragStart", function() ns.cf1PositionLocked = false end)
+        hooksecurefunc(ChatFrame1, "OnDragStop", OnEditModeDragStop)
+    end
+    if EventRegistry and EventRegistry.RegisterCallback then
+        EventRegistry:RegisterCallback("EditMode.Enter", ReapplyNextFrame, ns)
+        EventRegistry:RegisterCallback("EditMode.Exit", ReapplyNextFrame, ns)
+    end
+end
+ns.HookEditModeChatPosition = HookEditModeChatPosition
+
 local function CreateCloseButton(parent)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(12, 12)
