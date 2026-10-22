@@ -99,6 +99,9 @@ local function InitWhisperFrame(cf, idx)
     if font then
         cf:SetFont(font, GudaChatDB.chatFontSize or size or WHISPER_FRAME_DEFAULT_FONT_SIZE, flags or "")
     end
+    if GudaChatDB.chatLineSpacing and cf.SetSpacing then
+        cf:SetSpacing(GudaChatDB.chatLineSpacing)
+    end
     cf:SetMaxLines(WHISPER_FRAME_MAX_LINES)
     cf:SetFading(GudaChatDB.fading or false)
     cf:SetJustifyH("LEFT")
