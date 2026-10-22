@@ -535,3 +535,36 @@ end
 function ns.IsNonAscii(text)
     return text ~= nil and text:find("[\128-\255]") ~= nil
 end
+
+---------------------------------------------------------------------------
+-- Slider values (settings window)
+---------------------------------------------------------------------------
+
+-- A slider value snapped to the nearest step from minVal and kept inside the range.
+-- Accepts numbers and typed text; text that is not a number returns nil.
+function ns.ClampSliderValue(value, minVal, maxVal, step)
+    value = tonumber(value)
+    if not value then return nil end
+    step = (step and step > 0) and step or 1
+    local snapped = minVal + math.floor((value - minVal) / step + 0.5) * step
+    if snapped < minVal then snapped = minVal end
+    if snapped > maxVal then snapped = maxVal end
+    return snapped
+end
+
+-- The text a slider's value box shows: whole numbers without decimals, others with one
+function ns.FormatSliderValue(value)
+    if value == math.floor(value) then
+        return string.format("%d", value)
+    end
+    return string.format("%.1f", value)
+end
+
+-- Where a click at cursorX lands on a track running from left to left + width
+function ns.SliderValueAt(cursorX, left, width, minVal, maxVal, step)
+    if width <= 0 then return minVal end
+    local fraction = (cursorX - left) / width
+    if fraction < 0 then fraction = 0 end
+    if fraction > 1 then fraction = 1 end
+    return ns.ClampSliderValue(minVal + fraction * (maxVal - minVal), minVal, maxVal, step)
+end

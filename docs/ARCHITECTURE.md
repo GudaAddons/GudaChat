@@ -19,7 +19,8 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `Core/Filters.lua` | Class colours, player level, copyable URL links, own-name highlight and mention sound. Link click handling. |
 | `Core/Logs.lua` | Loot log and addon message log (ring buffers), loot line parsing. |
 | `Core/Chrome.lua` | Hides Blizzard's chat chrome (tabs, buttons, dock manager), lock state, window colours. |
-| `UI/Widgets.lua` | Shared widgets: icon buttons, menu items (`ns.CreateMenuItem`, reusable `ns.GetMenuItem`), click-outside closers, `ns.ShowColorPicker` (both picker generations), `ns.CreateButtonFramePopup` (History and Settings windows), fade and hover timings. |
+| `UI/Widgets.lua` | Shared widgets: icon buttons, menu items (`ns.CreateMenuItem`, reusable `ns.GetMenuItem`), click-outside closers, `ns.ShowColorPicker` (both picker generations), fade and hover timings. |
+| `UI/Controls.lua` | Themed controls for the settings and history windows: `ns.CreateThemedWindow`, `ns.CreateScrollArea`, `ns.CreateCard`, `ns.CreateSettingsRow`, `ns.CreateToggle`, `ns.CreateSlider`, `ns.CreateDropdown`, `ns.CreateSwatch`, `ns.CreateThemedButton`, `ns.CreateTextTabs`, and `ns.OnRestyle`. |
 | `UI/Selection.lua` | Which chat window is selected: `ns.SafeSelectDockFrame`, `ns.GetSelectedChatFrame(Index)`, `ns.OnFrameSelected`, `ns.SetCombatLogVisible`, `ns.GetChatTabName`, `ns.RequestTabRefresh`. |
 | `UI/Tabs/Model.lua` | Tab data: which windows get a tab (`ns.CollectChatTabs`), tab colours, saved tab order and drag moves, unread blink state with its one event listener. |
 | `UI/Tabs/TabStrip.lua` | One tab strip renderer (fit, overflow menu, drag to reorder, blink, button pools) used twice: the bar above the header (created here) and the inline tabs (created by the header). |
@@ -30,7 +31,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `UI/Scrollbar.lua` | Thin scrollbar and scroll-to-bottom button per chat frame. |
 | `UI/Header.lua` | The header bar itself: hover fade, drag to move, icon buttons, tab label and window dropdown, inline tab setup. |
 | `UI/History.lua` | History capture, the history viewer (search, channel tabs, copy), replay at login. |
-| `UI/Settings.lua` | Settings window (General, Messages, History, Notifications). |
+| `UI/Settings.lua` | Settings window: sidebar pages Appearance, Chat, Messages, Tabs & Alerts, History & Logs, About (see "Settings window"). Chat font options and helpers. |
 | `GudaChat.lua` | Slash command, saved data defaults and migrations, login setup, logout handling. |
 | `tests/` | Offline tests. Not in the TOC, so the game never loads them. |
 
@@ -38,7 +39,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 
 | Variable | Scope | Contents |
 |----------|-------|----------|
-| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`. On WoW: Forever also `charCopies` (see below). |
+| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`. On WoW: Forever also `charCopies` (see below). |
 | `GudaChatCharDB` | Character | `history` (one bucket per channel, keyed by channel label), `lootLog`, `addonLog` (ring buffers with a `head` field), `logSchema`, `savedAt`. |
 
 - Defaults and one-time migrations run in `GudaChat.lua` at `ADDON_LOADED`. Older versions kept history and logs in `GudaChatDB`; the first character that logs in takes them over.
@@ -117,6 +118,17 @@ Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were
 - **Live switching.** `ns.Theme.Set(name)` and `ns.Theme.SetAccent(value)` refill the palette, restyle every remembered panel and painted region, update the fonts and run the `Theme.OnChange` listeners (the tab strips rebuild, the chat background follows the theme). Nothing runs per frame.
 - **Defaults.** Fresh installs start with `modern`; profiles from 1.x (no `theme` field) get `classic`, so nothing changes for existing players.
 - **Chat background.** Each theme has a default (`Theme.chatBg`). It is used while `GudaChatDB.bgFromTheme` is set (fresh installs); the first time the player changes the opacity or colour, `ns.TakeOverChatBackground` copies the shown values into `globalBgColor` / `globalBgAlpha` and the player's own values win from then on. `ns.GetChatBackground` returns what is in use.
+
+## Settings window
+
+`UI/Settings.lua` builds the window the first time it opens (`/gc` or the header cog).
+
+- **Frame.** `ns.CreateThemedWindow` (UI/Controls.lua): a themed panel about 660×470 with a title bar (logo, "GudaChat", version from the TOC, close button). It is dragged by the title bar, and its position is saved in `GudaChatDB.settingsPosition` and kept on screen. Escape closes it (`UISpecialFrames`), and so does entering combat. The history viewer uses the same frame (`GudaChatDB.historyPosition`) with `ns.CreateTextTabs` for its channel tabs.
+- **Pages.** A sidebar with six pages; the right side is a scroll area (`ns.CreateScrollArea`) showing one page at a time. Each page is a column of cards.
+- **Cards.** `ns.AddSettingsCard(page, order, build)` registers a card; `build(page)` returns a card from `ns.CreateCard`. Cards are sorted by `order` and built when the window is first opened, so any file loaded before that can add one. Built-in orders are 10, 20, 30...; the whisper icon card goes on the `tabs` page at order 40. A row with `row.collapsed = true` is hidden by `card:Relayout()`; call `page:Relayout()` after a card changes height.
+- **Controls.** `ns.CreateToggle` (a switch in Modern Dark, a square checkbox with a gold check in Classic and Blizzard), `ns.CreateSlider` (track plus a value box; Enter applies, Escape restores, values snap with `ns.ClampSliderValue`), `ns.CreateDropdown` (GudaChat's own pooled menu, no UIDropDownMenu or WowStyle1 dropdown), `ns.CreateSwatch` (the shared colour picker) and `ns.CreateThemedButton` (the red panel button under Blizzard, flat otherwise). They read the current value through a `get` function and store through `set`, using the same `GudaChatDB` keys and apply functions as before.
+- **Live restyle.** Controls register with `ns.OnRestyle(fn)`, which runs `fn` once and again after every theme or accent change. Nothing in the window runs per frame, except while the mouse drags a slider.
+- **Appearance page.** Theme cards with thumbnails drawn in each theme's own colours (`ns.Theme.ColorOf`), the accent (class colour, class swatches, custom colour; Classic and Blizzard show a note instead), a live preview of the chat built from the themed widgets, the chat font and size, and the background (override, opacity, colour).
 
 ## Performance patterns
 

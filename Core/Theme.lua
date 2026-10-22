@@ -97,12 +97,32 @@ Theme.THEMES = {
             tabInactive = { 0.5, 0.5, 0.5, 0.8 },
             tabHover = { 1, 1, 1, 1 },
             tabUnderline = { 0, 0, 0, 0 },
+            windowBg = { 0.08, 0.08, 0.08, 0.95 },
+            windowBorder = { 0.3, 0.3, 0.3, 0.6 },
+            heading = { 0.9, 0.75, 0.3, 1 },
+            cardBg = { 1, 1, 1, 0.03 },
+            cardBorder = { 0.25, 0.25, 0.25, 0.5 },
+            cardTitle = { 0.9, 0.75, 0.3, 1 },
+            labelText = { 0.9, 0.9, 0.9, 1 },
+            navText = { 0.6, 0.6, 0.6, 1 },
+            navActiveText = { 1, 1, 1, 1 },
+            navActiveBg = { 0.8, 0.6, 0, 0.12 },
+            navBar = { 0.8, 0.6, 0, 1 },
+            navHover = { 1, 1, 1, 0.05 },
+            rowRule = { 0.25, 0.25, 0.25, 0.5 },
+            controlOff = { 0.1, 0.1, 0.1, 1 },
+            controlOn = { 0.8, 0.6, 0, 1 },
+            controlBorder = { 0.33, 0.33, 0.33, 1 },
+            checkMark = { 1, 0.82, 0, 1 },
+            fieldBg = { 0.05, 0.05, 0.05, 0.85 },
+            buttonText = { 0.9, 0.9, 0.9, 1 },
         },
     },
 
     modern = {
         usesAccent = true,
         rounded = true,
+        switches = true,
         uiFont = FIRA_FONT,
         tabStyle = "plain",
         tabUnderline = true,
@@ -156,6 +176,25 @@ Theme.THEMES = {
             tabInactive = MODERN_DIM,
             tabHover = { 1, 1, 1, 1 },
             tabUnderline = Accent(1),
+            windowBg = { 0.067, 0.071, 0.09, 0.96 },
+            windowBorder = { 1, 1, 1, 0.09 },
+            heading = { 1, 1, 1, 1 },
+            cardBg = { 1, 1, 1, 0.045 },
+            cardBorder = { 1, 1, 1, 0.06 },
+            cardTitle = Accent(1),
+            labelText = MODERN_TEXT,
+            navText = MODERN_DIM,
+            navActiveText = MODERN_TEXT,
+            navActiveBg = Accent(0.12),
+            navBar = Accent(1),
+            navHover = { 1, 1, 1, 0.045 },
+            rowRule = { 1, 1, 1, 0.06 },
+            controlOff = { 0.17, 0.18, 0.23, 1 },
+            controlOn = Accent(1),
+            controlBorder = { 1, 1, 1, 0.12 },
+            checkMark = { 1, 1, 1, 1 },
+            fieldBg = { 0.047, 0.051, 0.067, 0.9 },
+            buttonText = MODERN_TEXT,
         },
     },
 
@@ -212,6 +251,25 @@ Theme.THEMES = {
             tabInactive = BLIZZARD_GOLD_DIM,
             tabHover = { 1, 1, 1, 1 },
             tabUnderline = { 0, 0, 0, 0 },
+            windowBg = { 1, 1, 1, 0.95 },
+            windowBorder = { 1, 1, 1, 1 },
+            heading = BLIZZARD_GOLD,
+            cardBg = { 0, 0, 0, 0.35 },
+            cardBorder = { 0.35, 0.35, 0.35, 1 },
+            cardTitle = BLIZZARD_GOLD,
+            labelText = { 1, 1, 1, 1 },
+            navText = BLIZZARD_GOLD,
+            navActiveText = { 1, 1, 1, 1 },
+            navActiveBg = BLIZZARD_HIGHLIGHT,
+            navBar = { 0, 0, 0, 0 },
+            navHover = { 0.48, 0.64, 1, 0.12 },
+            rowRule = { 1, 1, 1, 0.06 },
+            controlOff = { 0, 0, 0, 1 },
+            controlOn = BLIZZARD_GOLD,
+            controlBorder = { 0.54, 0.54, 0.54, 1 },
+            checkMark = BLIZZARD_GOLD,
+            fieldBg = { 0, 0, 0, 0.9 },
+            buttonText = BLIZZARD_GOLD,
         },
     },
 }
@@ -241,7 +299,7 @@ local BACKDROP_BLIZZARD_DIALOG = {
 }
 
 -- Palette entries whose panels count as popups (Blizzard dialog art instead of tooltip art)
-local POPUP_BACKGROUNDS = { copyBg = true, pickerBg = true }
+local POPUP_BACKGROUNDS = { copyBg = true, pickerBg = true, windowBg = true }
 
 local C = {}
 Theme.C = C
@@ -487,6 +545,34 @@ end
 -- True when the active theme marks the selected tab with an accent underline
 function Theme.HasTabUnderline()
     return current.tabUnderline == true
+end
+
+-- True when the active theme draws on/off settings as switches (Modern Dark); the
+-- others use square Blizzard-style checkboxes
+function Theme.UsesSwitches()
+    return current.switches == true
+end
+
+-- True when the active theme uses the game's own frame art (red panel buttons and so on)
+function Theme.UsesBlizzardArt()
+    return current.blizzardArt == true
+end
+
+-- True when the active theme takes the accent colour (the others keep their gold)
+function Theme.UsesAccent()
+    return current.usesAccent == true
+end
+
+-- A palette colour of any theme as r, g, b, a, accent included, without switching to it.
+-- The settings window draws its theme thumbnails with this.
+function Theme.ColorOf(name, token)
+    local theme = Theme.THEMES[name] or current
+    local value = theme.colors[token] or Theme.THEMES.classic.colors[token]
+    if value.accent then
+        local r, g, b = Theme.ResolveAccent(GudaChatDB and GudaChatDB.accent)
+        return r, g, b, value.a or 1
+    end
+    return value[1], value[2], value[3], value[4] or 1
 end
 
 ---------------------------------------------------------------------------

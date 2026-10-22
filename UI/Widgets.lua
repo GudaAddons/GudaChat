@@ -171,30 +171,3 @@ local function ShowColorPicker(info)
     ColorPickerFrame:Show()
 end
 ns.ShowColorPicker = ShowColorPicker
-
--- The movable ButtonFrameTemplate window used by History and Settings: no portrait or
--- button bar, closes on Escape and on entering combat, dragged by its title bar
-local function CreateButtonFramePopup(name, width, height, title)
-    local f = CreateFrame("Frame", name, UIParent, "ButtonFrameTemplate")
-    f:SetSize(width, height)
-    f:SetPoint("CENTER")
-    f:SetMovable(true)
-    f:SetClampedToScreen(true)
-    f:SetFrameStrata("DIALOG")
-    f:SetToplevel(true)
-    f:EnableMouse(true)
-
-    tinsert(UISpecialFrames, name)
-
-    f:RegisterEvent("PLAYER_REGEN_DISABLED")
-    f:SetScript("OnEvent", function(self) self:Hide() end)
-
-    ButtonFrameTemplate_HidePortrait(f)
-    ButtonFrameTemplate_HideButtonBar(f)
-    if f.Inset then f.Inset:Hide() end
-
-    f:SetTitle(title)
-    ns.CreateDragRegion(f)
-    return f
-end
-ns.CreateButtonFramePopup = CreateButtonFramePopup

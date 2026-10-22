@@ -328,23 +328,16 @@ local historyFrame
 local SEARCH_DELAY = 0.2
 
 local function CreateHistoryFrame()
-    local f = ns.CreateButtonFramePopup("GudaChatHistoryPopup", 560, 500, L["HISTORY_TITLE"])
-
-    local content = CreateFrame("Frame", nil, f)
-    content:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -60)
-    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 16)
+    local f = ns.CreateThemedWindow("GudaChatHistoryPopup", 560, 500, L["HISTORY_TITLE"], {
+        icon = ns.ASSET_PATH .. "history.png",
+        positionKey = "historyPosition",
+    })
 
     -------------------------------------------------------------------
     -- Channel filter tabs
     -------------------------------------------------------------------
     local selectedFilter = "All"
-
-    local tabTemplate
-    if DoesTemplateExist and DoesTemplateExist("PanelTopTabButtonTemplate") then
-        tabTemplate = "PanelTopTabButtonTemplate"
-    else
-        tabTemplate = "TabButtonTemplate"
-    end
+    local SelectChannelTab
 
     local channelTabDefs = {
         { key = "All",      short = ns.Blizz(ALL, "All") },
@@ -360,35 +353,17 @@ local function CreateHistoryFrame()
         { key = "Log",      short = L["HISTORY_SHORT_LOG"] },
     }
 
-    local channelTabs = {}
+    local tabDefs = {}
     for i, def in ipairs(channelTabDefs) do
-        local tab = CreateFrame("Button", "GudaChatHistoryPopupTab" .. i, f, tabTemplate)
-        if i == 1 then
-            tab:SetPoint("TOPLEFT", f, "TOPLEFT", 5, -24)
-        else
-            tab:SetPoint("TOPLEFT", channelTabs[i - 1], "TOPRIGHT", 4, 0)
-        end
-        tab:SetText(def.short)
-        tab:SetID(i)
-        tab:SetScript("OnShow", function(self)
-            PanelTemplates_TabResize(self, 4, nil, 10)
-            PanelTemplates_DeselectTab(self)
-        end)
-
-        tab:HookScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-            -- def.key stays the English filter identity; only the tooltip is localized
-            GameTooltip:SetText(ChannelLabel(def.key), 1, 1, 1)
-            GameTooltip:Show()
-        end)
-        tab:HookScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-
-        channelTabs[i] = tab
+        tabDefs[i] = { label = def.short, tooltip = ChannelLabel(def.key) }
     end
+    local channelTabs = ns.CreateTextTabs(f, tabDefs, function(id) SelectChannelTab(id) end)
+    channelTabs:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -(ns.WINDOW_TITLE_HEIGHT + 6))
+    channelTabs:SetPoint("RIGHT", f, "RIGHT", -10, 0)
 
-    PanelTemplates_SetNumTabs(f, #channelTabDefs)
+    local content = CreateFrame("Frame", nil, f)
+    content:SetPoint("TOPLEFT", channelTabs, "BOTTOMLEFT", 0, -8)
+    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 12)
 
     -- Search box
     local searchBox = CreateFrame("EditBox", nil, content, "BackdropTemplate")
@@ -443,14 +418,9 @@ local function CreateHistoryFrame()
     end)
 
     -- Copy button
-    local copyBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    copyBtn:SetSize(50, 22)
+    local copyBtn = ns.CreateThemedButton(content, ns.Blizz(COPY, "Copy"), function() end, 50)
+    copyBtn:SetHeight(22)
     copyBtn:SetPoint("LEFT", searchBox, "RIGHT", 4, 0)
-    copyBtn:SetText(ns.Blizz(COPY, "Copy"))
-    local copyNt = copyBtn:GetNormalTexture()
-    if copyNt then ns.Paint(copyNt, ns.Theme.C.dangerButton) end
-    local copyPt = copyBtn:GetPushedTexture()
-    if copyPt then ns.Paint(copyPt, ns.Theme.C.dangerButtonPushed) end
 
     -- ScrollingMessageFrame for colored display
     local msgFrame = CreateFrame("ScrollingMessageFrame", "GudaChatHistoryMsgFrame", content)
@@ -888,14 +858,10 @@ local function CreateHistoryFrame()
         if userInput then ScheduleSearch() end
     end)
 
-    local function SelectChannelTab(id)
-        PanelTemplates_SetTab(f, id)
+    SelectChannelTab = function(id)
+        channelTabs:Select(id)
         selectedFilter = channelTabDefs[id].key
         if f.RefreshHistory then f:RefreshHistory() end
-    end
-
-    for i, tab in ipairs(channelTabs) do
-        tab:SetScript("OnClick", function() SelectChannelTab(i) end)
     end
 
     -------------------------------------------------------------------

@@ -1,0 +1,61 @@
+-- Settings window controls: slider value snapping, the value box text and clicks on the
+-- slider track, plus the theme flags the controls switch their look on
+
+return function(T, H)
+    local ns = H.Load()
+
+    T.case("slider values snap to the step", function()
+        T.eq(ns.ClampSliderValue(37, 0, 100, 5), 35, "37 -> 35")
+        T.eq(ns.ClampSliderValue(38, 0, 100, 5), 40, "38 -> 40")
+        T.eq(ns.ClampSliderValue(1234, 500, 4000, 100), 1200, "steps count from the minimum")
+    end)
+
+    T.case("slider values stay inside the range", function()
+        T.eq(ns.ClampSliderValue(-20, 0, 100, 5), 0, "below")
+        T.eq(ns.ClampSliderValue(250, 0, 100, 5), 100, "above")
+        T.eq(ns.ClampSliderValue(7, 8, 24, 1), 8, "font size minimum")
+    end)
+
+    T.case("typed slider text", function()
+        T.eq(ns.ClampSliderValue("16", 8, 24, 1), 16, "number text")
+        T.eq(ns.ClampSliderValue(" 12 ", 8, 24, 1), 12, "spaces around")
+        T.eq(ns.ClampSliderValue("abc", 8, 24, 1), nil, "not a number")
+        T.eq(ns.ClampSliderValue("", 8, 24, 1), nil, "empty")
+    end)
+
+    T.case("the value box text", function()
+        T.eq(ns.FormatSliderValue(14), "14", "whole number")
+        T.eq(ns.FormatSliderValue(0.5), "0.5", "one decimal")
+    end)
+
+    T.case("a click on the slider track", function()
+        T.eq(ns.SliderValueAt(100, 100, 140, 0, 100, 5), 0, "left end")
+        T.eq(ns.SliderValueAt(240, 100, 140, 0, 100, 5), 100, "right end")
+        T.eq(ns.SliderValueAt(170, 100, 140, 0, 100, 5), 50, "middle")
+        T.eq(ns.SliderValueAt(20, 100, 140, 0, 100, 5), 0, "left of the track")
+        T.eq(ns.SliderValueAt(900, 100, 140, 0, 100, 5), 100, "right of the track")
+        T.eq(ns.SliderValueAt(150, 100, 0, 10, 100, 5), 10, "track without width")
+    end)
+
+    T.case("controls follow the theme flags", function()
+        ns.Theme.Set("modern")
+        T.ok(ns.Theme.UsesSwitches(), "modern draws switches")
+        T.ok(ns.Theme.UsesAccent(), "modern takes the accent")
+        T.ok(not ns.Theme.UsesBlizzardArt(), "modern has no Blizzard art")
+        ns.Theme.Set("blizzard")
+        T.ok(not ns.Theme.UsesSwitches(), "blizzard draws checkboxes")
+        T.ok(ns.Theme.UsesBlizzardArt(), "blizzard uses the game's art")
+        ns.Theme.Set("classic")
+        T.ok(not ns.Theme.UsesSwitches(), "classic draws checkboxes")
+        T.ok(not ns.Theme.UsesAccent(), "classic keeps gold")
+    end)
+
+    T.case("theme thumbnails read any theme's colours", function()
+        ns.Theme.Set("classic")
+        local r, g, b, a = ns.Theme.ColorOf("blizzard", "panelBg")
+        T.eq(r, 0.09, "r")
+        T.eq(b, 0.19, "b")
+        T.eq(a, 0.92, "a")
+        T.eq(ns.Theme.Current(), "classic", "reading does not switch")
+    end)
+end

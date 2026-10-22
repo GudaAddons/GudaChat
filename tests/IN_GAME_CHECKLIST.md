@@ -42,10 +42,28 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 - [ ] Loot and Log tabs stay in order after their limit (500 / 300) is reached.
 
 ### Settings
-- [ ] History tab: the two new sliders (max loot entries, max addon messages) fit in the panel.
+- [ ] History & Logs page: the max loot entries and max addon messages sliders fit in their card.
 - [ ] Timestamps: the "Applies after /reload" note sits under the label without overlap (check German, French, Russian).
 - [ ] History channel tabs fit in one row in every language (de, ru, es especially).
 - [ ] Fading and font changes reach every chat window, including whisper windows.
+
+### Settings window (2.0)
+- [ ] `/gc` and the header cog open the new window; Escape and the close button close it; entering combat closes it.
+- [ ] Drag it by the title bar, `/reload`: it opens where it was left and stays on screen.
+- [ ] All six sidebar pages open; long pages scroll with the mouse wheel and the thin scroll indicator moves.
+- [ ] Every option still works and is remembered after `/reload`: lock, fading, scrollbar, timestamps, input bar top and transparent, class colours, level, links, highlight and sound, emojis and size, tab bar, inline tabs, whisper tab, all blink options, history on/off, loot and addon logging, the four limits, Clear history.
+- [ ] Switches in Modern Dark; square checkboxes with a gold check in Classic and Blizzard. Switching the theme changes them at once.
+- [ ] Sliders: drag, click on the track, mouse wheel over the row, and typing a value then Enter (out-of-range values are clamped, text is ignored, Escape restores).
+- [ ] Dropdowns (chat font, timestamps) open below the button, show the current value highlighted, close on a pick, on a click outside and on Escape.
+- [ ] Appearance: picking a theme card switches the theme live; the thumbnails keep their own colours.
+- [ ] Accent: "Use my class colour", the class swatches and the custom colour all change the accent live in Modern Dark; Classic and Blizzard show the gold note instead.
+- [ ] Live preview follows theme, accent, chat font, font size, class colours and background opacity and colour.
+- [ ] Background: turning "Override per-tab backgrounds" off hides the opacity and colour rows and restores each window's own background.
+- [ ] Blizzard theme: the window uses the dialog box art, Clear history and Copy are red Blizzard buttons.
+- [ ] Long labels in German and Russian end with "..." instead of running under the controls.
+- [ ] About page shows the version from the TOC.
+- [ ] History viewer: themed window, channel tabs switch the filter, its position is remembered, Copy still opens the copy window.
+- [ ] Whisper tab turned off by closing the Whispers window: the switch in Settings turns off too.
 
 ## WoW: Forever only
 
