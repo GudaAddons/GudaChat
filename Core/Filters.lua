@@ -197,43 +197,49 @@ local function FilterAddURLLinks(self, event, msg, ...)
     return false
 end
 
-function ns.SetupLinkHook()
+-- Clicks on our gudachat:url: links open the copy popup.
+--
+-- Mainline chat (Retail, Forever): an additive HookScript, so no addon closure ever sits in
+-- the secure item-link -> SetItemRef -> SetHyperlink path (tainting it crashes on 12.0
+-- secret colour values). Mainline SetItemRef ignores unknown link types; a post-hook only
+-- hides a stray ItemRefTooltip.
+--
+-- Classic (Era, Anniversary, MoP): SetItemRef ends with ItemRefTooltip:SetHyperlink(link)
+-- for unknown link types and throws "Unknown link type", and a HookScript runs only after
+-- that. So there the click handler is still wrapped, which taints the chat frames' link
+-- clicks; our links stop in the wrapper and every other link goes to Blizzard's handler.
+-- Kept to Classic until a hook-only path is confirmed in game there.
+local function HookLinkClicks(cf)
+    if cf.gudaLinkHooked then return end
+    cf.gudaLinkHooked = true
     if ns.HAS_MAINLINE_CHAT then
-        -- Retail / Midnight: use an ADDITIVE HookScript so we never inject our insecure closure
-        -- into the secure item-link -> SetItemRef -> SetHyperlink render path (tainting it crashes
-        -- on 12.0 "secret" color values, see tooltip-sethyperlink-taint). Retail's SetItemRef
-        -- ignores unknown link types, so it doesn't error on our gudachat: links here; we only
-        -- hide any stray tooltip it might leave behind via a taint-free post-hook.
-        ns.ForEachChatWindow(function(cf)
-            cf:HookScript("OnHyperlinkClick", function(self, link)
-                local url = link and link:match("^gudachat:url:(.+)$")
-                if url then
-                    ShowCopyPopup(url)
-                end
-            end)
-        end)
-        hooksecurefunc("SetItemRef", function(link)
-            if link and link:match("^gudachat:url:") then
-                if ItemRefTooltip then ItemRefTooltip:Hide() end
+        cf:HookScript("OnHyperlinkClick", function(self, link)
+            local url = link and link:match("^gudachat:url:(.+)$")
+            if url then
+                ShowCopyPopup(url)
             end
         end)
-    else
-        -- Classic (Era / TBC / MoP): Blizzard's Classic SetItemRef ends with
-        -- ItemRefTooltip:SetHyperlink(link) for any unrecognized link type, which throws
-        -- "Unknown link type" on our gudachat: links (surfaced through other addons' SetHyperlink
-        -- hooks). Replace the chat OnHyperlinkClick so our links are fully handled and NEVER reach
-        -- SetItemRef; delegate every other link to the original handler. Classic has no "secret"
-        -- values, so wrapping the item-link path here is taint-safe.
-        ns.ForEachChatWindow(function(cf)
-            local orig = cf:GetScript("OnHyperlinkClick")
-            cf:SetScript("OnHyperlinkClick", function(self, link, text, button, ...)
-                local url = link and link:match("^gudachat:url:(.+)$")
-                if url then
-                    ShowCopyPopup(url)
-                    return
-                end
-                if orig then return orig(self, link, text, button, ...) end
-            end)
+        return
+    end
+    local orig = cf:GetScript("OnHyperlinkClick")
+    cf:SetScript("OnHyperlinkClick", function(self, link, text, button, ...)
+        local url = link and link:match("^gudachat:url:(.+)$")
+        if url then
+            ShowCopyPopup(url)
+            return
+        end
+        if orig then return orig(self, link, text, button, ...) end
+    end)
+end
+ns.HookLinkClicks = HookLinkClicks
+
+function ns.SetupLinkHook()
+    ns.ForEachChatFrame(HookLinkClicks)
+    if ns.HAS_MAINLINE_CHAT then
+        hooksecurefunc("SetItemRef", function(link)
+            if link and link:match("^gudachat:url:") and ItemRefTooltip then
+                ItemRefTooltip:Hide()
+            end
         end)
     end
 end

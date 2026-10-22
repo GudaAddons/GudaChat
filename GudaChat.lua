@@ -93,6 +93,32 @@ local function SaveCharCopy()
 end
 
 ---------------------------------------------------------------------------
+-- Combat log frame
+--
+-- ChatFrame2 stays Show()n and is toggled by alpha (ns.SetCombatLogVisible):
+-- Show/Hide on it runs Blizzard's protected ClearEventFilters(), which is
+-- forbidden in combat. Blizzard dock updates can still hide it, so it is shown
+-- again, but only out of combat; in combat that waits for PLAYER_REGEN_ENABLED.
+---------------------------------------------------------------------------
+
+local combatLogRegenWatcher = CreateFrame("Frame")
+
+local function KeepCombatLogShown()
+    if not ChatFrame2 or ChatFrame2:IsShown() then return end
+    if InCombatLockdown() then
+        combatLogRegenWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    ChatFrame2:Show()
+    ns.SetCombatLogVisible(ns.GetSelectedChatFrame() == ChatFrame2)
+end
+
+combatLogRegenWatcher:SetScript("OnEvent", function(self)
+    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    KeepCombatLogShown()
+end)
+
+---------------------------------------------------------------------------
 -- Initialization
 ---------------------------------------------------------------------------
 
@@ -256,11 +282,8 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ns.ApplyGlobalBackground()
         end
 
-        -- On modern engines, Show/Hide on ChatFrame2 triggers protected ClearEventFilters()
-        -- which causes taint during combat. We Show() it once here (safe, not in combat)
-        -- and keep it always "shown" — SafeSelectDockFrame uses SetAlpha(0/1) to toggle.
-        if ns.IS_MODERN and ChatFrame2 then
-            ChatFrame2:Show()
+        if ChatFrame2 then
+            KeepCombatLogShown()
             ns.SetCombatLogVisible(false)
         end
 
@@ -363,12 +386,6 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             C_Timer.After(0.1, ns.RehideAllTabs)
         end)
 
-        -- Remove ChatFrame1 from Blizzard's managed frame layout so
-        -- UIParent_ManageFramePositions stops repositioning it
-        if UIPARENT_MANAGED_FRAME_POSITIONS then
-            UIPARENT_MANAGED_FRAME_POSITIONS["ChatFrame1"] = nil
-        end
-
         -- Keep ChatFrame1 pinned WITHOUT replacing any Blizzard method. Replacing a method taints
         -- the field; Blizzard secure code that later calls it taints the whole execution -> the 12.0
         -- ChatConfig "secret value" arithmetic crash. ns.CF1_* kept for safety (no readers today).
@@ -466,13 +483,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
                 if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
                     ns.ApplyGlobalBackground()
                 end
-                -- On modern engines, keep ChatFrame2 always "shown" (alpha controls visibility)
-                -- Blizzard dock updates can re-hide it.
-                if ns.IS_MODERN and ChatFrame2 and not ChatFrame2:IsShown() then
-                    ChatFrame2:Show()
-                    local sel = SELECTED_CHAT_FRAME or (GENERAL_CHAT_DOCK and GENERAL_CHAT_DOCK.selected)
-                    ns.SetCombatLogVisible(sel == ChatFrame2)
-                end
+                KeepCombatLogShown()
             end)
         end
 

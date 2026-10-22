@@ -29,38 +29,62 @@ local function SetCombatLogVisible(visible)
 end
 ns.SetCombatLogVisible = SetCombatLogVisible
 
+local function IsDocked(dock, cf)
+    for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
+        if frame == cf then return true end
+    end
+    return false
+end
+
+local frameSelectedCallbacks = {}
+
+-- Runs fn(cf) after every frame switch, whether it came from GudaChat or from Blizzard's
+-- FCF_SelectDockFrame (hooked further down). Keeps the header label, icon highlights and
+-- tab blink state in one place instead of only on Blizzard's path.
+function ns.OnFrameSelected(fn)
+    tinsert(frameSelectedCallbacks, fn)
+end
+
+local function NotifyFrameSelected(cf)
+    for _, fn in ipairs(frameSelectedCallbacks) do
+        fn(cf)
+    end
+end
+ns.NotifyFrameSelected = NotifyFrameSelected
+
+-- Shows cf and hides the other docked frames without FCF_SelectDockFrame (see above).
+-- Two Blizzard writes stay on purpose, and they are the only ones: dock.selected, so
+-- Blizzard's own dock updates keep cf on top instead of switching back, and
+-- SELECTED_CHAT_FRAME, which Blizzard's chat input and window options read to know the
+-- current window. GudaChat itself reads userSelectedFrame instead of those globals.
+-- A frame that is not docked (popped out, or closed) is left alone: hiding every docked
+-- frame without showing it would leave the chat area empty.
 local function SafeSelectDockFrame(cf)
-    if not cf then return end
+    local dock = GENERAL_CHAT_DOCK
+    if not cf or not (dock and dock.DOCKED_CHAT_FRAMES) or not IsDocked(dock, cf) then return end
     userSelectedFrame = cf
     C_Timer.After(0, function()
-        local dock = GENERAL_CHAT_DOCK
-        if dock and dock.DOCKED_CHAT_FRAMES then
-            dock.selected = cf
-            for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
-                if frame == cf then
-                    -- On modern engines, use SetAlpha for ChatFrame2 to avoid taint
-                    -- from ClearEventFilters() triggered by Show/Hide.
-                    if ns.IS_MODERN and frame == ChatFrame2 then
-                        SetCombatLogVisible(true)
-                    else
-                        frame:Show()
-                    end
-                else
-                    if ns.IS_MODERN and frame == ChatFrame2 then
-                        SetCombatLogVisible(false)
-                    else
-                        frame:Hide()
-                    end
-                end
+        if not IsDocked(dock, cf) then return end
+        dock.selected = cf
+        for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
+            if frame == ChatFrame2 then
+                SetCombatLogVisible(frame == cf)
+            elseif frame == cf then
+                frame:Show()
+            else
+                frame:Hide()
             end
-        else
-            cf:Show()
         end
         SELECTED_CHAT_FRAME = cf
         if UpdateSubTabsForFrame then UpdateSubTabsForFrame(cf) end
+        NotifyFrameSelected(cf)
     end)
 end
 ns.SafeSelectDockFrame = SafeSelectDockFrame
+
+function ns.GetUserSelectedFrame()
+    return userSelectedFrame
+end
 
 local function GetChatTabName(index)
     -- Prefer server-stored name (persists across reloads, even with hidden tabs)
@@ -163,33 +187,18 @@ local FONT_SIZES = { 12, 14, 16, 18, 20, 24, 27 }
 
 local contextMenu, fontSubMenu
 
+-- The window the player is looking at. GudaChat's own selection comes first because
+-- SafeSelectDockFrame does not go through Blizzard's selection code.
+local function GetSelectedChatFrame()
+    return userSelectedFrame
+        or (FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame())
+        or ChatFrame1
+end
+ns.GetSelectedChatFrame = GetSelectedChatFrame
+
 local function GetSelectedChatFrameIndex()
-    local current = FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
-    if current then
-        for i = 1, NUM_CHAT_WINDOWS do
-            if _G["ChatFrame" .. i] == current then return i end
-        end
-        -- Check temporary frames (index > NUM_CHAT_WINDOWS)
-        if CHAT_FRAMES then
-            for _, name in ipairs(CHAT_FRAMES) do
-                local cf = _G[name]
-                if cf == current then return cf:GetID() end
-            end
-        end
-    end
-    local selected = SELECTED_DOCK_FRAME or SELECTED_CHAT_FRAME
-    if selected then
-        for i = 1, NUM_CHAT_WINDOWS do
-            if _G["ChatFrame" .. i] == selected then return i end
-        end
-        if CHAT_FRAMES then
-            for _, name in ipairs(CHAT_FRAMES) do
-                local cf = _G[name]
-                if cf == selected then return cf:GetID() end
-            end
-        end
-    end
-    return 1
+    local selected = GetSelectedChatFrame()
+    return selected and selected.GetID and selected:GetID() or 1
 end
 
 local function CreateContextMenuItem(parent, label, onClick, isSeparator, hasArrow, isCheckbox)
@@ -2195,11 +2204,11 @@ local function CreateChatHeader(parentFrame)
     end
 
     logoBtn:HookScript("OnLeave", function()
-        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+        local sel = GetSelectedChatFrame()
         if sel == ChatFrame1 then logoBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
     end)
     combatBtn:HookScript("OnLeave", function()
-        local sel = SELECTED_DOCK_FRAME or FCF_GetCurrentChatFrame and FCF_GetCurrentChatFrame()
+        local sel = GetSelectedChatFrame()
         if sel == ChatFrame2 then combatBtn.icon:SetVertexColor(unpack(ICON_ACTIVE)) end
     end)
 

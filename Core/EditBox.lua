@@ -162,7 +162,6 @@ local function StyleEditBox(chatFrame, index)
     eb.emojiBtn = emojiBtn
 
     eb:SetAlpha(1)
-    eb.chatFrame = chatFrame
 
     -- On the modern engine, force classic-style edit box: hidden until focused.
     -- Hook OnShow so Blizzard's chat style system cannot keep it visible.

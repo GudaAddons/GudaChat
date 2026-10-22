@@ -156,6 +156,17 @@ local function ForEachChatWindow(fn)
 end
 ns.ForEachChatWindow = ForEachChatWindow
 
+-- Every chat frame that exists: the NUM_CHAT_WINDOWS permanent windows and the temporary
+-- whisper windows (ChatFrame11 and up), which Blizzard lists together in CHAT_FRAMES.
+local function ForEachChatFrame(fn)
+    if not CHAT_FRAMES then return ForEachChatWindow(fn) end
+    for _, name in ipairs(CHAT_FRAMES) do
+        local cf = _G[name]
+        if cf then fn(cf, cf:GetID()) end
+    end
+end
+ns.ForEachChatFrame = ForEachChatFrame
+
 -- Sync all docked chat frames (permanent + temporary) to ChatFrame1's position/size
 local function SyncDockedFrames()
     local point, _, relPoint, x, y = ChatFrame1:GetPoint(1)
