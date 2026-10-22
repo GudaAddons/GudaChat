@@ -167,6 +167,12 @@ local function ForEachChatFrame(fn)
 end
 ns.ForEachChatFrame = ForEachChatFrame
 
+function ns.ApplyFading()
+    ForEachChatFrame(function(cf)
+        cf:SetFading(GudaChatDB.fading)
+    end)
+end
+
 -- Sync all docked chat frames (permanent + temporary) to ChatFrame1's position/size
 local function SyncDockedFrames()
     local point, _, relPoint, x, y = ChatFrame1:GetPoint(1)
@@ -193,6 +199,31 @@ local function SyncDockedFrames()
     end
 end
 ns.SyncDockedFrames = SyncDockedFrames
+
+-- The permanent chat windows in use (General, plus every docked or shown one), as a set
+-- of indexes. FCF_OpenNewWindow takes the first free slot, so comparing this set before
+-- and after the call is the only reliable way to find the window it created.
+local function InUseChatWindows()
+    local inUse = {}
+    ForEachChatWindow(function(cf, i)
+        if i == 1 or cf.isDocked or cf:IsShown() then
+            inUse[i] = true
+        end
+    end)
+    return inUse
+end
+ns.InUseChatWindows = InUseChatWindows
+
+local function FindNewChatWindow(before)
+    local now = InUseChatWindows()
+    for i = 1, NUM_CHAT_WINDOWS do
+        if now[i] and not before[i] then
+            return _G["ChatFrame" .. i], i
+        end
+    end
+    return nil
+end
+ns.FindNewChatWindow = FindNewChatWindow
 
 -- Single writer for GudaChatDB.position. ReapplyChatFrame1Geometry treats that table as the
 -- source of truth, so anything that moves ChatFrame1 must go through here — otherwise the
@@ -365,20 +396,14 @@ ns.IS_FOREVER = INTERFACE_VERSION >= 16000 and INTERFACE_VERSION < 20000
 -- Clients running the Mainline chat frame code: Retail and Forever.
 ns.HAS_MAINLINE_CHAT = ns.IS_RETAIL or ns.IS_FOREVER
 
--- Detect the modern (Dragonflight 10.0+) client engine. True on retail AND on the
--- Cataclysm/MoP-era "Classic" clients, which share retail's chat engine but report low
--- interface numbers (so IS_RETAIL alone misses them). Feature-detect via the Settings API,
--- which shipped in 10.0 alongside the modern chat frame and is absent on the 1.15/legacy
--- engine; this self-corrects for whichever engine the TBC/Anniversary client happens to run.
-ns.IS_MODERN = ns.IS_RETAIL or (Settings ~= nil) or false
-
--- Right-edge gutter of the chat frame's message area. The retail chat frame reserves a
--- column on the right that classic engines do not have, so chrome anchored to the frame
--- must reach further right there to line up with the text.
--- Deliberately NOT gated on IS_MODERN: that is also true on MoP Classic and Classic Era
--- (both expose the Settings API) while they run legacy chat-frame geometry with no gutter,
--- which made the header/tab bar/input bar render 13px wider than the chat window there.
+-- Right-edge gutter of the chat frame's message area. The Mainline chat frame reserves a
+-- column on the right that the Classic chat frames (Era, Anniversary, MoP) do not have, so
+-- chrome anchored to the frame must reach further right there to line up with the text.
 ns.CHAT_EDGE_PAD = ns.HAS_MAINLINE_CHAT and 13 or 0
+
+-- Highest history size the settings allow. The history viewer holds this many lines, so
+-- it never drops entries that are still saved (the history, loot and addon logs).
+ns.HISTORY_MAX_LIMIT = 4000
 
 -- Custom scrollbar width (UI/Scrollbar.lua)
 ns.SCROLLBAR_W = 6

@@ -4,13 +4,21 @@ local addonName, ns = ...
 -- Lock / unlock chat frame movement
 ---------------------------------------------------------------------------
 
+-- Locking clears each window's OnDragStart; the original handler is kept so unlocking
+-- can give it back instead of leaving the windows undraggable until a reload.
 local function ApplyLockState()
     local locked = GudaChatDB.locked
     ns.ForEachChatWindow(function(cf)
         cf:SetMovable(not locked)
         cf:SetClampedToScreen(true)
         if locked then
+            if cf.gudaDragStart == nil then
+                cf.gudaDragStart = cf:GetScript("OnDragStart") or false
+            end
             cf:SetScript("OnDragStart", nil)
+        elseif cf.gudaDragStart then
+            cf:SetScript("OnDragStart", cf.gudaDragStart)
+            cf.gudaDragStart = nil
         end
         if cf.gudaResizeHandle then
             cf.gudaResizeHandle:EnableMouse(not locked)

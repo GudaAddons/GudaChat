@@ -66,6 +66,75 @@ local function CaptureLootSource()
     lastLootSource = LootWindowTitle()
 end
 
+---------------------------------------------------------------------------
+-- Loot line parsing
+--
+-- CHAT_MSG_LOOT also carries the roll messages ("selected Need for", "Need Roll - 54
+-- for", "won:"), which are not loot. A line counts only when it matches one of
+-- Blizzard's localized loot sentences, read from the client's own format globals so it
+-- works in every language. Self lines are listed first: the loot source (the corpse or
+-- chest the player opened) only belongs to the player's own loot.
+---------------------------------------------------------------------------
+
+local LOOT_FORMATS = {
+    { "LOOT_ITEM_SELF_MULTIPLE", true },
+    { "LOOT_ITEM_SELF", true },
+    { "LOOT_ITEM_PUSHED_SELF_MULTIPLE", true },
+    { "LOOT_ITEM_PUSHED_SELF", true },
+    { "LOOT_ITEM_CREATED_SELF_MULTIPLE", true },
+    { "LOOT_ITEM_CREATED_SELF", true },
+    { "LOOT_ITEM_BONUS_ROLL_SELF_MULTIPLE", true },
+    { "LOOT_ITEM_BONUS_ROLL_SELF", true },
+    { "LOOT_ITEM_MULTIPLE", false },
+    { "LOOT_ITEM", false },
+    { "LOOT_ITEM_PUSHED_MULTIPLE", false },
+    { "LOOT_ITEM_PUSHED", false },
+    { "LOOT_ITEM_BONUS_ROLL_MULTIPLE", false },
+    { "LOOT_ITEM_BONUS_ROLL", false },
+}
+
+-- "%s receives loot: %sx%d." -> "^(.+) receives loot: (.+)x(%d+)%.$", including the
+-- positional "%1$s" form some locales use.
+local function FormatToPattern(format)
+    local pattern = format:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1")
+    pattern = pattern:gsub("%%%d%%%$s", "(.+)")
+    pattern = pattern:gsub("%%%d%%%$d", "(%%d+)")
+    pattern = pattern:gsub("%%s", "(.+)")
+    pattern = pattern:gsub("%%d", "(%%d+)")
+    return "^" .. pattern .. "$"
+end
+
+local lootPatterns
+
+local function BuildLootPatterns()
+    lootPatterns = {}
+    for _, def in ipairs(LOOT_FORMATS) do
+        local format = _G[def[1]]
+        if type(format) == "string" and format ~= "" then
+            tinsert(lootPatterns, { pattern = FormatToPattern(format), isSelf = def[2] })
+        end
+    end
+end
+
+-- Returns isSelf and the item count for a loot line, or nil for anything else
+local function ParseLootLine(text)
+    if not lootPatterns then BuildLootPatterns() end
+    for _, def in ipairs(lootPatterns) do
+        local captures = { text:match(def.pattern) }
+        if captures[1] then
+            local count = 1
+            for _, capture in ipairs(captures) do
+                if capture:find("^%d+$") then
+                    count = tonumber(capture)
+                end
+            end
+            return def.isSelf, count
+        end
+    end
+    return nil
+end
+ns.ParseLootLine = ParseLootLine
+
 local lootFrame = CreateFrame("Frame")
 lootFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     if not GudaChatDB then return end
@@ -93,17 +162,10 @@ lootFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     local text = ns.SafeName(msg)
     if not text then return end
 
+    local isSelf, count = ParseLootLine(text)
+    if isSelf == nil then return end
     local link = text:match("(|c%x+|Hitem:.-|h.-|h|r)") or text:match("(|Hitem:.-|h.-|h)")
     if not link then return end
-
-    -- Read the count from whatever follows the item link rather than assuming the
-    -- enUS "x%d" shape: zhCN ends the sentence with the full-width 。 and koKR
-    -- puts the count in a separate "%d개" group, which no x%d pattern can match.
-    -- Safe because the item name and its numeric itemString are inside the link
-    -- we skip past, so the first number in the tail is the quantity.
-    local _, linkEnd = text:find(link, 1, true)
-    local tail = linkEnd and text:sub(linkEnd + 1) or ""
-    local count = tonumber(tail:match("%d+")) or 1
 
     if not GudaChatCharDB then return end
     Push(GudaChatCharDB.lootLog, {
@@ -115,7 +177,7 @@ lootFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         item = link,
         count = count,
         looter = ns.SafeName(sender) or "",
-        source = lastLootSource,
+        source = isSelf and lastLootSource or nil,
     })
 end)
 

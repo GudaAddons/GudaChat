@@ -231,7 +231,7 @@ local function ApplyChatFont(fontPath)
     if not FontLoads(fontPath) then
         fontPath = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
     end
-    ns.ForEachChatWindow(function(cf)
+    ns.ForEachChatFrame(function(cf)
         local _, size, flags = cf:GetFont()
         SafeSetFont(cf, fontPath, size, flags)
     end)
@@ -244,7 +244,7 @@ end
 ns.ApplyChatFont = ApplyChatFont
 
 local function ApplyChatFontSize(size)
-    ns.ForEachChatWindow(function(cf)
+    ns.ForEachChatFrame(function(cf)
         local font, _, flags = cf:GetFont()
         SafeSetFont(cf, font, size, flags)
     end)
@@ -495,7 +495,7 @@ local function CreateSettingsFrame()
             end),
             CreateCheckbox(tabPanels[1], L["OPT_DISABLE_FADING"], not GudaChatDB.fading, function(checked)
                 GudaChatDB.fading = not checked
-                ChatFrame1:SetFading(GudaChatDB.fading)
+                ns.ApplyFading()
             end)
         )
 
@@ -507,7 +507,7 @@ local function CreateSettingsFrame()
 
         Add(CreateCheckbox(tabPanels[1], L["OPT_HIDE_SCROLLBAR"], GudaChatDB.hideScrollbar, function(checked)
             GudaChatDB.hideScrollbar = checked
-            ns.ForEachChatWindow(function(cf)
+            ns.ForEachChatFrame(function(cf)
                 if cf.gudaScrollbar then
                     if checked then
                         cf.gudaScrollbar:Hide()
@@ -569,7 +569,7 @@ local function CreateSettingsFrame()
             end)
         )
 
-        Add(CreateCheckbox(tabPanels[1], L["OPT_WHISPER_TAB"], GudaChatDB.whisperTab, function(checked)
+        local whisperTabCheckbox = CreateCheckbox(tabPanels[1], L["OPT_WHISPER_TAB"], GudaChatDB.whisperTab, function(checked)
             GudaChatDB.whisperTab = checked
             if checked then
                 ns.SetupWhisperFrame()
@@ -582,7 +582,9 @@ local function CreateSettingsFrame()
             end
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
             if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-        end))
+        end)
+        ns.whisperTabCheckbox = whisperTabCheckbox.checkbox
+        Add(whisperTabCheckbox)
 
         Add(CreateSeparator(tabPanels[1], L["SEC_BACKGROUND"]))
 
@@ -730,7 +732,7 @@ local function CreateSettingsFrame()
 
         Add(CreateCheckbox(tabPanels[2], L["OPT_ENABLE_EMOJIS"], GudaChatDB.emojis, function(checked)
             GudaChatDB.emojis = checked
-            ns.ForEachChatWindow(function(_, i)
+            ns.ForEachChatFrame(function(_, i)
                 local eb = _G["ChatFrame" .. i .. "EditBox"]
                 if eb and eb.emojiBtn then
                     if checked then eb.emojiBtn:Show() else eb.emojiBtn:Hide() end
@@ -775,7 +777,7 @@ local function CreateSettingsFrame()
             end)
         )
 
-        Add(CreateSlider(tabPanels[3], L["OPT_MAX_MESSAGES"], 500, 4000, 100, GudaChatDB.historyMax or 2000, function(value)
+        Add(CreateSlider(tabPanels[3], L["OPT_MAX_MESSAGES"], 500, ns.HISTORY_MAX_LIMIT, 100, GudaChatDB.historyMax or 2000, function(value)
             GudaChatDB.historyMax = value
         end))
 

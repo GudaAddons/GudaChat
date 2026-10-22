@@ -87,6 +87,69 @@ ns.ApplyInputBarPosition = ApplyInputBarPosition
 -- Edit box styling
 ---------------------------------------------------------------------------
 
+-- One-time setup of an edit box: the emoji picker button and the focus hooks. StyleEditBox
+-- runs again for every new temporary whisper window, so anything created or hooked here
+-- would otherwise stack up once per call.
+--
+-- The edit box is kept classic-style, hidden until focused: Blizzard's chat style system
+-- shows it on its own, so OnShow hides it again unless it is about to take focus.
+local function AttachEditBoxBehaviour(eb, index)
+    local emojiBtn = CreateFrame("Button", nil, eb)
+    emojiBtn:SetSize(18, 18)
+    emojiBtn:SetPoint("RIGHT", eb, "RIGHT", -5, 0)
+
+    local emojiIcon = emojiBtn:CreateTexture(nil, "ARTWORK")
+    emojiIcon:SetAllPoints()
+    emojiIcon:SetTexture(ns.ASSET_PATH .. "emoji_smile.png")
+    emojiIcon:SetAlpha(0.5)
+
+    emojiBtn:SetScript("OnEnter", function() emojiIcon:SetAlpha(1) end)
+    emojiBtn:SetScript("OnLeave", function() emojiIcon:SetAlpha(0.5) end)
+    emojiBtn:SetScript("OnClick", function()
+        ns.ToggleEmojiPicker(eb)
+    end)
+    eb.emojiBtn = emojiBtn
+
+    eb:Hide()
+    eb:SetAutoFocus(false)
+    eb:HookScript("OnShow", function(self)
+        C_Timer.After(0, function()
+            if self:IsShown() and not self:HasFocus() then
+                self:Hide()
+            end
+        end)
+    end)
+
+    eb:HookScript("OnEditFocusGained", function(self)
+        ns.hideHeaderForInput = true
+        self:Show()
+        ns.ApplyEditBoxInset(index)
+        if self.gudaBg then
+            if GudaChatDB and GudaChatDB.transparentInput then
+                self.gudaBg:SetAlpha(0)
+            else
+                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_GOLDEN_A))
+            end
+        end
+    end)
+    eb:HookScript("OnEditFocusLost", function(self)
+        ns.hideHeaderForInput = false
+        self:Hide()
+        ns.ApplyEditBoxInset(index)
+        if self.gudaBg then
+            if GudaChatDB and GudaChatDB.transparentInput then
+                self.gudaBg:SetAlpha(0)
+            else
+                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
+            end
+        end
+        local picker = _G["GudaChatEmojiPicker"]
+        if picker and picker:IsShown() then
+            picker:Hide()
+        end
+    end)
+end
+
 local function StyleEditBox(chatFrame, index)
     local eb = _G["ChatFrame" .. index .. "EditBox"]
     if not eb then return end
@@ -137,79 +200,14 @@ local function StyleEditBox(chatFrame, index)
     -- Apply tight left inset once (no method replacement).
     ns.ApplyEditBoxInset(index)
 
-    -- Emoji picker button
-    local emojiBtn = CreateFrame("Button", nil, eb)
-    emojiBtn:SetSize(18, 18)
-    emojiBtn:SetPoint("RIGHT", eb, "RIGHT", -5, 0)
-
-    local emojiIcon = emojiBtn:CreateTexture(nil, "ARTWORK")
-    emojiIcon:SetAllPoints()
-    emojiIcon:SetTexture(ns.ASSET_PATH .. "emoji_smile.png")
-    emojiIcon:SetAlpha(0.5)
-
-    emojiBtn:SetScript("OnEnter", function() emojiIcon:SetAlpha(1) end)
-    emojiBtn:SetScript("OnLeave", function() emojiIcon:SetAlpha(0.5) end)
-    emojiBtn:SetScript("OnClick", function()
-        ns.ToggleEmojiPicker(eb)
-    end)
-
-    -- Show/hide based on emoji setting
-    if GudaChatDB and GudaChatDB.emojis then
-        emojiBtn:Show()
-    else
-        emojiBtn:Hide()
+    if not eb.gudaStyled then
+        eb.gudaStyled = true
+        AttachEditBoxBehaviour(eb, index)
     end
-    eb.emojiBtn = emojiBtn
-
+    eb.emojiBtn:SetShown(GudaChatDB and GudaChatDB.emojis or false)
     eb:SetAlpha(1)
-
-    -- On the modern engine, force classic-style edit box: hidden until focused.
-    -- Hook OnShow so Blizzard's chat style system cannot keep it visible.
-    if ns.IS_MODERN then
-        eb:Hide()
-        eb:SetAutoFocus(false)
-        eb:HookScript("OnShow", function(self)
-            -- Allow show only during chat activation (focus will follow).
-            -- If shown without focus and not about to get it, re-hide next frame.
-            C_Timer.After(0, function()
-                if self:IsShown() and not self:HasFocus() then
-                    self:Hide()
-                end
-            end)
-        end)
-    end
-
-    eb:HookScript("OnEditFocusGained", function(self)
-        ns.hideHeaderForInput = true
-        self:Show()
-        ns.ApplyEditBoxInset(index)
-        if self.gudaBg then
-            if GudaChatDB and GudaChatDB.transparentInput then
-                self.gudaBg:SetAlpha(0)
-            else
-                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_GOLDEN_A))
-            end
-        end
-    end)
-    eb:HookScript("OnEditFocusLost", function(self)
-        ns.hideHeaderForInput = false
-        if ns.IS_MODERN then
-            self:Hide()
-        end
-        ns.ApplyEditBoxInset(index)
-        if self.gudaBg then
-            if GudaChatDB and GudaChatDB.transparentInput then
-                self.gudaBg:SetAlpha(0)
-            else
-                self.gudaBg:SetBackdropBorderColor(unpack(ns.COLOR_DARK_BORDER))
-            end
-        end
-        local picker = _G["GudaChatEmojiPicker"]
-        if picker and picker:IsShown() then
-            picker:Hide()
-        end
-    end)
 end
+
 ns.StyleEditBox = StyleEditBox
 
 function ns.ApplyTransparentInput()

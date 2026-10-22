@@ -190,6 +190,61 @@ local function SplitProtected(msg)
 end
 ns.SplitProtected = SplitProtected
 
+-- Codes are replaced longest first, so ">:(" is not eaten by ":(" and ":cat_laugh:" not by
+-- a shorter code. The picker keeps EMOJI_DATA's own order.
+local REPLACE_ORDER = {}
+for index, entry in ipairs(EMOJI_DATA) do
+    REPLACE_ORDER[index] = entry
+end
+do
+    local position = {}
+    for index, entry in ipairs(EMOJI_DATA) do
+        position[entry] = index
+    end
+    table.sort(REPLACE_ORDER, function(a, b)
+        if #a.plain ~= #b.plain then return #a.plain > #b.plain end
+        return position[a] < position[b]
+    end)
+end
+
+local function IsWordByte(text, pos)
+    return pos >= 1 and text:sub(pos, pos):find("^%w") ~= nil
+end
+
+local function HasOpenParenBefore(text, pos)
+    local depth = 0
+    for paren in text:sub(1, pos - 1):gmatch("[()]") do
+        depth = depth + (paren == "(" and 1 or -1)
+    end
+    return depth > 0
+end
+
+-- Replaces every stand-alone use of an emoji code. A code that starts or ends with a
+-- letter or digit ("xD", "B)", "zzz") must not touch another letter or digit on that side,
+-- so "maxDPS", "0xDEAD" and "Jazzz" stay text; "B)" also stays text when it closes an
+-- open bracket, as in "(Plan B)".
+local function ReplaceEmoji(text, plain, tex)
+    local wordStart = plain:find("^%w") ~= nil
+    local wordEnd = plain:find("%w$") ~= nil
+    local closesBracket = wordStart and plain:sub(-1) == ")"
+    local out, pos, count = {}, 1, 0
+    while true do
+        local first, last = text:find(plain, pos, true)
+        if not first then break end
+        local standalone = not (wordStart and IsWordByte(text, first - 1))
+            and not (wordEnd and IsWordByte(text, last + 1))
+            and not (closesBracket and HasOpenParenBefore(text, first))
+        out[#out + 1] = text:sub(pos, first - 1)
+        out[#out + 1] = standalone and tex or plain
+        if standalone then count = count + 1 end
+        pos = last + 1
+    end
+    if count == 0 then return text, 0 end
+    out[#out + 1] = text:sub(pos)
+    return table.concat(out), count
+end
+ns.ReplaceEmoji = ReplaceEmoji
+
 local function FilterAddEmojis(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.emojis then return false end
     if not msg or ns.IsSecret(msg) then return false end
@@ -199,11 +254,14 @@ local function FilterAddEmojis(self, event, msg, ...)
     local changed = false
     for _, part in ipairs(parts) do
         if part.free then
-            for _, entry in ipairs(EMOJI_DATA) do
+            for _, entry in ipairs(REPLACE_ORDER) do
                 if part.text:find(entry.plain, 1, true) then
                     local tex = "|T" .. ns.ASSET_PATH .. entry.file .. ":" .. size .. "|t"
-                    part.text = part.text:gsub(entry.pattern, tex)
-                    changed = true
+                    local newText, count = ReplaceEmoji(part.text, entry.plain, tex)
+                    if count > 0 then
+                        part.text = newText
+                        changed = true
+                    end
                 end
             end
         end

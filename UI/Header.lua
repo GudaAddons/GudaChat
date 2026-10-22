@@ -361,8 +361,10 @@ local function ShowContextMenu(anchor, overrideIndex)
                     FCF_Close(chatFrame)
                 end
                 -- Ensure General receives whispers again
-                ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
-                ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
+                if not GudaChatDB.whisperTab then
+                    ChatFrame_AddMessageGroup(ChatFrame1, "WHISPER")
+                    ChatFrame_AddMessageGroup(ChatFrame1, "BN_WHISPER")
+                end
             else
                 -- Permanent windows: move messages/channels to General, then close
                 if GetChatWindowMessages then
@@ -382,10 +384,10 @@ local function ShowContextMenu(anchor, overrideIndex)
                             if AddChatWindowChannel then
                                 AddChatWindowChannel(1, chName)
                             end
-                            if ChatFrame1.channelList then
+                            if ChatFrame1.channelList and not tContains(ChatFrame1.channelList, chName) then
                                 tinsert(ChatFrame1.channelList, chName)
                             end
-                            if ChatFrame1.zoneChannelList then
+                            if ChatFrame1.zoneChannelList and not tContains(ChatFrame1.zoneChannelList, chName) then
                                 tinsert(ChatFrame1.zoneChannelList, chName)
                             end
                         end
@@ -512,7 +514,9 @@ local function ShowContextMenu(anchor, overrideIndex)
 
     local r, g, b, a = 0, 0, 0, 0.5
     if cf then
-        r, g, b = FCF_GetCurrentChatFrameBackgroundColor and FCF_GetCurrentChatFrameBackgroundColor(cf) or 0, 0, 0
+        if FCF_GetCurrentChatFrameBackgroundColor then
+            r, g, b = FCF_GetCurrentChatFrameBackgroundColor(cf)
+        end
         a = cf.gudaBgAlpha or 0.25
     end
     swatch:SetVertexColor(r, g, b, math.max(a, 0.3))
@@ -535,11 +539,12 @@ local function ShowContextMenu(anchor, overrideIndex)
         end
         local ca = chatFrame.gudaBgAlpha or 0.25
 
+        local modernPicker = ColorPickerFrame.SetupColorPickerAndShow ~= nil
         local info = {}
         info.r = cr
         info.g = cg
         info.b = cb
-        info.opacity = 1 - ca
+        info.opacity = modernPicker and ca or (1 - ca)
         info.hasOpacity = true
         info.swatchFunc = function()
             local nr, ng, nb = ColorPickerFrame:GetColorRGB()
@@ -554,7 +559,12 @@ local function ShowContextMenu(anchor, overrideIndex)
             end
         end
         info.opacityFunc = function()
-            local newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or ColorPickerFrame:GetColorAlpha() or 0)
+            local newAlpha
+            if modernPicker then
+                newAlpha = ColorPickerFrame:GetColorAlpha() or ca
+            else
+                newAlpha = 1 - (OpacitySliderFrame and OpacitySliderFrame:GetValue() or 0)
+            end
             if FCF_SetWindowAlpha then
                 FCF_SetWindowAlpha(chatFrame, newAlpha)
             end
@@ -570,7 +580,12 @@ local function ShowContextMenu(anchor, overrideIndex)
             if FCF_SetWindowColor then
                 FCF_SetWindowColor(chatFrame, prev.r, prev.g, prev.b)
             end
-            local prevAlpha = prev.opacity and (1 - prev.opacity) or prev.a or 0
+            local prevAlpha = ca
+            if modernPicker and prev.a then
+                prevAlpha = prev.a
+            elseif not modernPicker and prev.opacity then
+                prevAlpha = 1 - prev.opacity
+            end
             if FCF_SetWindowAlpha then
                 FCF_SetWindowAlpha(chatFrame, prevAlpha)
             end
@@ -959,42 +974,28 @@ for ev in pairs(BLINK_EVENTS) do
     blinkListener:RegisterEvent(ev)
 end
 
--- Clear blink when a tab is selected
-hooksecurefunc("FCF_SelectDockFrame", function(cf)
-    if not cf then return end
-    local cleared = false
-    for i = 1, NUM_CHAT_WINDOWS do
-        if _G["ChatFrame" .. i] == cf then
-            if blinkingTabs[i] then
-                blinkingTabs[i] = nil
-                cleared = true
-            end
-            break
-        end
+-- Selecting a tab marks it read, on Blizzard's path and on GudaChat's own
+local function ClearBlinkFor(cf)
+    if cf and cf.GetID then
+        blinkingTabs[cf:GetID()] = nil
     end
-    if not cleared and CHAT_FRAMES then
-        for _, name in ipairs(CHAT_FRAMES) do
-            if _G[name] == cf then
-                local idx = cf:GetID()
-                if blinkingTabs[idx] then
-                    blinkingTabs[idx] = nil
-                    cleared = true
-                end
-                break
-            end
-        end
-    end
-end)
+end
+hooksecurefunc("FCF_SelectDockFrame", ClearBlinkFor)
+ns.OnFrameSelected(ClearBlinkFor)
 
--- Public helpers
+-- Drops unread marks for tabs that are no longer shown in the tab bar (closed windows,
+-- the Whispers window after the Whispers tab is turned off), so they cannot keep the
+-- tab bar and the header pinned visible with nothing to click.
+local function PruneBlinkingTabs(renderedIndexes)
+    for idx in pairs(blinkingTabs) do
+        if not renderedIndexes[idx] then
+            blinkingTabs[idx] = nil
+        end
+    end
+end
+
 function ns.HasBlinkingTabs()
     return next(blinkingTabs) ~= nil
-end
-function ns.StartTabBlink(frameIndex)
-    blinkingTabs[frameIndex] = true
-end
-function ns.StopTabBlink(frameIndex)
-    blinkingTabs[frameIndex] = nil
 end
 
 -- Map common tab names to Blizzard ChatTypeInfo keys. GetChatWindowInfo returns
@@ -1108,6 +1109,41 @@ local function SaveTabOrder(allTabs)
     GudaChatDB.tabOrder = order
 end
 
+-- Saves a drag-and-drop move. allTabs is the order on screen, which can differ from the
+-- saved order: the selected tab is swapped into the last visible slot when it would
+-- otherwise sit in the overflow menu. The move is applied to baseOrder (the order before
+-- that swap), so the temporary swap is never saved.
+local function SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
+    local moved = allTabs[srcIdx]
+    if not moved then return end
+    local before = insertIdx <= fitCount and allTabs[insertIdx] or nil
+    local after = not before and allTabs[fitCount] or nil
+    local order = {}
+    for _, def in ipairs(baseOrder) do
+        if def ~= moved then tinsert(order, def) end
+    end
+    local pos = #order + 1
+    for i, def in ipairs(order) do
+        if def == before then
+            pos = i
+            break
+        elseif def == after then
+            pos = i + 1
+            break
+        end
+    end
+    tinsert(order, pos, moved)
+    SaveTabOrder(order)
+end
+
+local function PruneBlinksToTabs(allTabs)
+    local rendered = {}
+    for _, def in ipairs(allTabs) do
+        rendered[def.frameIndex] = true
+    end
+    PruneBlinkingTabs(rendered)
+end
+
 local function RefreshChatSubTabs(header)
     if not chatSubTabs then return end
     if not GudaChatDB.showTabBar or GudaChatDB.inlineTabBar then
@@ -1162,6 +1198,8 @@ local function RefreshChatSubTabs(header)
 
     -- 1b) Apply saved tab order
     ApplySavedTabOrder(allTabs)
+    PruneBlinksToTabs(allTabs)
+    local baseOrder = { unpack(allTabs) }
 
     -- 2) Measure which tabs fit; reserve space for overflow button
     local barWidth = chatSubTabs:GetWidth() or 300
@@ -1303,13 +1341,7 @@ local function RefreshChatSubTabs(header)
         local insertIdx = dragState.insertIdx
         local srcIdx = dragState.sourceIdx
         if insertIdx and srcIdx and insertIdx ~= srcIdx and insertIdx ~= srcIdx + 1 then
-            local moved = table.remove(allTabs, srcIdx)
-            if moved then
-                local dest = insertIdx
-                if dest > srcIdx then dest = dest - 1 end
-                table.insert(allTabs, dest, moved)
-                SaveTabOrder(allTabs)
-            end
+            SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
         end
         dragIndicator:Hide()
         dragState.dragging = false
@@ -1781,47 +1813,31 @@ local function SetupWhisperFrame()
     end
 
     if FCF_OpenNewWindow then
+        local before = ns.InUseChatWindows()
         FCF_OpenNewWindow(whisperName)
-        for i = NUM_CHAT_WINDOWS, 1, -1 do
-            local cf = _G["ChatFrame" .. i]
-            if cf then
-                ns.StripChatChrome(i)
-                InitWhisperFrame(cf, i)
-                FCF_DockFrame(cf)
-                SafeSelectDockFrame(ChatFrame1)
-                break
-            end
+        local cf, i = ns.FindNewChatWindow(before)
+        if cf then
+            ns.StripChatChrome(i)
+            InitWhisperFrame(cf, i)
+            if not cf.isDocked then FCF_DockFrame(cf) end
+            SafeSelectDockFrame(ChatFrame1)
         end
     end
 end
 ns.SetupWhisperFrame = SetupWhisperFrame
 
--- Listen for incoming whispers to trigger blink on the dedicated Whispers tab
-local whisperListener = CreateFrame("Frame")
-whisperListener:SetScript("OnEvent", function()
-    if not GudaChatDB or not GudaChatDB.whisperTab then return end
-    if ns.whisperFrame and not ns.whisperFrame:IsShown() and ns.whisperFrameIndex then
-        blinkingTabs[ns.whisperFrameIndex] = true
-        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
-        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-        if ns.ShowTabBar then ns.ShowTabBar() end
-        if GudaChatDB.inlineTabBar and ns.chatHeader then
-            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
-        end
-    end
+-- Closing the Whispers window turns the Whispers tab off. Otherwise the addon would keep
+-- routing whispers to a closed window (General stays without whispers) and select it on
+-- every whisper sent, which used to leave the chat area empty.
+hooksecurefunc("FCF_Close", function(frame)
+    if not ns.whisperFrame or frame ~= ns.whisperFrame then return end
+    ns.whisperFrame = nil
+    ns.whisperFrameIndex = nil
+    GudaChatDB.whisperFrameIndex = nil
+    GudaChatDB.whisperTab = false
+    ApplyWhisperRouting()
+    if ns.whisperTabCheckbox then ns.whisperTabCheckbox:SetChecked(false) end
 end)
-
-ns.StartWhisperBlink = function()
-    if ns.whisperFrameIndex then
-        blinkingTabs[ns.whisperFrameIndex] = true
-        if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
-        if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-        if ns.ShowTabBar then ns.ShowTabBar() end
-        if GudaChatDB.inlineTabBar and ns.chatHeader then
-            if not ns.hideHeaderForInput then ns.chatHeader:SetAlpha(1) end
-        end
-    end
-end
 
 ---------------------------------------------------------------------------
 -- Create chat header
@@ -2216,34 +2232,23 @@ local function CreateChatHeader(parentFrame)
     userSelectedFrame = userSelectedFrame or ChatFrame1
     UpdateIconHighlights(ChatFrame1)
 
-    -- Update label and icon highlights when tabs switch
-    hooksecurefunc("FCF_SelectDockFrame", function(cf)
-        if not cf then return end
-        local found = false
-        ns.ForEachChatWindow(function(frame, i)
-            if frame == cf then
-                tabLabel:SetText(GetChatTabName(i))
-                UpdateTabLabelBtnWidth()
-                found = true
-            end
-        end)
-        -- Check temporary frames (index > NUM_CHAT_WINDOWS)
-        if not found and CHAT_FRAMES then
-            for _, name in ipairs(CHAT_FRAMES) do
-                local frame = _G[name]
-                if frame == cf then
-                    local tab = _G[name .. "Tab"]
-                    local tabName = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or "Chat"
-                    tabLabel:SetText(tabName)
-                    UpdateTabLabelBtnWidth()
-                    break
-                end
-            end
+    -- Label and icon highlights follow every tab switch, Blizzard's and GudaChat's
+    local function UpdateHeaderForFrame(cf)
+        if not cf or not cf.GetID then return end
+        local idx = cf:GetID()
+        if idx <= NUM_CHAT_WINDOWS then
+            tabLabel:SetText(GetChatTabName(idx))
+        else
+            local tab = _G[cf:GetName() .. "Tab"]
+            tabLabel:SetText(tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or GetChatTabName(idx))
         end
+        UpdateTabLabelBtnWidth()
         UpdateIconHighlights(cf)
         if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         if ns.RefreshInlineTabs then ns.RefreshInlineTabs() end
-    end)
+    end
+    hooksecurefunc("FCF_SelectDockFrame", UpdateHeaderForFrame)
+    ns.OnFrameSelected(UpdateHeaderForFrame)
 
     -------------------------------------------------------------------
     -- Right side: Settings icon
@@ -2550,6 +2555,8 @@ local function CreateChatHeader(parentFrame)
         end
 
         ApplySavedTabOrder(allTabs)
+        PruneBlinksToTabs(allTabs)
+        local baseOrder = { unpack(allTabs) }
 
         -- Measure available width between left icons and chatTypeBtn
         local leftAnchor = historyBtn:IsShown() and historyBtn or combatBtn
@@ -2681,13 +2688,7 @@ local function CreateChatHeader(parentFrame)
             local insertIdx = inlineDragState.insertIdx
             local srcIdx = inlineDragState.sourceIdx
             if insertIdx and srcIdx and insertIdx ~= srcIdx and insertIdx ~= srcIdx + 1 then
-                local moved = table.remove(allTabs, srcIdx)
-                if moved then
-                    local dest = insertIdx
-                    if dest > srcIdx then dest = dest - 1 end
-                    table.insert(allTabs, dest, moved)
-                    SaveTabOrder(allTabs)
-                end
+                SaveTabMove(baseOrder, allTabs, srcIdx, insertIdx, fitCount)
             end
             inlineDragIndicator:Hide()
             inlineDragState.dragging = false
@@ -2950,8 +2951,6 @@ local function CreateChatHeader(parentFrame)
     -- Combat log subtabs
     -------------------------------------------------------------------
     CreateCombatSubTabs(header)
-    whisperListener:RegisterEvent("CHAT_MSG_WHISPER")
-    whisperListener:RegisterEvent("CHAT_MSG_BN_WHISPER")
 
     -------------------------------------------------------------------
     -- Chat window subtab bar

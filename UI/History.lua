@@ -119,6 +119,41 @@ local function InitHistorySeq()
 end
 ns.InitHistorySeq = InitHistorySeq
 
+-- Battle.net whispers name the sender with a |K token that is only valid for the current
+-- session, so history keeps the friend's BattleTag instead. arg13 of the BN_WHISPER events
+-- is the sender's Battle.net account id.
+local function BattleTagFor(bnSenderID)
+    if type(bnSenderID) ~= "number" or ns.IsSecret(bnSenderID) then return nil end
+    if C_BattleNet and C_BattleNet.GetAccountInfoByID then
+        local info = C_BattleNet.GetAccountInfoByID(bnSenderID)
+        local tag = info and ns.SafeName(info.battleTag)
+        if tag and tag ~= "" then return tag end
+    end
+    if BNGetFriendInfoByID then
+        local _, _, battleTag = BNGetFriendInfoByID(bnSenderID)
+        return ns.SafeName(battleTag)
+    end
+    return nil
+end
+
+-- The sender part of a history line and whether it can be whispered from history.
+-- Battle.net senders are shown as plain text (the BattleTag without its #number), and
+-- lines saved by older versions with a dead |K token show as "Unknown".
+local function HistorySender(entry, dim)
+    if entry.bnet or entry.sender:find("^|K") then
+        local name = entry.bnet and entry.sender ~= "" and (entry.sender:match("^([^#]+)") or entry.sender)
+        return "[" .. (name or ns.Blizz(UNKNOWN, "Unknown")) .. "]", false
+    end
+    dim = dim or 1
+    local senderName = entry.sender:match("^([^%-]+)") or entry.sender
+    if GudaChatDB.classColors and entry.class and RAID_CLASS_COLORS[entry.class] then
+        local cc = RAID_CLASS_COLORS[entry.class]
+        return string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
+            cc.r * dim * 255, cc.g * dim * 255, cc.b * dim * 255, entry.sender, senderName), true
+    end
+    return string.format("|Hplayer:%s|h[%s]|h", entry.sender, senderName), true
+end
+
 local historyCaptureFrame = CreateFrame("Frame")
 local HISTORY_EVENTS = {
     "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
@@ -155,9 +190,15 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
     end
 
     -- sender may be a secret string on modern clients while tainted; extract/read it safely.
-    local safeSender = ns.SafeName(sender) or ""
-    local senderName = ns.SafeShortName(sender)
-    local level = ns.GetPlayerLevel(senderName)
+    local isBNet = channelKey == "BN_WHISPER" or channelKey == "BN_WHISPER_INFORM"
+    local safeSender, level
+    if isBNet then
+        safeSender = BattleTagFor(select(11, ...)) or ""
+        classFile = nil
+    else
+        safeSender = ns.SafeName(sender) or ""
+        level = ns.GetPlayerLevel(sender)
+    end
 
     local isOutgoing = channelKey == "WHISPER_INFORM" or channelKey == "BN_WHISPER_INFORM"
 
@@ -174,6 +215,7 @@ historyCaptureFrame:SetScript("OnEvent", function(self, event, msg, sender, ...)
         class = classFile,
         level = level,
         outgoing = isOutgoing,
+        bnet = isBNet or nil,
     })
 
     local maxPerChannel = math.floor((GudaChatDB.historyMax or 2000) / #HISTORY_FILTER_KEYS)
@@ -235,18 +277,10 @@ local function ReplayHistory()
         if info then r, g, b = info.r, info.g, info.b end
         r, g, b = r * dim, g * dim, b * dim
 
-        local senderName = entry.sender:match("^([^%-]+)") or entry.sender
-        local nameLink
-        if GudaChatDB.classColors and entry.class and RAID_CLASS_COLORS[entry.class] then
-            local cc = RAID_CLASS_COLORS[entry.class]
-            nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
-                cc.r*dim*255, cc.g*dim*255, cc.b*dim*255, entry.sender, senderName)
-        else
-            nameLink = string.format("|Hplayer:%s|h[%s]|h", entry.sender, senderName)
-        end
+        local nameLink = HistorySender(entry, dim)
 
         local levelStr = ""
-        if entry.level then
+        if GudaChatDB.showLevel and entry.level then
             local lr, lg, lb = ns.GetLevelDifficultyColor(entry.level)
             levelStr = string.format("|cff%02x%02x%02x[%d]|r ", lr*dim*255, lg*dim*255, lb*dim*255, entry.level)
         end
@@ -444,12 +478,12 @@ local function CreateHistoryFrame()
     do
         local chatFont, chatSize, chatFlags = ChatFrame1:GetFont()
         if GudaChatDB.chatFont then chatFont = GudaChatDB.chatFont end
-        msgFrame:SetFont(chatFont, chatSize, chatFlags)
+        msgFrame:SetFont(chatFont, GudaChatDB.historyFontSize or chatSize, chatFlags)
     end
     msgFrame:SetTextColor(1, 1, 1)
     msgFrame:SetJustifyH("LEFT")
     msgFrame:SetFading(false)
-    msgFrame:SetMaxLines(2000)
+    msgFrame:SetMaxLines(ns.HISTORY_MAX_LIMIT)
     msgFrame:SetIndentedWordWrap(true)
     msgFrame:EnableMouseWheel(true)
     msgFrame:SetHyperlinksEnabled(true)
@@ -641,21 +675,13 @@ local function CreateHistoryFrame()
 
     local function FormatColoredEntry(entry)
         local timeStr = FormatTime(entry)
-        local senderName = entry.sender:match("^([^%-]+)") or entry.sender
         local chatType = CHANNEL_TO_CHATTYPE[entry.channel]
         local info = chatType and ChatTypeInfo[chatType]
         local r, g, b = 0.6, 0.6, 0.6
         if info then r, g, b = info.r, info.g, info.b end
         local chanColor = string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
 
-        local nameLink
-        if GudaChatDB.classColors and entry.class and RAID_CLASS_COLORS[entry.class] then
-            local cc = RAID_CLASS_COLORS[entry.class]
-            nameLink = string.format("|cff%02x%02x%02x|Hplayer:%s|h[%s]|h|r",
-                cc.r*255, cc.g*255, cc.b*255, entry.sender, senderName)
-        else
-            nameLink = string.format("|Hplayer:%s|h[%s]|h", entry.sender, senderName)
-        end
+        local nameLink, canTell = HistorySender(entry)
 
         local levelStr = ""
         if GudaChatDB.showLevel and entry.level then
@@ -666,7 +692,11 @@ local function CreateHistoryFrame()
         local body
         -- The localized wording is wrapped in our chat hyperlink, but the player
         -- link has to stay outside it: WoW cannot nest one hyperlink in another.
-        if entry.channel == "Whisper" and entry.outgoing then
+        if entry.channel == "Whisper" and not canTell then
+            local pre, post = WHISPER_PRE, WHISPER_POST
+            if entry.outgoing then pre, post = WHISPER_TO_PRE, WHISPER_TO_POST end
+            body = pre .. nameLink .. post .. levelStr .. entry.message
+        elseif entry.channel == "Whisper" and entry.outgoing then
             local whisperLink = "|Hgudachat:tell:" .. entry.sender .. "|h"
             body = whisperLink .. WHISPER_TO_PRE .. "|h" .. nameLink .. WHISPER_TO_POST .. levelStr .. entry.message
         elseif entry.channel == "Whisper" then

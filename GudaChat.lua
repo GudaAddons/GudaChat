@@ -119,6 +119,42 @@ combatLogRegenWatcher:SetScript("OnEvent", function(self)
 end)
 
 ---------------------------------------------------------------------------
+-- Chat windows created after login
+---------------------------------------------------------------------------
+
+-- Everything a chat window gets at login, for windows that appear later: temporary
+-- whisper windows (ChatFrame11 and up) and new windows from the context menu. Runs once
+-- per frame; Blizzard reuses closed temporary frames, and their setup is still in place.
+local function SetUpLateChatFrame(cf)
+    if cf.gudaSetUp then return end
+    cf.gudaSetUp = true
+    ns.StripChatChrome(cf:GetID())
+    if GudaChatDB.chatFont then
+        local _, size, flags = cf:GetFont()
+        cf:SetFont(GudaChatDB.chatFont, GudaChatDB.chatFontSize or size, flags)
+    end
+    cf:SetFading(GudaChatDB.fading)
+    ns.HookLinkClicks(cf)
+    ns.CreateScrollbar(cf)
+    if GudaChatDB.hideScrollbar and cf.gudaScrollbar then
+        cf.gudaScrollbar:Hide()
+    end
+    if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
+        ns.ApplyGlobalBackground()
+    end
+end
+
+-- Whisper tabs show the target without "-Realm"
+local function StripRealmFromTab(tab)
+    if not tab then return end
+    local tabText = tab.Text and tab.Text:GetText() or tab:GetText()
+    local shortName = tabText and tabText:match("^([^%-]+)")
+    if shortName and shortName ~= tabText then
+        if tab.Text then tab.Text:SetText(shortName) else tab:SetText(shortName) end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Initialization
 ---------------------------------------------------------------------------
 
@@ -277,7 +313,10 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
-        ns.ForEachChatWindow(function(_, i) ns.StripChatChrome(i) end)
+        ns.ForEachChatWindow(function(cf, i)
+            ns.StripChatChrome(i)
+            cf.gudaSetUp = true
+        end)
         if GudaChatDB.useGlobalBg and GudaChatDB.globalBgAlpha > 0 then
             ns.ApplyGlobalBackground()
         end
@@ -305,50 +344,34 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ns.KillFrame(QuickJoinToastButton)
         end
 
-        hooksecurefunc("FCF_OpenTemporaryWindow", function(chatType, chatTarget)
-            -- Blizzard already created, configured, docked, and selected the frame.
-            -- We just need to find it, strip its chrome, and refresh our tab bar.
+        hooksecurefunc("FCF_OpenTemporaryWindow", function()
             for _, name in ipairs(CHAT_FRAMES) do
                 local cf = _G[name]
                 if cf and cf.isTemporary and cf.inUse and cf.isDocked then
-                    local idx = cf:GetID()
-                    ns.StripChatChrome(idx)
-                    cf:ClearAllPoints()
-                    cf:SetPoint(ChatFrame1:GetPoint(1))
-                    cf:SetSize(ChatFrame1:GetSize())
-                    if GudaChatDB.chatFont then
-                        local _, size, flags = cf:GetFont()
-                        cf:SetFont(GudaChatDB.chatFont, GudaChatDB.chatFontSize or size, flags)
-                    end
-                    -- Strip realm from tab name
-                    local tab = _G[name .. "Tab"]
-                    if tab then
-                        local tabText = tab.Text and tab.Text:GetText() or tab:GetText()
-                        if tabText then
-                            local shortName = tabText:match("^([^%-]+)")
-                            if shortName and shortName ~= tabText then
-                                if tab.Text then tab.Text:SetText(shortName) else tab:SetText(shortName) end
-                            end
-                        end
-                    end
+                    SetUpLateChatFrame(cf)
+                    StripRealmFromTab(_G[name .. "Tab"])
                 end
             end
-            -- StripChatChrome above leaves the new window without our clamp insets
+            ns.SyncDockedFrames()
             ns.ApplyChatMargins()
             if ns.RefreshChatSubTabs then ns.RefreshChatSubTabs() end
         end)
 
-        -- Auto-select newly created chat windows
         if FCF_OpenNewWindow then
+            local windowsBeforeOpen = ns.InUseChatWindows()
+            local function RememberWindows()
+                windowsBeforeOpen = ns.InUseChatWindows()
+            end
             hooksecurefunc("FCF_OpenNewWindow", function()
-                for i = NUM_CHAT_WINDOWS, 1, -1 do
-                    local cf = _G["ChatFrame" .. i]
-                    if cf and cf:IsShown() then
-                        ns.SafeSelectDockFrame(cf)
-                        break
-                    end
+                local cf = ns.FindNewChatWindow(windowsBeforeOpen)
+                if cf then
+                    SetUpLateChatFrame(cf)
+                    ns.SafeSelectDockFrame(cf)
                 end
+                RememberWindows()
             end)
+            hooksecurefunc("FCF_Close", RememberWindows)
+            hooksecurefunc("FCF_DockUpdate", RememberWindows)
         end
 
         -- Auto-select renamed window and refresh tab label
@@ -411,20 +434,25 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
 
         -- Re-apply saved geometry whenever Blizzard tries to manage/move the frame.
-        local function ReapplyChatFrame1Geometry()
-            if ns._cf1Reapplying then return end          -- reentrancy guard
-            if not ns.cf1PositionLocked then return end     -- user dragging/resizing; leave it
-            if not GudaChatDB.position then return end
-            ns._cf1Reapplying = true
+        local function ApplySavedGeometry()
             local p = GudaChatDB.position
             ChatFrame1:ClearAllPoints()
             ChatFrame1:SetPoint(p.point, UIParent, p.relPoint, p.x, p.y)
             if GudaChatDB.chatSize then
                 ChatFrame1:SetSize(GudaChatDB.chatSize.w, GudaChatDB.chatSize.h)
             end
-            -- Docked/temporary frames must follow, or they stay behind at the old spot
             ns.SyncDockedFrames()
+        end
+
+        -- _cf1Reapplying guards against re-entry (SetPoint can trigger the hooks that call
+        -- this again). It is cleared even when the body throws, or the saved position would
+        -- never be re-applied again for the rest of the session.
+        local function ReapplyChatFrame1Geometry()
+            if ns._cf1Reapplying or not ns.cf1PositionLocked or not GudaChatDB.position then return end
+            ns._cf1Reapplying = true
+            local ok, err = pcall(ApplySavedGeometry)
             ns._cf1Reapplying = false
+            if not ok then geterrorhandler()(err) end
         end
         ns.ReapplyChatFrame1Geometry = ReapplyChatFrame1Geometry
 
@@ -435,7 +463,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         -- Lock position after initial setup so UIParentPanelManager can't move it
         ns.cf1PositionLocked = true
 
-        ChatFrame1:SetFading(GudaChatDB.fading)
+        ns.ApplyFading()
         -- A profile saved on an English client can carry a Latin-only font that
         -- renders nothing on zhCN/koKR/ruRU. Drop it so the client default is used.
         if GudaChatDB.chatFont and ns.IsFontAllowed and not ns.IsFontAllowed(GudaChatDB.chatFont) then
