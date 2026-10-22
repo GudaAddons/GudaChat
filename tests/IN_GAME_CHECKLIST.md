@@ -66,7 +66,7 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 - [ ] Whisper tab turned off by closing the Whispers window: the switch in Settings turns off too.
 
 ### Whisper icon (2.0)
-- [ ] Off by default: no icon until "Show whisper icon" is turned on (Settings > Tabs & Alerts).
+- [ ] On by default: the icon works on a fresh install and on a profile saved by an earlier 2.0 test build; after turning "Show whisper icon" off yourself it stays off across /reload.
 - [ ] A received whisper shows the icon with badge 1 and a short pulse; a second whisper from the same person keeps 1; a whisper from someone else makes it 2. Your own whispers never count.
 - [ ] Hover: the list shows each person (class colour; BattleTag for Battle.net friends), time, last message on one line and an unread dot; it hides shortly after the mouse leaves icon and list.
 - [ ] Click the icon: reply panel for the newest unread person, cursor in the box. Click a row: reply panel for that person.

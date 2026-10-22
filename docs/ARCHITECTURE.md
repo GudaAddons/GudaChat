@@ -42,7 +42,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 
 | Variable | Scope | Contents |
 |----------|-------|----------|
-| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`, `whisperIcon` (`enabled`, `alwaysShow`, `hideInCombat`, saved icon `point`/`relPoint`/`x`/`y`). On WoW: Forever also `charCopies` (see below). |
+| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`, `whisperIcon` (`enabled`, `userSet`, `alwaysShow`, `hideInCombat`, saved icon `point`/`relPoint`/`x`/`y`). On WoW: Forever also `charCopies` (see below). |
 | `GudaChatCharDB` | Character | `history` (one bucket per channel, keyed by channel label), `lootLog`, `addonLog` (ring buffers with a `head` field), `logSchema`, `savedAt`. |
 
 - Defaults and one-time migrations run in `GudaChat.lua` at `ADDON_LOADED`. Older versions kept history and logs in `GudaChatDB`; the first character that logs in takes them over.
@@ -135,7 +135,7 @@ Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were
 
 ## Whisper icon
 
-Off by default (`GudaChatDB.whisperIcon.enabled`). Received whispers still show in chat as usual; the icon only adds a quick way to answer.
+On by default (`GudaChatDB.whisperIcon.enabled`; `userSet` records that the player changed it, until then it is switched on at load). Received whispers still show in chat as usual; the icon only adds a quick way to answer.
 
 - **Data.** `Core/WhisperModel.lua` keeps this session's received whispers (`CHAT_MSG_WHISPER`, `CHAT_MSG_BN_WHISPER`; never the player's own) for up to 10 people, newest first, with the last 5 lines each, including the player's replies from the `*_INFORM` events. Characters are keyed `pc:` + `ns.CompactName` (so the Forever name shapes meet), Battle.net friends `bn:` + account id (arg13) and shown by BattleTag (`ns.BattleTagFor`). A secret sender is ignored; a secret message counts but keeps no text.
 - **Icon.** Themed button (default above the right side of the chat window, drag to move). The badge counts PEOPLE with unread whispers; the icon hides at 0 unless "Always show icon" is on, and in combat when "Hide in combat" is on (it comes back on `PLAYER_REGEN_ENABLED`). A new whisper pulses it for 3 s (one animation, made once).

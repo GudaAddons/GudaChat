@@ -188,3 +188,23 @@ end
 function ns.IsRingTap(heldSeconds, movedPixels)
     return heldSeconds < TAP_TIME and movedPixels < TAP_DISTANCE
 end
+
+-- Fills the whisper icon settings (GudaChatDB.whisperIcon) with their defaults and
+-- returns the table. The icon is on by default. Unreleased 2.0 builds saved it as off,
+-- so until the player changes the option themselves (userSet, written by the settings
+-- toggle) it is switched on at every load; after that their own choice is kept.
+function ns.ApplyWhisperIconDefaults(settings)
+    if type(settings) ~= "table" then
+        settings = {}
+    end
+    if settings.userSet ~= true then
+        settings.enabled = true
+    end
+    if settings.alwaysShow == nil then
+        settings.alwaysShow = false
+    end
+    if settings.hideInCombat == nil then
+        settings.hideInCombat = false
+    end
+    return settings
+end

@@ -40,7 +40,7 @@ Enable a separate whisper tab to keep private messages organized. Incoming whisp
 
 ### Whisper Icon and Quick Reply
 
-An optional whisper icon (off by default) shows how many people sent you unread whispers. Hover it to see who whispered you and their last message, click a name to answer in a small reply box, or click the icon to answer the latest person. Bind the **Whisper ring** key (Key Bindings > GudaChat): tap it to reply to the latest whisper, or hold it to pick a person from a ring around your mouse.
+A whisper icon (on by default) shows how many people sent you unread whispers. Hover it to see who whispered you and their last message, click a name to answer in a small reply box, or click the icon to answer the latest person. Bind the **Whisper ring** key (Key Bindings > GudaChat): tap it to reply to the latest whisper, or hold it to pick a person from a ring around your mouse.
 
 ### Combat Log Filtering
 

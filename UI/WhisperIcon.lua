@@ -4,7 +4,7 @@ local L = ns.L
 ---------------------------------------------------------------------------
 -- Whisper icon, hover list, quick reply and whisper ring
 --
--- Off by default (GudaChatDB.whisperIcon.enabled). A themed icon shows how many PEOPLE
+-- On by default (GudaChatDB.whisperIcon.enabled). A themed icon shows how many PEOPLE
 -- sent unread whispers this session; hovering lists them, clicking replies to the latest.
 -- The "Whisper ring" key binding opens an OPie-style ring at the cursor while held
 -- (release over a person to reply), and a quick tap replies to the latest. Received
@@ -788,11 +788,16 @@ end
 
 local RING_KEY_WIDTH = 110
 
+-- A toggle bound to one GudaChatDB.whisperIcon key. Changing "enabled" also records that
+-- the player chose it, so ns.ApplyWhisperIconDefaults stops switching the icon back on.
 local function SettingToggle(label, key, hint)
     return ns.CreateToggle(label, function()
         return Settings()[key] == true
     end, function(value)
         Settings()[key] = value
+        if key == "enabled" then
+            Settings().userSet = true
+        end
         Update()
     end, hint)
 end
@@ -830,7 +835,7 @@ end
 
 ns.AddSettingsCard("tabs", 40, function(page)
     local card = ns.CreateCard(page, L["SEC_WHISPER_ICON"])
-    card:AddRow(SettingToggle(L["OPT_WHISPER_ICON"], "enabled", L["HINT_OFF_BY_DEFAULT"]))
+    card:AddRow(SettingToggle(L["OPT_WHISPER_ICON"], "enabled", L["HINT_ON_BY_DEFAULT"]))
     card:AddRow(SettingToggle(L["OPT_WHISPER_ICON_ALWAYS"], "alwaysShow"))
     card:AddRow(SettingToggle(L["OPT_HIDE_IN_COMBAT"], "hideInCombat"))
     card:AddRow(RingKeyRow())
