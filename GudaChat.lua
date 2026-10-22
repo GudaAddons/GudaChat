@@ -58,12 +58,48 @@ SlashCmdList["GUDACHAT"] = function(msg)
 end
 
 ---------------------------------------------------------------------------
+-- Account copy of the per-character data (WoW: Forever only)
+--
+-- Forever writes SavedVariables at logout but often does not load them back,
+-- and the player-side workaround (Forever Data Protect) restores account-wide
+-- SavedVariables only. So on Forever GudaChatCharDB (history, loot log, addon
+-- log) is also copied into GudaChatDB.charCopies at logout, keyed by the
+-- character GUID; at load the newer of the two wins. Same design as GudaBags.
+---------------------------------------------------------------------------
+
+local function CharCopyKey()
+    local guid = ns.SafeName(UnitGUID("player"))
+    if guid and guid ~= "" then return guid end
+    return ns.UnitFullName("player")
+end
+
+local function RestoreCharCopy()
+    local copies = GudaChatDB.charCopies
+    local key = copies and CharCopyKey()
+    local copy = key and copies[key]
+    if type(copy) ~= "table" then return end
+    local own = GudaChatCharDB
+    if type(own) == "table" and (tonumber(own.savedAt) or 0) >= (tonumber(copy.savedAt) or 0) then return end
+    GudaChatCharDB = copy
+end
+
+local function SaveCharCopy()
+    if type(GudaChatCharDB) ~= "table" then return end
+    local key = CharCopyKey()
+    if not key then return end
+    GudaChatCharDB.savedAt = time()
+    GudaChatDB.charCopies = GudaChatDB.charCopies or {}
+    GudaChatDB.charCopies[key] = GudaChatCharDB
+end
+
+---------------------------------------------------------------------------
 -- Initialization
 ---------------------------------------------------------------------------
 
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
 loader:RegisterEvent("PLAYER_ENTERING_WORLD")
+loader:RegisterEvent("PLAYER_LOGOUT")
 loader:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         GudaChatDB = GudaChatDB or {}
@@ -123,6 +159,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         -- character; settings stay account-wide so preferences follow
         -- you across alts.
         ---------------------------------------------------------------
+        if ns.IS_FOREVER then
+            RestoreCharCopy()
+        end
         GudaChatCharDB = GudaChatCharDB or {}
         local charDB = GudaChatCharDB
 
@@ -201,6 +240,15 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             GudaChatDB.notifications.generalTab = true
         end
         self:UnregisterEvent("ADDON_LOADED")
+
+    elseif event == "PLAYER_LOGOUT" then
+        if not GudaChatDB then return end
+        if ns.UndoWhisperRoutingForLogout then
+            ns.UndoWhisperRoutingForLogout()
+        end
+        if ns.IS_FOREVER then
+            SaveCharCopy()
+        end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         ns.ForEachChatWindow(function(_, i) ns.StripChatChrome(i) end)

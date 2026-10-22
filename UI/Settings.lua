@@ -269,6 +269,31 @@ local TIMESTAMP_OPTIONS = {
 
 local dropdownCounter = 0
 
+-- WowStyle1DropdownTemplate + MenuUtil where the client has them (Retail, Forever and the
+-- modern Classic clients). UIDropDownMenu shares global state with Blizzard's unit popups,
+-- so using it from addon code can taint them; the old template stays only as a fallback.
+local DROPDOWN_WIDTH = 140
+
+local function CreateModernDropdown(container, options, currentValue, onChange)
+    local selected = currentValue
+    local dropdown = CreateFrame("DropdownButton", nil, container, "WowStyle1DropdownTemplate")
+    dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+    dropdown:SetWidth(DROPDOWN_WIDTH)
+
+    local entries = {}
+    for _, opt in ipairs(options) do
+        tinsert(entries, { opt.label, opt.value })
+    end
+    MenuUtil.CreateRadioMenu(dropdown,
+        function(value) return value == selected end,
+        function(value)
+            selected = value
+            onChange(value)
+        end,
+        unpack(entries))
+    return dropdown
+end
+
 local function CreateDropdown(parent, label, options, currentValue, onChange)
     dropdownCounter = dropdownCounter + 1
     local container = CreateFrame("Frame", nil, parent)
@@ -277,6 +302,11 @@ local function CreateDropdown(parent, label, options, currentValue, onChange)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("LEFT", container, "LEFT", 0, 0)
     text:SetText(label)
+
+    if DoesTemplateExist and DoesTemplateExist("WowStyle1DropdownTemplate") and MenuUtil then
+        container.dropdown = CreateModernDropdown(container, options, currentValue, onChange)
+        return container
+    end
 
     local ddName = "GudaChatDropdown" .. dropdownCounter
     local dd = CreateFrame("Frame", ddName, container, "UIDropDownMenuTemplate")

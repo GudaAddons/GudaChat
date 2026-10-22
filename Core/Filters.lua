@@ -31,18 +31,16 @@ end
 
 local levelCache = {}
 
--- On modern clients (11.0+), name-returning APIs like UnitName/GetGuildRosterInfo can hand
--- back "secret" strings when our execution is tainted. Comparing those with `==` throws
--- ("attempt to compare ... a secret string value"). pcall the comparison so a secret value
--- simply yields "no match" instead of erroring the whole filter chain.
-local function NamesMatch(a, b)
-    local ok, equal = pcall(function() return a == b end)
-    return ok and equal
+-- A usable level, or nil for unknown (0, -1) and secret levels, which throw on compare
+local function PlainLevel(level)
+    if type(level) ~= "number" or ns.IsSecret(level) or level <= 0 then return nil end
+    return level
 end
 
 local function GetPlayerLevel(name)
-    if not name then return nil end
-    if levelCache[name] then return levelCache[name] end
+    local key = ns.CompactName(name)
+    if not key then return nil end
+    if levelCache[key] then return levelCache[key] end
 
     local unitIDs = { "target", "focus", "mouseover" }
     for i = 1, 4 do tinsert(unitIDs, "party" .. i) end
@@ -50,14 +48,11 @@ local function GetPlayerLevel(name)
     for i = 1, 40 do tinsert(unitIDs, "nameplate" .. i) end
 
     for _, unit in ipairs(unitIDs) do
-        if UnitExists(unit) then
-            local unitName = UnitName(unit)
-            if NamesMatch(unitName, name) then
-                local level = UnitLevel(unit)
-                if level and level > 0 then
-                    levelCache[name] = level
-                    return level
-                end
+        if UnitExists(unit) and ns.CompactName(ns.UnitFullName(unit)) == key then
+            local level = PlainLevel(UnitLevel(unit))
+            if level then
+                levelCache[key] = level
+                return level
             end
         end
     end
@@ -66,13 +61,11 @@ local function GetPlayerLevel(name)
         local numMembers = GetNumGuildMembers and GetNumGuildMembers() or 0
         for i = 1, numMembers do
             local gName, _, _, gLevel = GetGuildRosterInfo(i)
-            if gName then
-                -- gName may also be a secret string on modern clients; matching/string ops
-                -- would throw, so do it inside pcall.
-                local ok, shortName = pcall(function() return gName:match("^([^%-]+)") end)
-                if ok and NamesMatch(shortName, name) and gLevel and gLevel > 0 then
-                    levelCache[name] = gLevel
-                    return gLevel
+            if ns.CompactName(gName) == key then
+                local level = PlainLevel(gLevel)
+                if level then
+                    levelCache[key] = level
+                    return level
                 end
             end
         end
@@ -105,9 +98,9 @@ ns.GetLevelDifficultyColor = GetLevelDifficultyColor
 
 local function FilterAddLevel(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.showLevel then return false end
+    if not msg or ns.IsSecret(msg) then return false end
 
-    local name = ns.SafeShortName(sender)
-    local level = GetPlayerLevel(name)
+    local level = GetPlayerLevel(sender)
     if level then
         local r, g, b = GetLevelDifficultyColor(level)
         local hex = string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
@@ -168,7 +161,7 @@ end
 
 local function FilterAddURLLinks(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.copyLinks then return false end
-    if not msg or msg == "" then return false end
+    if not msg or ns.IsSecret(msg) or msg == "" then return false end
     -- Skip messages that already contain our link — re-processing would nest the
     -- hyperlink inside itself, corrupting both the display and the click target.
     if msg:find("|Hgudachat:url:", 1, true) then return false end
@@ -205,7 +198,7 @@ local function FilterAddURLLinks(self, event, msg, ...)
 end
 
 function ns.SetupLinkHook()
-    if ns.IS_RETAIL then
+    if ns.HAS_MAINLINE_CHAT then
         -- Retail / Midnight: use an ADDITIVE HookScript so we never inject our insecure closure
         -- into the secure item-link -> SetItemRef -> SetHyperlink render path (tainting it crashes
         -- on 12.0 "secret" color values, see tooltip-sethyperlink-taint). Retail's SetItemRef
@@ -328,7 +321,7 @@ end
 local function FilterHighlightName(self, event, msg, sender, ...)
     if not GudaChatDB or not GudaChatDB.highlightName then return false end
     if not namePattern and not plainName then BuildNameHighlight() end
-    if (not namePattern and not plainName) or not msg then return false end
+    if (not namePattern and not plainName) or not msg or ns.IsSecret(msg) then return false end
     -- select(5, ...) is arg7 zoneChannelID, select(7, ...) is arg9 channelBaseName
     if event == "CHAT_MSG_CHANNEL" and IsPublicChannel(select(5, ...), select(7, ...)) then
         return false
@@ -349,8 +342,7 @@ local function FilterHighlightName(self, event, msg, sender, ...)
     if not changed then return false end
 
     -- Sound: skip our own messages; throttle (also dedupes multi-frame display).
-    local senderShort = ns.SafeShortName(sender)
-    local isSelf = senderShort and ns.NamesMatch(senderShort, UnitName("player"))
+    local isSelf = ns.SameCharacter(sender, ns.UnitFullName("player"))
     if not isSelf and GudaChatDB.highlightSound and SOUNDKIT and SOUNDKIT.TELL_MESSAGE then
         local now = GetTime()
         if now - lastMentionSound > MENTION_SOUND_THROTTLE then

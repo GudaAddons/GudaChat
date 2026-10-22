@@ -54,6 +54,54 @@ local function SafeName(name)
 end
 ns.SafeName = SafeName
 
+-- True for a Retail 12 / WoW: Forever "secret" value, which addon code must not read,
+-- compare or concatenate. Clients without secret values have no issecretvalue.
+local function IsSecret(value)
+    return issecretvalue ~= nil and issecretvalue(value) == true
+end
+ns.IsSecret = IsSecret
+
+-- Comparison form of a character name: no realm, no spaces, lower case. Chat senders,
+-- unit names and guild roster names reach us in different shapes ("Name-Realm" on
+-- Classic and Retail; "Given Family", "GivenFamily" or "Given Family-Realm" on Forever),
+-- so identity checks compare this instead of raw strings. nil for secret or empty names.
+local function CompactName(name)
+    name = SafeName(name)
+    if not name then return nil end
+    local base = (name:match("^([^%-]+)") or name):gsub("%s", "")
+    if base == "" then return nil end
+    return ns.UTF8Lower(base)
+end
+ns.CompactName = CompactName
+
+local function SameCharacter(a, b)
+    local compactA = CompactName(a)
+    return compactA ~= nil and compactA == CompactName(b)
+end
+ns.SameCharacter = SameCharacter
+
+-- A unit's character name as chat shows it. On Forever UnitName returns the given name
+-- and the family name as two values (HeadHunter probe, 2026-09-23), so join them unless
+-- the second value is the realm.
+local function UnitFullName(unit)
+    local name, second = UnitName(unit)
+    name = SafeName(name)
+    if not name then return nil end
+    second = SafeName(second)
+    if ns.IS_FOREVER and second and second ~= "" and second ~= GetRealmName() then
+        return name .. " " .. second
+    end
+    return name
+end
+ns.UnitFullName = UnitFullName
+
+-- Blizzard chat helpers that moved in modern clients. The old globals still exist on every
+-- supported client today, but only through deprecation fallbacks (the loadDeprecationFallbacks
+-- CVar) on Retail and Forever, so prefer them and fall back to their new homes.
+ns.OpenChat = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
+ns.SendTell = ChatFrame_SendTell or (ChatFrameUtil and ChatFrameUtil.SendTell)
+ns.PerformEmote = DoEmote or (C_ChatInfo and C_ChatInfo.PerformEmote)
+
 ---------------------------------------------------------------------------
 -- Shared constants
 ---------------------------------------------------------------------------

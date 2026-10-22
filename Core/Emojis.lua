@@ -192,6 +192,7 @@ ns.SplitProtected = SplitProtected
 
 local function FilterAddEmojis(self, event, msg, ...)
     if not GudaChatDB or not GudaChatDB.emojis then return false end
+    if not msg or ns.IsSecret(msg) then return false end
 
     local size = GudaChatDB.emojiSize or ns.DEFAULT_EMOJI_SIZE
     local parts = SplitProtected(msg)

@@ -890,9 +890,7 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
     end
 
     -- Don't blink for our own messages (sender may be a secret string; use taint-safe helpers)
-    local playerName = UnitName("player")
-    local senderName = ns.SafeShortName(sender)
-    if senderName and ns.NamesMatch(senderName, playerName) then return end
+    if ns.SameCharacter(sender, ns.UnitFullName("player")) then return end
 
     local selectedIdx = GetSelectedChatFrameIndex()
     local changed = false
@@ -922,18 +920,12 @@ blinkListener:SetScript("OnEvent", function(self, event, msg, sender, ...)
 
     -- Check temporary whisper windows (match sender to chatTarget)
     if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and CHAT_FRAMES then
-        local senderShort = ns.SafeShortName(sender)
         for _, frameName in ipairs(CHAT_FRAMES) do
             local cf = _G[frameName]
             if cf and cf.isTemporary and cf.inUse and cf.isDocked then
                 local idx = cf:GetID()
                 if idx ~= selectedIdx and not cf:IsShown() then
-                    local target = cf.chatTarget
-                    local targetShort = ns.SafeShortName(target)
-                    -- UTF8Lower: string.lower folds only A-Z, so a Cyrillic name
-                    -- whose case differed never matched and the tab never blinked
-                    if targetShort and senderShort
-                        and ns.UTF8Lower(targetShort) == ns.UTF8Lower(senderShort) then
+                    if ns.SameCharacter(cf.chatTarget, sender) then
                         if not blinkingTabs[idx] then
                             blinkingTabs[idx] = true
                             changed = true
@@ -1698,6 +1690,23 @@ local function ApplyWhisperRouting()
 end
 ns.ApplyWhisperRouting = ApplyWhisperRouting
 
+-- Logout half of ApplyWhisperRouting. The whisperMode CVar and General's WHISPER groups
+-- are saved by the game, outside SavedVariables; if GudaChatDB is lost (the WoW: Forever
+-- SavedVariables bug) the next session could never undo them and General would stop
+-- showing whispers. So they go back to the player's own setup at every logout, and
+-- ApplyWhisperRouting sets them again at login. origWhisperMode is kept for that.
+local function UndoWhisperRoutingForLogout()
+    if not GudaChatDB.whisperTab then return end
+    if GudaChatDB.origWhisperMode then
+        pcall(SetCVar, "whisperMode", GudaChatDB.origWhisperMode)
+    end
+    if AddChatWindowMessages then
+        AddChatWindowMessages(1, "WHISPER")
+        AddChatWindowMessages(1, "BN_WHISPER")
+    end
+end
+ns.UndoWhisperRoutingForLogout = UndoWhisperRoutingForLogout
+
 local function SetupWhisperFrame()
     local function InitWhisperFrame(cf, idx)
         ns.whisperFrame = cf
@@ -2245,7 +2254,7 @@ local function CreateChatHeader(parentFrame)
     channelsBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
 
     channelsBtn:SetScript("OnClick", function()
-        ToggleChannelFrame()
+        if ToggleChannelFrame then ToggleChannelFrame() end
         CloseDropdown()
     end)
 
@@ -2353,7 +2362,7 @@ local function CreateChatHeader(parentFrame)
 
         local slash = entry.cmd
         mb:SetScript("OnClick", function()
-            DoEmote(EmoteToken(slash))
+            ns.PerformEmote(EmoteToken(slash))
             emoteSubMenu:Hide()
             chatTypeDropdown:Hide()
         end)
@@ -2421,7 +2430,7 @@ local function CreateChatHeader(parentFrame)
 
         local slash = entry.cmd
         mb:SetScript("OnClick", function()
-            ChatFrame_OpenChat(slash .. " ", ChatFrame1)
+            ns.OpenChat(slash .. " ", ChatFrame1)
             chatTypeDropdown:Hide()
             emoteSubMenu:Hide()
         end)
@@ -3001,22 +3010,16 @@ local function CreateChatHeader(parentFrame)
         if not group then return end
 
         -- Only react to our own messages (sender may be a secret string; use taint-safe helpers)
-        local playerName = UnitName("player")
-        local senderShort = ns.SafeShortName(sender)
         local isOutgoing = (event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM")
-        if not isOutgoing and not ns.NamesMatch(senderShort, playerName) then return end
+        if not isOutgoing and not ns.SameCharacter(sender, ns.UnitFullName("player")) then return end
 
         -- For outgoing whispers, check temporary windows then dedicated Whispers tab
         if isOutgoing then
-            local targetShort = ns.SafeShortName(sender)
-            if targetShort and CHAT_FRAMES then
+            if CHAT_FRAMES then
                 for _, frameName in ipairs(CHAT_FRAMES) do
                     local cf = _G[frameName]
                     if cf and cf.isTemporary and cf.inUse and cf.isDocked then
-                        local ct = cf.chatTarget
-                        local ctShort = ns.SafeShortName(ct)
-                        -- UTF8Lower, not string.lower, which folds only A-Z
-                        if ctShort and ns.UTF8Lower(ctShort) == ns.UTF8Lower(targetShort) then
+                        if ns.SameCharacter(cf.chatTarget, sender) then
                             SafeSelectDockFrame(cf)
                             return
                         end

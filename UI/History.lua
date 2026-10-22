@@ -467,9 +467,14 @@ local function CreateHistoryFrame()
 
     -- Hyperlink handlers for clickable channels, names, and item tooltips
     msgFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        local tellTarget = link:match("^gudachat:tell:(.+)")
+        if tellTarget then
+            ns.SendTell(tellTarget, ChatFrame1)
+            return
+        end
         local chatSlash = link:match("^gudachat:chat:(.+)")
         if chatSlash then
-            ChatFrame_OpenChat(chatSlash .. " ", ChatFrame1)
+            ns.OpenChat(chatSlash .. " ", ChatFrame1)
             return
         end
         SetItemRef(link, text, button)
@@ -662,12 +667,10 @@ local function CreateHistoryFrame()
         -- The localized wording is wrapped in our chat hyperlink, but the player
         -- link has to stay outside it: WoW cannot nest one hyperlink in another.
         if entry.channel == "Whisper" and entry.outgoing then
-            local whisperLink = string.format("|Hgudachat:chat:%s %s|h",
-                CHANNEL_SLASH_COMMANDS.Whisper, entry.sender:match("^([^%-]+)") or entry.sender)
+            local whisperLink = "|Hgudachat:tell:" .. entry.sender .. "|h"
             body = whisperLink .. WHISPER_TO_PRE .. "|h" .. nameLink .. WHISPER_TO_POST .. levelStr .. entry.message
         elseif entry.channel == "Whisper" then
-            local whisperLink = string.format("|Hgudachat:chat:%s %s|h",
-                CHANNEL_SLASH_COMMANDS.Whisper, entry.sender:match("^([^%-]+)") or entry.sender)
+            local whisperLink = "|Hgudachat:tell:" .. entry.sender .. "|h"
             body = WHISPER_PRE .. nameLink .. whisperLink .. WHISPER_POST .. "|h" .. levelStr .. entry.message
         else
             local fmt = REPLAY_CHANNEL_FORMATS[entry.channel]
