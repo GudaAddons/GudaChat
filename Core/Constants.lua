@@ -335,18 +335,59 @@ end
 ns.SettleChatPosition = SettleChatPosition
 
 -- Edit Mode (clients that have it) places ChatFrame1 from its own layout: on entering and
--- leaving Edit Mode and whenever it applies the chat system's anchor. GudaChat's saved
--- position wins: every such placement is followed by ReapplyChatFrame1Geometry. Dragging
--- the chat inside Edit Mode is the player choosing a new spot, so that drag unlocks the
--- re-apply and its end is saved as the GudaChat position. Only post-hooks are used, so no
--- Blizzard method or field is replaced.
+-- leaving Edit Mode, whenever it applies the chat system's anchor, and when its layouts
+-- reload. It also replaces the chat's clamp insets with ones sized to its selection box
+-- (EditModeSystemMixin:UpdateClampOffsets), which stay after Edit Mode closes and can pin
+-- the chat into a screen corner. GudaChat's saved position and clamp insets win: each such
+-- placement is followed by ReapplyChatFrame1Geometry, and closing Edit Mode re-applies the
+-- margins and the position a few times while Blizzard finishes restoring its layout.
+-- Dragging the chat inside Edit Mode is the player choosing a new spot, so only that drag
+-- unlocks the re-apply and its end is saved as the GudaChat position. Only post-hooks and
+-- callbacks are used, so no Blizzard method or field is replaced.
+local EDIT_MODE_EXIT_REAPPLY_DELAYS = { 0, 0.2, 1 }
+
+local editModeDragging = false
+
+local function IsEditModeActive()
+    return EditModeManagerFrame ~= nil and EditModeManagerFrame.IsEditModeActive ~= nil
+        and EditModeManagerFrame:IsEditModeActive() == true
+end
+
+local function ReapplyChatGeometry()
+    if ns.ReapplyChatFrame1Geometry then ns.ReapplyChatFrame1Geometry() end
+end
+
 local function ReapplyNextFrame()
+    C_Timer.After(0, ReapplyChatGeometry)
+end
+
+local function RestoreAfterEditMode()
+    for _, delay in ipairs(EDIT_MODE_EXIT_REAPPLY_DELAYS) do
+        C_Timer.After(delay, function()
+            if IsEditModeActive() then return end
+            if ns.ApplyChatMargins then ns.ApplyChatMargins() end
+            ReapplyChatGeometry()
+        end)
+    end
+end
+
+local function RestoreMarginsOutsideEditMode()
+    if IsEditModeActive() then return end
     C_Timer.After(0, function()
-        if ns.ReapplyChatFrame1Geometry then ns.ReapplyChatFrame1Geometry() end
+        if ns.ApplyChatMargins then ns.ApplyChatMargins() end
     end)
 end
 
+local function OnEditModeDragStart()
+    if not IsEditModeActive() then return end
+    if ChatFrame1.CanBeMoved and not ChatFrame1:CanBeMoved() then return end
+    editModeDragging = true
+    ns.cf1PositionLocked = false
+end
+
 local function OnEditModeDragStop()
+    if not editModeDragging then return end
+    editModeDragging = false
     SaveChatPosition()
     ns.cf1PositionLocked = true
 end
@@ -359,13 +400,21 @@ local function HookEditModeChatPosition()
             hooksecurefunc(ChatFrame1, method, ReapplyNextFrame)
         end
     end
+    if type(ChatFrame1.UpdateClampOffsets) == "function" then
+        hooksecurefunc(ChatFrame1, "UpdateClampOffsets", RestoreMarginsOutsideEditMode)
+    end
     if type(ChatFrame1.OnDragStart) == "function" and type(ChatFrame1.OnDragStop) == "function" then
-        hooksecurefunc(ChatFrame1, "OnDragStart", function() ns.cf1PositionLocked = false end)
+        hooksecurefunc(ChatFrame1, "OnDragStart", OnEditModeDragStart)
         hooksecurefunc(ChatFrame1, "OnDragStop", OnEditModeDragStop)
     end
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("EditMode.Enter", ReapplyNextFrame, ns)
-        EventRegistry:RegisterCallback("EditMode.Exit", ReapplyNextFrame, ns)
+        EventRegistry:RegisterCallback("EditMode.Exit", RestoreAfterEditMode, ns)
+    end
+    if EditModeManagerFrame then
+        local layoutWatcher = CreateFrame("Frame")
+        layoutWatcher:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+        layoutWatcher:SetScript("OnEvent", RestoreAfterEditMode)
     end
 end
 ns.HookEditModeChatPosition = HookEditModeChatPosition
