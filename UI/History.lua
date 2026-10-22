@@ -435,6 +435,9 @@ local function CreateHistoryFrame()
         if GudaChatDB.chatFont then chatFont = GudaChatDB.chatFont end
         msgFrame:SetFont(chatFont, GudaChatDB.historyFontSize or chatSize, chatFlags)
     end
+    if GudaChatDB.chatLineSpacing then
+        msgFrame:SetSpacing(GudaChatDB.chatLineSpacing)
+    end
     ns.Paint(msgFrame, ns.Theme.C.bodyText)
     msgFrame:SetJustifyH("LEFT")
     msgFrame:SetFading(false)

@@ -93,6 +93,9 @@ local function SetUpLateChatFrame(cf)
         local _, size, flags = cf:GetFont()
         cf:SetFont(GudaChatDB.chatFont, GudaChatDB.chatFontSize or size, flags)
     end
+    if GudaChatDB.chatLineSpacing and cf.SetSpacing then
+        cf:SetSpacing(GudaChatDB.chatLineSpacing)
+    end
     cf:SetFading(GudaChatDB.fading)
     ns.HookLinkClicks(cf)
     ns.CreateScrollbar(cf)
@@ -459,6 +462,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
         if GudaChatDB.chatFontSize then
             ns.ApplyChatFontSize(GudaChatDB.chatFontSize)
+        end
+        if GudaChatDB.chatLineSpacing then
+            ns.ApplyChatLineSpacing(GudaChatDB.chatLineSpacing)
         end
         ns.ApplyClassColors()
         ns.EnableLevelDisplay()

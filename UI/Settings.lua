@@ -123,6 +123,20 @@ local function ApplyChatFontSize(size)
 end
 ns.ApplyChatFontSize = ApplyChatFontSize
 
+-- Extra pixels between chat lines, for every chat window and the History viewer.
+-- SetSpacing is a FontInstance method every supported client has.
+local function ApplyChatLineSpacing(spacing)
+    spacing = spacing or 0
+    ns.ForEachChatFrame(function(cf)
+        if cf.SetSpacing then cf:SetSpacing(spacing) end
+    end)
+    local histMsgFrame = _G["GudaChatHistoryMsgFrame"]
+    if histMsgFrame and histMsgFrame.SetSpacing then
+        histMsgFrame:SetSpacing(spacing)
+    end
+end
+ns.ApplyChatLineSpacing = ApplyChatLineSpacing
+
 local TIMESTAMP_OPTIONS = {
     { label = ns.Blizz(NONE, "None"),        value = "none" },
     { label = "03:27",         value = "%I:%M " },
@@ -185,6 +199,7 @@ local LOG_CAP_MAX = 2000
 local LOG_CAP_STEP = 100
 
 local CHAT_FONT_SIZE_MIN, CHAT_FONT_SIZE_MAX = 8, 24
+local LINE_SPACING_MIN, LINE_SPACING_MAX = 0, 10
 local HISTORY_FONT_SIZE_MIN, HISTORY_FONT_SIZE_MAX = 8, 24
 
 local SUPPORTED_CLIENTS = "Retail, MoP Classic, TBC Anniversary, Classic Era, WoW: Forever"
@@ -231,10 +246,12 @@ end
 -- Live preview
 ---------------------------------------------------------------------------
 
-local PREVIEW_HEIGHT = 150
+local PREVIEW_HEIGHT = 165
 local PREVIEW_SCENE = { 0.2, 0.19, 0.24, 1 }
 local PREVIEW_TAB_GENERAL = { 1, 1, 0 }
 local PREVIEW_FONT_SCALE = 0.85
+local PREVIEW_LINE_GAP = 4
+local PREVIEW_MESSAGES_PADDING = 4
 
 local function ClassColored(name, class)
     local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
@@ -345,7 +362,10 @@ local function CreatePreview(parent)
         local font, size, flags = ChatFrame1:GetFont()
         font = GudaChatDB.chatFont or font or STANDARD_TEXT_FONT
         size = math.floor((GudaChatDB.chatFontSize or size or 14) * PREVIEW_FONT_SCALE + 0.5)
+        local lineStep = size + PREVIEW_LINE_GAP + math.floor((GudaChatDB.chatLineSpacing or 0) * PREVIEW_FONT_SCALE + 0.5)
+        messages:SetHeight(PREVIEW_MESSAGES_PADDING * 2 + lineStep * #lines)
         for i, def in ipairs(PreviewLines()) do
+            lines[i]:SetPoint("TOPLEFT", messages, "TOPLEFT", 6, -PREVIEW_MESSAGES_PADDING - (i - 1) * lineStep)
             ns.SafeSetFont(lines[i], font, size, flags)
             lines[i]:SetText(def[3])
             lines[i]:SetTextColor(ChatTypeRGB(def[1], def[2]))
@@ -574,6 +594,13 @@ AddCard("appearance", 40, function(page)
         function(value)
             GudaChatDB.chatFontSize = value
             ApplyChatFontSize(value)
+            UpdatePreview()
+        end))
+    card:AddRow(ns.CreateSlider(L["OPT_LINE_SPACING"], LINE_SPACING_MIN, LINE_SPACING_MAX, 1,
+        function() return GudaChatDB.chatLineSpacing or 0 end,
+        function(value)
+            GudaChatDB.chatLineSpacing = value
+            ApplyChatLineSpacing(value)
             UpdatePreview()
         end))
     return card
@@ -1023,7 +1050,7 @@ local function CreateSettingsFrame()
 
     local credit = sidebar:CreateFontString(nil, "OVERLAY", "GudaChatFontDisableSmall")
     credit:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 14, 12)
-    credit:SetText("by Guda")
+    credit:SetText("by GudaAddons")
     ns.Paint(credit, C.dimText)
 
     local scroll = ns.CreateScrollArea(f)
