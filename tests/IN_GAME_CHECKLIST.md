@@ -80,6 +80,14 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 - [ ] Switching the theme restyles icon, badge, list, panel and ring live.
 - [ ] No typing or casting is interrupted when a whisper arrives (the panel never takes focus by itself).
 
+### Idle chat text (2.0)
+- [ ] Off by default: chat text behaves exactly as before.
+- [ ] On (Settings > Chat > "Hide text when chat is not in use"): text fades out with the header when the mouse leaves the chat, and back in on hover.
+- [ ] Text stays visible while typing in the chat input, while the emoji picker or the settings window is open, and in menus opened from the chat.
+- [ ] A new message (also in a whisper window) shows the text for about 10 seconds, then it fades again.
+- [ ] The combat log tab still shows and hides correctly; the chat background and scrollbar are unaffected.
+- [ ] Turning the option off brings all text back at once, without /reload.
+
 ## WoW: Forever only
 
 - [ ] Whisper icon with two-part names ("Given Family"): the person appears once, the reply reaches them, and whispering them from chat marks them read.

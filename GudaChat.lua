@@ -186,6 +186,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.showTabBar == nil then
             GudaChatDB.showTabBar = true
         end
+        if GudaChatDB.hideIdleText == nil then
+            GudaChatDB.hideIdleText = false
+        end
         ---------------------------------------------------------------
         -- Per-character storage
         --
@@ -476,6 +479,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
             ns.SetupWhisperFrame()
         end
         ns.CreateChatHeader(ChatFrame1)
+        ns.ApplyIdleText()
         ns.InitWhisperIcon()
         ns.ApplyLockState()
         ns.ApplyChatMargins()

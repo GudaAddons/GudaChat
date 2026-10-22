@@ -120,6 +120,21 @@ function ns.CreateFade(frame, toAlpha, duration)
     return group
 end
 
+-- Seconds a new chat message keeps the text shown while "Hide text when chat is not in
+-- use" is on and the mouse is away from the chat
+ns.IDLE_TEXT_SHOW_SECONDS = 10
+
+-- Whether chat message text should be visible under the "Hide text when chat is not in
+-- use" option. state: enabled (the option), hovered (mouse over the chat UI or one of
+-- its menus), inputFocused, overlayOpen (emoji picker or settings window), now, and
+-- lastMessageAt (GetTime of the newest message, or nil).
+function ns.ShouldShowChatText(state)
+    if not state.enabled then return true end
+    if state.hovered or state.inputFocused or state.overlayOpen then return true end
+    local last = state.lastMessageAt
+    return last ~= nil and state.now - last < ns.IDLE_TEXT_SHOW_SECONDS
+end
+
 -- Concatenates the text of SplitProtected parts in one pass
 function ns.JoinParts(parts)
     local texts = {}

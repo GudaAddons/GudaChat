@@ -31,6 +31,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `UI/ChatTypeMenu.lua` | Chat type and emote menus on the header's chat icon. |
 | `UI/Scrollbar.lua` | Thin scrollbar and scroll-to-bottom button per chat frame. |
 | `UI/Header.lua` | The header bar itself: hover fade, drag to move, icon buttons, tab label and window dropdown, inline tab setup. |
+| `UI/IdleText.lua` | "Hide text when chat is not in use": fades the message text of every chat frame when the chat is idle. See "Idle chat text". |
 | `UI/History.lua` | History capture, the history viewer (search, channel tabs, copy), replay at login. |
 | `UI/WhisperIcon.lua` | Whisper icon with unread badge, hover list, reply panel, whisper ring, the "Whisper ring" key binding handler and the Whisper icon settings card. See "Whisper icon". |
 | `UI/Settings.lua` | Settings window: sidebar pages Appearance, Chat, Messages, Tabs & Alerts, History & Logs, About (see "Settings window"). Chat font options and helpers. |
@@ -42,7 +43,7 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 
 | Variable | Scope | Contents |
 |----------|-------|----------|
-| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `notifications`, `whisperIcon` (`enabled`, `userSet`, `alwaysShow`, `hideInCombat`, saved icon `point`/`relPoint`/`x`/`y`). On WoW: Forever also `charCopies` (see below). |
+| `GudaChatDB` | Account | All settings: `position`, `chatSize`, `locked`, `fading`, `chatFont`, `chatFontSize`, `inputPosition`, `transparentInput`, `showTabBar`, `inlineTabBar`, `tabOrder`, `whisperTab`, `whisperFrameIndex`, `origWhisperMode`, `theme`, `accent`, `settingsPosition`, `historyPosition`, `useGlobalBg`, `bgFromTheme`, `globalBgColor`, `globalBgAlpha`, `classColors`, `showLevel`, `copyLinks`, `highlightName`, `highlightSound`, `emojis`, `emojiSize`, `historyEnabled`, `historyMax`, `historyFontSize`, `logLoot`, `logAddon`, `lootLogMax`, `addonLogMax`, `hideScrollbar`, `hideIdleText`, `notifications`, `whisperIcon` (`enabled`, `userSet`, `alwaysShow`, `hideInCombat`, saved icon `point`/`relPoint`/`x`/`y`). On WoW: Forever also `charCopies` (see below). |
 | `GudaChatCharDB` | Character | `history` (one bucket per channel, keyed by channel label), `lootLog`, `addonLog` (ring buffers with a `head` field), `logSchema`, `savedAt`. |
 
 - Defaults and one-time migrations run in `GudaChat.lua` at `ADDON_LOADED`. Older versions kept history and logs in `GudaChatDB`; the first character that logs in takes them over.
@@ -141,6 +142,14 @@ On by default (`GudaChatDB.whisperIcon.enabled`; `userSet` records that the play
 - **Icon.** Themed button (default above the right side of the chat window, drag to move). The badge counts PEOPLE with unread whispers; the icon hides at 0 unless "Always show icon" is on, and in combat when "Hide in combat" is on (it comes back on `PLAYER_REGEN_ENABLED`). A new whisper pulses it for 3 s (one animation, made once).
 - **Hover list and reply.** Hovering shows the list; a click on a row, or on the icon (the newest unread person, else the newest), opens the reply panel with that conversation. Enter sends (`SendChatMessage(..., "WHISPER", nil, target)` with the name as received; `BNSendWhisper` for friends) and closes, Shift+Enter keeps it open, Escape or × closes. Opening a person or whispering them from anywhere marks them read. The reply box only takes the keyboard when the player opens it.
 - **Whisper ring.** `Bindings.xml` binds `GudaChat_WhisperRingKey(keystate)` with `runOnUp`. Holding the key (longer than `ns.WHISPER_TAP_TIME` or moving the cursor) opens a ring of up to 8 people at the cursor, unread first; the slot under the cursor (`ns.RingSlotAt`) is highlighted and named in the centre, and releasing over it opens the reply panel at the cursor. Releasing in the centre cancels. A quick tap replies to the latest person. The only `OnUpdate` runs while the key is held. Plain frames only, so it is safe in combat.
+
+## Idle chat text
+
+Off by default (`GudaChatDB.hideIdleText`, Chat page). When on, the message text of every chat frame fades out with the header when the mouse leaves the chat UI, and fades back in on hover, while typing in the chat input, while the emoji picker or the settings window is open, and for `ns.IDLE_TEXT_SHOW_SECONDS` (10 s) after a new message in a visible chat frame. The decision is the pure `ns.ShouldShowChatText` (tested); the header hover monitor calls `ns.UpdateIdleText` on each check, and a fade starts only when the result changes.
+
+- **What fades:** the frame's `FontStringContainer` where the client has one (it holds only the message lines), so the background, the scrollbar and ChatFrame2's frame alpha (the combat log toggle) are untouched. Without it the chat frame itself fades, and ChatFrame2 is skipped.
+- **Taint:** only widget methods (`SetAlpha`, animation groups made once per frame in a local weak table) and `hooksecurefunc(cf, "AddMessage")`. No Blizzard field or method is written.
+- Independent of "Disable message fading" (Blizzard's per-message fading).
 
 ## Performance patterns
 

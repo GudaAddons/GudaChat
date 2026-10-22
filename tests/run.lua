@@ -50,6 +50,7 @@ local SUITES = {
     "test_theme",
     "test_controls",
     "test_whisper",
+    "test_idle_text",
 }
 
 for _, suite in ipairs(SUITES) do

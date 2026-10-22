@@ -32,6 +32,7 @@ UI\Whisper.lua
 UI\ChatTypeMenu.lua
 UI\Scrollbar.lua
 UI\Header.lua
+UI\IdleText.lua
 UI\History.lua
 UI\Settings.lua
 UI\WhisperIcon.lua

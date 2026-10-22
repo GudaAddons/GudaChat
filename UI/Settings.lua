@@ -674,6 +674,9 @@ AddCard("chat", 10, function(page)
         GudaChatDB.fading = not value
         ns.ApplyFading()
     end))
+    card:AddRow(Toggle(L["OPT_HIDE_IDLE_TEXT"], "hideIdleText", function()
+        ns.ApplyIdleText()
+    end, L["HINT_HIDE_IDLE_TEXT"]))
     card:AddRow(Toggle(L["OPT_HIDE_SCROLLBAR"], "hideScrollbar", function(checked)
         ns.ForEachChatFrame(function(cf)
             if cf.gudaScrollbar then

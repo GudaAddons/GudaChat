@@ -104,6 +104,8 @@ local function AddHeaderHoverFade(header, parentFrame)
         sinceHoverCheck = sinceHoverCheck + elapsed
         if sinceHoverCheck < ns.HOVER_CHECK_INTERVAL then return end
         sinceHoverCheck = 0
+        local overChat = IsOverChatUI(header, parentFrame)
+        ns.UpdateIdleText(overChat)
         if ns.hideHeaderForInput then
             if isHovering then
                 isHovering = false
@@ -114,7 +116,7 @@ local function AddHeaderHoverFade(header, parentFrame)
             end
             return
         end
-        if IsOverChatUI(header, parentFrame) then
+        if overChat then
             ShowHeader()
         else
             HideHeader()
