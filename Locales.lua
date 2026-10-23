@@ -187,6 +187,22 @@ L["KEY_NOT_BOUND"] = "Not bound"
 L["BTN_RESET_POSITION"] = "Reset position"
 L["BINDING_WHISPER_RING"] = "Whisper ring"
 
+-- Channel abbreviations. ABBR_* are the short labels for Guild, Officer, Party, Raid
+-- and Instance in the History window and the header chat menu.
+L["SEC_ABBREVIATIONS"] = "Channel abbreviations"
+L["OPT_ABBREV_CHANNELS"] = "Abbreviate channel and tab names"
+L["HINT_ABBREV_CHANNELS"] = "[2. Trade] becomes [2. T], a Trade tab becomes T. Hover to see the full name."
+L["OPT_ABBREV_IN_CHAT"] = "In chat and history"
+L["OPT_ABBREV_IN_HEADER"] = "In the tab bar and chat menu"
+L["BTN_RESET_ALL"] = "Reset all"
+L["NAV_ABBREVIATIONS"] = "Abbreviations"
+L["SEC_SHORT_NAMES"] = "Short names"
+L["ABBR_GUILD"] = "G"
+L["ABBR_OFFICER"] = "O"
+L["ABBR_PARTY"] = "P"
+L["ABBR_RAID"] = "R"
+L["ABBR_INSTANCE"] = "I"
+
 ---------------------------------------------------------------------------
 -- Deutsch
 ---------------------------------------------------------------------------
@@ -351,6 +367,19 @@ L["NOTE_WHISPER_RING"] = "Taste kurz drücken: dem Letzten antworten. Halten: ei
 L["KEY_NOT_BOUND"] = "Nicht belegt"
 L["BTN_RESET_POSITION"] = "Position zurücksetzen"
 L["BINDING_WHISPER_RING"] = "Flüstern-Ring"
+L["SEC_ABBREVIATIONS"] = "Kanalabkürzungen"
+L["OPT_ABBREV_CHANNELS"] = "Kanal- und Tabnamen abkürzen"
+L["HINT_ABBREV_CHANNELS"] = "[2. Handel] wird zu [2. H], ein Handel-Tab zu H. Mit der Maus darauf zeigen, um den vollen Namen zu sehen."
+L["OPT_ABBREV_IN_CHAT"] = "Im Chat und Verlauf"
+L["OPT_ABBREV_IN_HEADER"] = "In der Tableiste und im Chatmenü"
+L["BTN_RESET_ALL"] = "Alle zurücksetzen"
+L["NAV_ABBREVIATIONS"] = "Abkürzungen"
+L["SEC_SHORT_NAMES"] = "Kurznamen"
+L["ABBR_GUILD"] = "Gi"
+L["ABBR_OFFICER"] = "O"
+L["ABBR_PARTY"] = "Gr"
+L["ABBR_RAID"] = "S"
+L["ABBR_INSTANCE"] = "I"
 
 ---------------------------------------------------------------------------
 -- Français
@@ -516,6 +545,19 @@ L["NOTE_WHISPER_RING"] = "Appuyez brièvement pour répondre au dernier. Mainten
 L["KEY_NOT_BOUND"] = "Non assignée"
 L["BTN_RESET_POSITION"] = "Réinitialiser la position"
 L["BINDING_WHISPER_RING"] = "Anneau des chuchotements"
+L["SEC_ABBREVIATIONS"] = "Abréviations des canaux"
+L["OPT_ABBREV_CHANNELS"] = "Abréger les noms de canaux et d'onglets"
+L["HINT_ABBREV_CHANNELS"] = "[2. Commerce] devient [2. C], un onglet Commerce devient C. Survolez pour voir le nom complet."
+L["OPT_ABBREV_IN_CHAT"] = "Dans la discussion et l'historique"
+L["OPT_ABBREV_IN_HEADER"] = "Dans la barre d'onglets et le menu de discussion"
+L["BTN_RESET_ALL"] = "Tout réinitialiser"
+L["NAV_ABBREVIATIONS"] = "Abréviations"
+L["SEC_SHORT_NAMES"] = "Noms courts"
+L["ABBR_GUILD"] = "G"
+L["ABBR_OFFICER"] = "O"
+L["ABBR_PARTY"] = "Gr"
+L["ABBR_RAID"] = "R"
+L["ABBR_INSTANCE"] = "I"
 
 ---------------------------------------------------------------------------
 -- Русский
@@ -681,6 +723,19 @@ L["NOTE_WHISPER_RING"] = "Нажмите клавишу, чтобы ответи
 L["KEY_NOT_BOUND"] = "Не назначена"
 L["BTN_RESET_POSITION"] = "Сбросить положение"
 L["BINDING_WHISPER_RING"] = "Кольцо шепота"
+L["SEC_ABBREVIATIONS"] = "Сокращения каналов"
+L["OPT_ABBREV_CHANNELS"] = "Сокращать названия каналов и вкладок"
+L["HINT_ABBREV_CHANNELS"] = "[2. Торговля] становится [2. Т], вкладка Торговля — Т. Наведите курсор, чтобы увидеть полное название."
+L["OPT_ABBREV_IN_CHAT"] = "В чате и истории"
+L["OPT_ABBREV_IN_HEADER"] = "На панели вкладок и в меню чата"
+L["BTN_RESET_ALL"] = "Сбросить все"
+L["NAV_ABBREVIATIONS"] = "Сокращения"
+L["SEC_SHORT_NAMES"] = "Короткие названия"
+L["ABBR_GUILD"] = "Г"
+L["ABBR_OFFICER"] = "О"
+L["ABBR_PARTY"] = "Гр"
+L["ABBR_RAID"] = "Р"
+L["ABBR_INSTANCE"] = "П"
 
 ---------------------------------------------------------------------------
 -- Español (EU)
@@ -846,6 +901,19 @@ L["NOTE_WHISPER_RING"] = "Pulsa la tecla para responder al último. Mantenla par
 L["KEY_NOT_BOUND"] = "Sin asignar"
 L["BTN_RESET_POSITION"] = "Restablecer posición"
 L["BINDING_WHISPER_RING"] = "Anillo de susurros"
+L["SEC_ABBREVIATIONS"] = "Abreviaturas de canales"
+L["OPT_ABBREV_CHANNELS"] = "Abreviar nombres de canales y pestañas"
+L["HINT_ABBREV_CHANNELS"] = "[2. Comercio] pasa a ser [2. C], una pestaña Comercio pasa a ser C. Pasa el ratón por encima para ver el nombre completo."
+L["OPT_ABBREV_IN_CHAT"] = "En el chat y el historial"
+L["OPT_ABBREV_IN_HEADER"] = "En la barra de pestañas y el menú de chat"
+L["BTN_RESET_ALL"] = "Restablecer todo"
+L["NAV_ABBREVIATIONS"] = "Abreviaturas"
+L["SEC_SHORT_NAMES"] = "Nombres cortos"
+L["ABBR_GUILD"] = "H"
+L["ABBR_OFFICER"] = "O"
+L["ABBR_PARTY"] = "G"
+L["ABBR_RAID"] = "B"
+L["ABBR_INSTANCE"] = "E"
 
 ---------------------------------------------------------------------------
 -- Español (AL)
@@ -1024,6 +1092,19 @@ L["NOTE_WHISPER_RING"] = "Toque a tecla para responder ao último. Segure para e
 L["KEY_NOT_BOUND"] = "Não definida"
 L["BTN_RESET_POSITION"] = "Redefinir posição"
 L["BINDING_WHISPER_RING"] = "Anel de sussurros"
+L["SEC_ABBREVIATIONS"] = "Abreviações de canais"
+L["OPT_ABBREV_CHANNELS"] = "Abreviar nomes de canais e abas"
+L["HINT_ABBREV_CHANNELS"] = "[2. Comércio] vira [2. C], uma aba Comércio vira C. Passe o mouse para ver o nome completo."
+L["OPT_ABBREV_IN_CHAT"] = "No chat e no histórico"
+L["OPT_ABBREV_IN_HEADER"] = "Na barra de abas e no menu de chat"
+L["BTN_RESET_ALL"] = "Redefinir tudo"
+L["NAV_ABBREVIATIONS"] = "Abreviações"
+L["SEC_SHORT_NAMES"] = "Nomes curtos"
+L["ABBR_GUILD"] = "G"
+L["ABBR_OFFICER"] = "O"
+L["ABBR_PARTY"] = "Gr"
+L["ABBR_RAID"] = "R"
+L["ABBR_INSTANCE"] = "I"
 
 ---------------------------------------------------------------------------
 -- Italiano
@@ -1189,6 +1270,19 @@ L["NOTE_WHISPER_RING"] = "Premi il tasto per rispondere all'ultimo. Tienilo prem
 L["KEY_NOT_BOUND"] = "Non assegnato"
 L["BTN_RESET_POSITION"] = "Ripristina posizione"
 L["BINDING_WHISPER_RING"] = "Anello dei sussurri"
+L["SEC_ABBREVIATIONS"] = "Abbreviazioni dei canali"
+L["OPT_ABBREV_CHANNELS"] = "Abbrevia i nomi di canali e schede"
+L["HINT_ABBREV_CHANNELS"] = "[2. Commercio] diventa [2. C], una scheda Commercio diventa C. Passa il mouse sopra per vedere il nome completo."
+L["OPT_ABBREV_IN_CHAT"] = "Nella chat e nella cronologia"
+L["OPT_ABBREV_IN_HEADER"] = "Nella barra delle schede e nel menu chat"
+L["BTN_RESET_ALL"] = "Ripristina tutto"
+L["NAV_ABBREVIATIONS"] = "Abbreviazioni"
+L["SEC_SHORT_NAMES"] = "Nomi brevi"
+L["ABBR_GUILD"] = "G"
+L["ABBR_OFFICER"] = "U"
+L["ABBR_PARTY"] = "Gr"
+L["ABBR_RAID"] = "I"
+L["ABBR_INSTANCE"] = "Is"
 
 ---------------------------------------------------------------------------
 -- 简体中文
@@ -1354,6 +1448,19 @@ L["NOTE_WHISPER_RING"] = "轻按按键：回复最近的人。按住：选择一
 L["KEY_NOT_BOUND"] = "未绑定"
 L["BTN_RESET_POSITION"] = "重置位置"
 L["BINDING_WHISPER_RING"] = "密语轮盘"
+L["SEC_ABBREVIATIONS"] = "频道缩写"
+L["OPT_ABBREV_CHANNELS"] = "缩写频道和标签页名称"
+L["HINT_ABBREV_CHANNELS"] = "[2. 交易] 变为 [2. 交]，交易标签页变为 交。鼠标悬停可查看完整名称。"
+L["OPT_ABBREV_IN_CHAT"] = "在聊天和历史记录中"
+L["OPT_ABBREV_IN_HEADER"] = "在标签栏和聊天菜单中"
+L["BTN_RESET_ALL"] = "全部重置"
+L["NAV_ABBREVIATIONS"] = "缩写"
+L["SEC_SHORT_NAMES"] = "简称"
+L["ABBR_GUILD"] = "会"
+L["ABBR_OFFICER"] = "官"
+L["ABBR_PARTY"] = "队"
+L["ABBR_RAID"] = "团"
+L["ABBR_INSTANCE"] = "副"
 
 ---------------------------------------------------------------------------
 -- 繁體中文
@@ -1519,6 +1626,19 @@ L["NOTE_WHISPER_RING"] = "輕按按鍵：回覆最近的人。按住：選擇一
 L["KEY_NOT_BOUND"] = "未綁定"
 L["BTN_RESET_POSITION"] = "重設位置"
 L["BINDING_WHISPER_RING"] = "密語輪盤"
+L["SEC_ABBREVIATIONS"] = "頻道縮寫"
+L["OPT_ABBREV_CHANNELS"] = "縮寫頻道與分頁名稱"
+L["HINT_ABBREV_CHANNELS"] = "[2. 交易] 變為 [2. 交]，交易分頁變為 交。滑鼠懸停可查看完整名稱。"
+L["OPT_ABBREV_IN_CHAT"] = "在聊天與歷史記錄中"
+L["OPT_ABBREV_IN_HEADER"] = "在分頁列與聊天選單中"
+L["BTN_RESET_ALL"] = "全部重設"
+L["NAV_ABBREVIATIONS"] = "縮寫"
+L["SEC_SHORT_NAMES"] = "簡稱"
+L["ABBR_GUILD"] = "會"
+L["ABBR_OFFICER"] = "幹"
+L["ABBR_PARTY"] = "隊"
+L["ABBR_RAID"] = "團"
+L["ABBR_INSTANCE"] = "副"
 
 ---------------------------------------------------------------------------
 -- 한국어
@@ -1684,3 +1804,16 @@ L["NOTE_WHISPER_RING"] = "키를 짧게 누르면 마지막 사람에게 답장�
 L["KEY_NOT_BOUND"] = "지정 안 됨"
 L["BTN_RESET_POSITION"] = "위치 초기화"
 L["BINDING_WHISPER_RING"] = "귓속말 링"
+L["SEC_ABBREVIATIONS"] = "채널 약어"
+L["OPT_ABBREV_CHANNELS"] = "채널과 탭 이름 줄이기"
+L["HINT_ABBREV_CHANNELS"] = "[2. 거래]가 [2. 거]로, 거래 탭이 거로 바뀝니다. 마우스를 올리면 전체 이름이 보입니다."
+L["OPT_ABBREV_IN_CHAT"] = "채팅과 기록에서"
+L["OPT_ABBREV_IN_HEADER"] = "탭 표시줄과 채팅 메뉴에서"
+L["BTN_RESET_ALL"] = "모두 초기화"
+L["NAV_ABBREVIATIONS"] = "약어"
+L["SEC_SHORT_NAMES"] = "짧은 이름"
+L["ABBR_GUILD"] = "길"
+L["ABBR_OFFICER"] = "관"
+L["ABBR_PARTY"] = "파"
+L["ABBR_RAID"] = "공"
+L["ABBR_INSTANCE"] = "인"

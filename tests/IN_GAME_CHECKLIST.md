@@ -1,4 +1,4 @@
-# In-game checklist for 1.4.0
+# In-game checklist for 2.1.0
 
 Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for errors after each step. Use `/console taintLog 1` on Retail and Forever if anything says "Interface action failed".
 
@@ -87,6 +87,17 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 - [ ] A new message (also in a whisper window) shows the text for about 10 seconds, then it fades again.
 - [ ] The combat log tab still shows and hides correctly; the chat background and scrollbar are unaffected.
 - [ ] Turning the option off brings all text back at once, without /reload.
+
+### Channel abbreviations (2.1)
+- [ ] Off by default: Trade, General and LFG lines look exactly as before.
+- [ ] On (Settings > Abbreviations, the new scissors page in the sidebar): `[2. T]`, `[4. LFG]`, `[1. G]`. **LFG and Trade messages still appear** (the padding works) in every window that shows them.
+- [ ] Hover a shortened prefix: the tooltip shows the full name ("2. Trade - City"). Click it: Blizzard's normal channel behaviour.
+- [ ] Type `GRP` for LookingForGroup: new LFG lines show `[4. GRP]`. Clear the box: back to `LFG`. `[x|y]` is saved as `xy`.
+- [ ] Leave a channel with a custom value: its row stays in the list. Reset all clears every value.
+- [ ] History window: `[G]`, `[P]`, `[R]` while on, also for old lines. Full names again when off or when "In chat and history" is off.
+- [ ] Header chat menu: joined channels are listed, `/2` from it opens Trade chat. Labels are short with a full-name tooltip only while "In the tab bar and chat menu" is on.
+- [ ] Tab names: the tab bar and inline tabs show short names (General → G, a LookingForGroup window → LFG), with the full name on hover. The header label keeps the full name. Whisper windows keep the person's name. A custom name for a window applies at once.
+- [ ] Addon messages in General are not logged as chat, and abbreviated channel lines do not end up in History > Log.
 
 ## WoW: Forever only
 

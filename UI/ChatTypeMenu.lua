@@ -41,18 +41,37 @@ local EMOTES = {
 -- Main chat type entries. Commands come from Blizzard's localized SLASH_* globals — a
 -- hardcoded "/bg" is not registered on every locale and would be pasted as literal text,
 -- sending the message to say instead.
+-- `abbrev` is the ns.ABBREV_FIXED_KEYS key whose short label replaces the name while
+-- header abbreviations are on. Joined numbered channels follow the fixed entries.
 local function ChatTypeEntries()
-    return {
+    local entries = {
         { label = ns.Blizz(SAY, "Say"),                   cmd = ns.SlashCmd("SLASH_SAY", "/s") },
-        { label = ns.Blizz(PARTY, "Party Chat"),          cmd = ns.SlashCmd("SLASH_PARTY", "/p") },
-        { label = ns.Blizz(RAID, "Raid"),                 cmd = ns.SlashCmd("SLASH_RAID", "/raid") },
-        { label = ns.Blizz(BATTLEGROUND, "Battleground"), cmd = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg") },
-        { label = ns.Blizz(GUILD, "Guild Chat"),          cmd = ns.SlashCmd("SLASH_GUILD", "/g") },
+        { label = ns.Blizz(PARTY, "Party Chat"),          cmd = ns.SlashCmd("SLASH_PARTY", "/p"), abbrev = "Party" },
+        { label = ns.Blizz(RAID, "Raid"),                 cmd = ns.SlashCmd("SLASH_RAID", "/raid"), abbrev = "Raid" },
+        { label = ns.Blizz(BATTLEGROUND, "Battleground"), cmd = ns.SlashCmd("SLASH_BATTLEGROUND", "/bg"), abbrev = "Instance" },
+        { label = ns.Blizz(GUILD, "Guild Chat"),          cmd = ns.SlashCmd("SLASH_GUILD", "/g"), abbrev = "Guild" },
         { label = ns.Blizz(YELL, "Yell"),                 cmd = ns.SlashCmd("SLASH_YELL", "/y") },
         { label = ns.Blizz(WHISPER, "Whisper"),           cmd = ns.SlashCmd("SLASH_WHISPER", "/w") },
         { label = ns.Blizz(EMOTE, "Emote"),               cmd = ns.SlashCmd("SLASH_EMOTE", "/e"), hasArrow = true },
         { label = ns.Blizz(REPLY, "Reply"),               cmd = ns.SlashCmd("SLASH_REPLY", "/r") },
     }
+    local short = ns.AbbrevActive("header")
+    for _, entry in ipairs(entries) do
+        if short and entry.abbrev then
+            entry.full = entry.label
+            entry.label = ns.FixedAbbrev(entry.abbrev)
+        end
+    end
+    for _, ch in ipairs(ns.JoinedChannels()) do
+        local base = ns.BaseChannelName(ch.name)
+        local entry = { label = ch.num .. ". " .. base, cmd = "/" .. ch.num }
+        if short then
+            entry.full = entry.label
+            entry.label = ch.num .. ". " .. ns.ChannelAbbrev(base)
+        end
+        entries[#entries + 1] = entry
+    end
+    return entries
 end
 
 -- Resolve a slash command to the token DoEmote actually expects. Upper-casing the command
@@ -138,35 +157,63 @@ local function BuildEmoteMenu(chatTypeDropdown)
 end
 
 -- Builds the chat type menu on chatTypeBtn. onOpen runs whenever the button is clicked
--- (the header uses it to close its tab dropdown).
+-- (the header uses it to close its tab dropdown). The rows are filled in on every open:
+-- the joined channels and the abbreviation setting can change in between.
 function ns.CreateChatTypeMenu(chatTypeBtn, onOpen)
     local chatTypeDropdown = MenuFrame("GudaChatTypeDropdown", chatTypeBtn)
     local emoteSubMenu = BuildEmoteMenu(chatTypeDropdown)
+    local rows = {}
 
-    local yOff, maxW = -4, MENU_MIN_WIDTH
-    for _, entry in ipairs(ChatTypeEntries()) do
-        local mb = AddCommandRow(chatTypeDropdown, yOff, entry.label, entry.hasArrow and ">" or entry.cmd)
-        mb:SetScript("OnEnter", function()
-            HighlightRow(mb, true)
-            if entry.hasArrow then
-                emoteSubMenu:ClearAllPoints()
-                emoteSubMenu:SetPoint("BOTTOMRIGHT", chatTypeDropdown, "BOTTOMLEFT", -2, 0)
-                emoteSubMenu:Show()
-            else
-                emoteSubMenu:Hide()
+    local function Populate()
+        local yOff, maxW = -4, MENU_MIN_WIDTH
+        local entries = ChatTypeEntries()
+        for i, entry in ipairs(entries) do
+            local mb = rows[i]
+            if not mb then
+                mb = AddCommandRow(chatTypeDropdown, yOff, "", "")
+                rows[i] = mb
             end
-        end)
-        mb:SetScript("OnLeave", function() HighlightRow(mb, false) end)
-        local slash = entry.cmd
-        mb:SetScript("OnClick", function()
-            ns.OpenChat(slash .. " ", ChatFrame1)
-            chatTypeDropdown:Hide()
-            emoteSubMenu:Hide()
-        end)
-        maxW = math.max(maxW, mb.width)
-        yOff = yOff - ns.MENU_ITEM_HEIGHT
+            mb:ClearAllPoints()
+            mb:SetPoint("TOPLEFT", chatTypeDropdown, "TOPLEFT", 4, yOff)
+            mb:SetPoint("TOPRIGHT", chatTypeDropdown, "TOPRIGHT", -4, yOff)
+            mb.labelText:SetText(entry.label)
+            mb.cmdText:SetText(entry.hasArrow and ">" or entry.cmd)
+            mb.width = mb.labelText:GetStringWidth() + mb.cmdText:GetStringWidth() + 32
+            HighlightRow(mb, false)
+            mb:SetScript("OnEnter", function(self)
+                HighlightRow(self, true)
+                if entry.hasArrow then
+                    emoteSubMenu:ClearAllPoints()
+                    emoteSubMenu:SetPoint("BOTTOMRIGHT", chatTypeDropdown, "BOTTOMLEFT", -2, 0)
+                    emoteSubMenu:Show()
+                else
+                    emoteSubMenu:Hide()
+                end
+                if entry.full then
+                    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+                    GameTooltip:SetText(entry.full, 1, 1, 1)
+                    GameTooltip:Show()
+                end
+            end)
+            mb:SetScript("OnLeave", function(self)
+                HighlightRow(self, false)
+                if entry.full then GameTooltip:Hide() end
+            end)
+            local slash = entry.cmd
+            mb:SetScript("OnClick", function()
+                ns.OpenChat(slash .. " ", ChatFrame1)
+                chatTypeDropdown:Hide()
+                emoteSubMenu:Hide()
+            end)
+            mb:Show()
+            maxW = math.max(maxW, mb.width)
+            yOff = yOff - ns.MENU_ITEM_HEIGHT
+        end
+        for i = #entries + 1, #rows do
+            rows[i]:Hide()
+        end
+        chatTypeDropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
     end
-    chatTypeDropdown:SetSize(maxW + 8, math.abs(yOff) + 4)
 
     local function CloseAll()
         chatTypeDropdown:Hide()
@@ -177,6 +224,7 @@ function ns.CreateChatTypeMenu(chatTypeBtn, onOpen)
         if chatTypeDropdown:IsShown() then
             CloseAll()
         else
+            Populate()
             chatTypeDropdown:ClearAllPoints()
             chatTypeDropdown:SetPoint("BOTTOMRIGHT", self, "TOPRIGHT", 4, 2)
             chatTypeDropdown:Show()

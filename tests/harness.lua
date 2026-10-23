@@ -18,6 +18,7 @@ H.FILES = {
     "Core/Constants.lua",
     "Core/Emojis.lua",
     "Core/Filters.lua",
+    "Core/Abbrev.lua",
     "Core/Logs.lua",
     "Core/WhisperModel.lua",
 }
@@ -84,6 +85,7 @@ local function InstallGlobals(opts)
         table.insert(H.filters[event], fn)
     end
     _G.NUM_CHAT_WINDOWS = 10
+    _G.GetChannelList = function() return unpack(H.channels or {}) end
     for key, value in pairs(ENUS_LOOT) do
         _G[key] = value
     end

@@ -212,6 +212,7 @@ local PAGES = {
     { key = "chat", label = ns.Blizz(CHAT, "Chat"), icon = "chat.png" },
     { key = "messages", label = L["TAB_MESSAGES"], icon = "voice.png" },
     { key = "tabs", label = L["NAV_TABS_ALERTS"], icon = "characters.png" },
+    { key = "abbrev", label = L["NAV_ABBREVIATIONS"], icon = "cut.png" },
     { key = "history", label = L["NAV_HISTORY_LOGS"], icon = "history.png" },
     { key = "about", label = L["NAV_ABOUT"], icon = "logo.png" },
 }
@@ -834,6 +835,130 @@ AddCard("tabs", 30, function(page)
     card:AddRow(NotificationToggle(L["OPT_NOTIFY_TRADE"], "trade"))
     card:AddRow(NotificationToggle(L["OPT_NOTIFY_LFG"], "lfg"))
     card:AddRow(NotificationToggle(L["OPT_NOTIFY_OTHER"], "other"))
+    return card
+end)
+
+---------------------------------------------------------------------------
+-- Abbreviations page
+---------------------------------------------------------------------------
+
+-- The History window rebuilds its lines from the saved fields, so a changed
+-- abbreviation shows there at once
+local function RefreshOpenHistory()
+    if ns.historyFrame and ns.historyFrame:IsShown() and ns.historyFrame.RefreshHistory then
+        ns.historyFrame:RefreshHistory()
+    end
+end
+
+-- Everything that shows a short name: History and both tab strips
+local function RefreshAbbrevViews()
+    RefreshOpenHistory()
+    if ns.RequestTabRefresh then ns.RequestTabRefresh() end
+end
+
+local FIXED_ABBREV_LABELS = {
+    Guild    = ns.Blizz(GUILD, "Guild"),
+    Officer  = ns.Blizz(OFFICER, "Officer"),
+    Party    = ns.Blizz(PARTY, "Party"),
+    Raid     = ns.Blizz(RAID, "Raid"),
+    Instance = ns.Blizz(INSTANCE_CHAT, "Instance"),
+}
+
+AddCard("abbrev", 10, function(page)
+    local card = ns.CreateCard(page, L["SEC_ABBREVIATIONS"])
+    card:AddRow(Toggle(L["OPT_ABBREV_CHANNELS"], "abbrevChannels", RefreshAbbrevViews, L["HINT_ABBREV_CHANNELS"]))
+    card:AddRow(Toggle(L["OPT_ABBREV_IN_CHAT"], "abbrevInChat", RefreshOpenHistory))
+    card:AddRow(Toggle(L["OPT_ABBREV_IN_HEADER"], "abbrevInHeader", RefreshAbbrevViews))
+    return card
+end)
+
+-- One row per joined channel, per chat window (tab), per name left behind with a custom
+-- value, and per fixed chat type. Rows are pooled: the list changes whenever channels
+-- are joined or left.
+AddCard("abbrev", 20, function(page)
+    local card = ns.CreateCard(page, L["SEC_SHORT_NAMES"])
+
+    local pool = {}
+    local function Row(i)
+        if not pool[i] then
+            pool[i] = card:AddRow(ns.CreateTextInput("", function() return nil end, function() end, nil, ns.ABBREV_MAX_LEN))
+        end
+        pool[i].collapsed = false
+        return pool[i]
+    end
+
+    local buttonRow = CreateFrame("Frame")
+    buttonRow:SetHeight(36)
+
+    local function Rebuild()
+        local count = 0
+        local listed = {}
+        local function NameRow(label, base)
+            if listed[base] then return end
+            listed[base] = true
+            count = count + 1
+            Row(count):Bind(label,
+                function() return ns.GetCustomAbbrev(base) end,
+                function(text)
+                    ns.SetCustomAbbrev(base, text)
+                    RefreshAbbrevViews()
+                end,
+                function() return ns.AutoAbbrev(base) end)
+        end
+        for _, ch in ipairs(ns.JoinedChannels()) do
+            local base = ns.BaseChannelName(ch.name)
+            NameRow(ch.num .. ". " .. base, base)
+        end
+        -- Window names (General, Trade, ...) for the tabs; whisper windows are people
+        for _, def in ipairs(ns.CollectChatTabs and ns.CollectChatTabs() or {}) do
+            if not def.isTemp then
+                local base = ns.BaseChannelName(def.name)
+                NameRow(base, base)
+            end
+        end
+        for _, base in ipairs(ns.CustomAbbrevChannels()) do
+            NameRow(base, base)
+        end
+        for _, key in ipairs(ns.ABBREV_FIXED_KEYS) do
+            count = count + 1
+            Row(count):Bind(FIXED_ABBREV_LABELS[key],
+                function() return ns.GetCustomFixedAbbrev(key) end,
+                function(text)
+                    ns.SetCustomFixedAbbrev(key, text)
+                    RefreshOpenHistory()
+                end,
+                function() return ns.DefaultFixedAbbrev(key) end)
+        end
+        for i = count + 1, #pool do
+            pool[i].collapsed = true
+        end
+        -- Keep the button under the rows
+        for i, row in ipairs(card.rows) do
+            if row == buttonRow then
+                tremove(card.rows, i)
+                break
+            end
+        end
+        tinsert(card.rows, buttonRow)
+        card:Relayout()
+        page:Relayout()
+    end
+
+    local reset = ns.CreateThemedButton(buttonRow, L["BTN_RESET_ALL"], function()
+        wipe(GudaChatDB.channelAbbrev)
+        Rebuild()
+        RefreshAbbrevViews()
+    end, 140)
+    reset:SetPoint("LEFT", buttonRow, "LEFT", 0, 0)
+    card:AddRow(buttonRow)
+
+    local watcher = CreateFrame("Frame", nil, card)
+    watcher:RegisterEvent("CHANNEL_UI_UPDATE")
+    watcher:SetScript("OnEvent", function()
+        if card:IsVisible() then Rebuild() end
+    end)
+    card:SetScript("OnShow", Rebuild)
+    Rebuild()
     return card
 end)
 

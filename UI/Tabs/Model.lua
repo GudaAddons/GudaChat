@@ -247,7 +247,8 @@ ns.GetTabColor = GetTabColor
 -- Tab collection and order
 ---------------------------------------------------------------------------
 
--- Every docked window that gets a tab, as { name, col, frameIndex, cf, isTemp }:
+-- Every docked window that gets a tab, as { name, label, col, frameIndex, cf, isTemp }
+-- (label is what the tab shows: the short name while header abbreviations are on):
 -- shown permanent windows except the combat log (the Whispers window only while the
 -- Whispers tab is on), then docked temporary whisper windows. Saved order applied.
 function ns.CollectChatTabs()
@@ -262,7 +263,7 @@ function ns.CollectChatTabs()
             local hiddenWhisper = not GudaChatDB.whisperTab and ns.whisperFrame and cf == ns.whisperFrame
             if isDocked and shown and i ~= 2 and not hiddenWhisper then
                 local name = ns.GetChatTabName(i)
-                tinsert(allTabs, { name = name, col = GetTabColor(name, i), frameIndex = i, cf = cf })
+                tinsert(allTabs, { name = name, label = ns.TabLabel(name), col = GetTabColor(name, i), frameIndex = i, cf = cf })
             end
         end
     end
@@ -276,7 +277,7 @@ function ns.CollectChatTabs()
                 local name = tab and (tab.Text and tab.Text:GetText() or tab:GetText()) or string.format(L["CHAT_WINDOW_NUMBER"], idx)
                 local isWhisper = cf.chatType == "WHISPER" or cf.chatType == "BN_WHISPER"
                 local col = isWhisper and ChatTypeColor("WHISPER") or GetTabColor(name, idx)
-                tinsert(allTabs, { name = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
+                tinsert(allTabs, { name = name, label = name, col = col, frameIndex = idx, cf = cf, isTemp = true })
             end
         end
     end

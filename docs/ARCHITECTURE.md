@@ -17,24 +17,25 @@ Load order is the order in `GudaChat.toc`. Every file starts with `local addonNa
 | `Core/Emojis.lua` | Emoji data, picker, `SplitProtected` (splits a message into plain text and links), emoji replacement filter. |
 | `Core/EditBox.lua` | Input bar style and position, emoji button. Runs once per edit box (`eb.gudaStyled`). |
 | `Core/Filters.lua` | Class colours, player level, copyable URL links, own-name highlight and mention sound. Link click handling. |
+| `Core/Abbrev.lua` | Channel abbreviations: the automatic rule, custom values, the `CHAT_MSG_CHANNEL` filter that shortens the prefix, the full name on hover, `ns.JoinedChannels`. See "Channel abbreviations". |
 | `Core/Logs.lua` | Loot log and addon message log (ring buffers), loot line parsing. |
 | `Core/WhisperModel.lua` | Pure data for the whisper icon: received whispers per person (`ns.NewWhisperModel`, `ns.WhisperKey`), unread count, newest-first list, "latest" person, ring order, and the ring geometry and tap helpers. No frames, so the tests cover it. |
 | `Core/Chrome.lua` | Hides Blizzard's chat chrome (tabs, buttons, dock manager), lock state, window colours. |
 | `UI/Widgets.lua` | Shared widgets: icon buttons, menu items (`ns.CreateMenuItem`, reusable `ns.GetMenuItem`), click-outside closers, `ns.ShowColorPicker` (both picker generations), fade and hover timings. |
-| `UI/Controls.lua` | Themed controls for the settings and history windows: `ns.CreateThemedWindow`, `ns.CreateScrollArea`, `ns.CreateCard`, `ns.CreateSettingsRow`, `ns.CreateToggle`, `ns.CreateSlider`, `ns.CreateDropdown`, `ns.CreateSwatch`, `ns.CreateThemedButton`, `ns.CreateTextTabs`, and `ns.OnRestyle`. |
+| `UI/Controls.lua` | Themed controls for the settings and history windows: `ns.CreateThemedWindow`, `ns.CreateScrollArea`, `ns.CreateCard`, `ns.CreateSettingsRow`, `ns.CreateToggle`, `ns.CreateSlider`, `ns.CreateTextInput`, `ns.CreateDropdown`, `ns.CreateSwatch`, `ns.CreateThemedButton`, `ns.CreateTextTabs`, and `ns.OnRestyle`. |
 | `UI/Selection.lua` | Which chat window is selected: `ns.SafeSelectDockFrame`, `ns.GetSelectedChatFrame(Index)`, `ns.OnFrameSelected`, `ns.SetCombatLogVisible`, `ns.GetChatTabName`, `ns.RequestTabRefresh`. |
 | `UI/Tabs/Model.lua` | Tab data: which windows get a tab (`ns.CollectChatTabs`), tab colours, saved tab order and drag moves, unread blink state with its one event listener. |
 | `UI/Tabs/TabStrip.lua` | One tab strip renderer (fit, overflow menu, drag to reorder, blink, button pools) used twice: the bar above the header (created here) and the inline tabs (created by the header). |
 | `UI/ContextMenu.lua` | Right-click window menu: rename, new window, remove or leave, font size, background colour. `ns.RemoveWindow`. |
 | `UI/CombatLogTabs.lua` | Combat log sub-tabs (My Actions / What Happened to Me?) and Blizzard filter switching. |
 | `UI/Whisper.lua` | Whispers window, whisper routing and its logout undo, switching to the right tab when the player sends a message. |
-| `UI/ChatTypeMenu.lua` | Chat type and emote menus on the header's chat icon. |
+| `UI/ChatTypeMenu.lua` | Chat type and emote menus on the header's chat icon. Lists the joined channels too, and is filled in on every open. |
 | `UI/Scrollbar.lua` | Thin scrollbar and scroll-to-bottom button per chat frame. |
 | `UI/Header.lua` | The header bar itself: hover fade, drag to move, icon buttons, tab label and window dropdown, inline tab setup. |
 | `UI/IdleText.lua` | "Hide text when chat is not in use": fades the message text of every chat frame when the chat is idle. See "Idle chat text". |
 | `UI/History.lua` | History capture, the history viewer (search, channel tabs, copy), replay at login. |
 | `UI/WhisperIcon.lua` | Whisper icon with unread badge, hover list, reply panel, whisper ring, the "Whisper ring" key binding handler and the Whisper icon settings card. See "Whisper icon". |
-| `UI/Settings.lua` | Settings window: sidebar pages Appearance, Chat, Messages, Tabs & Alerts, History & Logs, About (see "Settings window"). Chat font options and helpers. |
+| `UI/Settings.lua` | Settings window: sidebar pages Appearance, Chat, Messages, Tabs & Alerts, Abbreviations, History & Logs, About (see "Settings window"). Chat font options and helpers. |
 | `GudaChat.lua` | Slash command, saved data defaults and migrations, login setup, logout handling. |
 | `Bindings.xml` | The "Whisper ring" key binding under Key Bindings > GudaChat (unbound by default). The game loads it by itself; it is not in the TOC. |
 | `tests/` | Offline tests. Not in the TOC, so the game never loads them. |
@@ -94,6 +95,8 @@ Taint is what happens when addon code touches something Blizzard's protected cod
 6. Link clicks: Retail and Forever add a `HookScript("OnHyperlinkClick")` handler and hide a stray tooltip with a `hooksecurefunc("SetItemRef")` post-hook. **Classic exception:** Classic's `SetItemRef` errors with "Unknown link type" on our `gudachat:` links before any hook could run, so on Classic only the chat frame's `OnHyperlinkClick` script is wrapped and our links never reach `SetItemRef`.
 7. Menus: use `WowStyle1DropdownTemplate` + `MenuUtil` where the client has them. `UIDropDownMenu` shares global state with Blizzard's unit menus.
 8. The timestamp option sets the CVar only and applies after `/reload`; writing `CHAT_TIMESTAMP_FORMAT` from addon code would taint every chat message.
+9. The same goes for the `CHAT_GUILD_GET`-style format globals: Blizzard's chat handler reads them per message (`ChatFrameUtil.GetOutMessageFormatKey`), so "[Guild]" in live chat can't be shortened. See "Channel abbreviations".
+10. Never reassign `DEFAULT_CHAT_FRAME`. The chat message path reads it on every message.
 
 ## Whisper tab and routing
 
@@ -103,6 +106,23 @@ With the Whispers tab on, `ApplyWhisperRouting` (UI/Whisper.lua):
 - removes the `WHISPER` and `BN_WHISPER` groups from General, so whispers show only in the Whispers tab.
 
 Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were lost, nothing could undo them and General would stop showing whispers. So `UndoWhisperRoutingForLogout` puts both back at every `PLAYER_LOGOUT`, and `ApplyWhisperRouting` sets them again at login. Closing the Whispers window turns the feature off.
+
+## Channel abbreviations
+
+Settings > Abbreviations, a page of its own: a "Channel abbreviations" card with the switches and a "Short names" card with one box per channel, window and fixed chat type. Its sidebar icon is the scissors (`Assets/cut.png`, shared with GudaBags). It is off by default (`abbrevChannels`), with two switches under it: `abbrevInChat` (chat and History) and `abbrevInHeader` (tab names in both tab strips, and the header chat type menu). Custom values are kept account-wide in `GudaChatDB.channelAbbrev`, keyed by the channel's name without the zone. Fixed chat types are stored as `@Guild` and so on.
+
+- **The automatic rule** (`ns.AutoAbbrev`):
+  - The zone after " - " is dropped.
+  - The first character of each word is kept with its case. Words split at spaces, `-` and `_`, and where a capital follows a small letter. A run of capitals is kept whole.
+  - It works per UTF-8 character, so `Торговля` gives `Т`.
+- **Numbered channels in live chat:** `FilterAbbrevChannel` returns a new arg4 (`"2. Trade - City"` becomes `"2. T"`).
+  - **Padding:** Blizzard drops the message from a frame unless arg4 is longer than the channel's name (`channelLength > strlen(value)` in ChatFrameOverrides on every client). So the short form is padded with `|r`, which draws nothing, up to the original length.
+  - **The number stays:** Blizzard builds the prefix with `(%d+. )(.*)`, so the number and its ". " are always shown. That is also why there is no "number only" style.
+  - **Untouched:** community channels.
+  - **Retail 12.x:** messages carrying secret values skip all filters there, so those lines keep their full name.
+- **Guild, Officer, Party, Raid, Instance:** only the History window and the chat type menu shorten these (`ns.FixedAbbrev`, labels `ABBR_*`). In live chat they come from the `CHAT_*_GET` globals (taint rule 9).
+- **Hover:** `ChatFrame.OnHyperlinkEnter` through `EventRegistry` shows "2. Trade - City" on a channel link while abbreviations are on.
+- **Tab names:** `ns.TabLabel` gives every permanent window its short name (custom or automatic, so "General" becomes "G"). The tab strips use it and show the full name on hover; the header label above the chat keeps the full name. Temporary whisper windows are named after people and are left alone. The overflow menu and the header's window list keep full names too.
 
 ## Themes
 
@@ -128,9 +148,9 @@ Both changes are stored by the game, not in SavedVariables. If `GudaChatDB` were
 `UI/Settings.lua` builds the window the first time it opens (`/gc` or the header cog).
 
 - **Frame.** `ns.CreateThemedWindow` (UI/Controls.lua): a themed panel about 660×470 with a title bar (logo, "GudaChat", version from the TOC, close button). It is dragged by the title bar, and its position is saved in `GudaChatDB.settingsPosition` and kept on screen. Escape closes it (`UISpecialFrames`), and so does entering combat. The history viewer uses the same frame (`GudaChatDB.historyPosition`) with `ns.CreateTextTabs` for its channel tabs.
-- **Pages.** A sidebar with six pages; the right side is a scroll area (`ns.CreateScrollArea`) showing one page at a time. Each page is a column of cards.
+- **Pages.** A sidebar with seven pages; the right side is a scroll area (`ns.CreateScrollArea`) showing one page at a time. Each page is a column of cards.
 - **Cards.** `ns.AddSettingsCard(page, order, build)` registers a card; `build(page)` returns a card from `ns.CreateCard`. Cards are sorted by `order` and built when the window is first opened, so any file loaded before that can add one. Built-in orders are 10, 20, 30...; the whisper icon card goes on the `tabs` page at order 40. A row with `row.collapsed = true` is hidden by `card:Relayout()`; call `page:Relayout()` after a card changes height.
-- **Controls.** `ns.CreateToggle` (a switch in Modern Dark, a square checkbox with a gold check in Classic and Blizzard), `ns.CreateSlider` (track plus a value box; Enter applies, Escape restores, values snap with `ns.ClampSliderValue`), `ns.CreateDropdown` (GudaChat's own pooled menu, no UIDropDownMenu or WowStyle1 dropdown), `ns.CreateSwatch` (the shared colour picker) and `ns.CreateThemedButton` (the red panel button under Blizzard, flat otherwise). They read the current value through a `get` function and store through `set`, using the same `GudaChatDB` keys and apply functions as before.
+- **Controls.** `ns.CreateToggle` (a switch in Modern Dark, a square checkbox with a gold check in Classic and Blizzard), `ns.CreateSlider` (track plus a value box; Enter applies, Escape restores, values snap with `ns.ClampSliderValue`), `ns.CreateTextInput` (a short text box with a grey placeholder; Enter or clicking away applies, Escape restores; `row:Bind` repoints a pooled row), `ns.CreateDropdown` (GudaChat's own pooled menu, no UIDropDownMenu or WowStyle1 dropdown), `ns.CreateSwatch` (the shared colour picker) and `ns.CreateThemedButton` (the red panel button under Blizzard, flat otherwise). They read the current value through a `get` function and store through `set`, using the same `GudaChatDB` keys and apply functions as before.
 - **Live restyle.** Controls register with `ns.OnRestyle(fn)`, which runs `fn` once and again after every theme or accent change. Nothing in the window runs per frame, except while the mouse drags a slider.
 - **Appearance page.** Theme cards with thumbnails drawn in each theme's own colours (`ns.Theme.ColorOf`), the accent (class colour, class swatches, custom colour; Classic and Blizzard show a note instead), a live preview of the chat built from the themed widgets, the chat font and size, and the background (override, opacity, colour).
 
@@ -186,8 +206,8 @@ Offline tests run with Lua 5.1 (the version WoW uses) in WSL, from the addon fol
 lua5.1 tests/run.lua
 ```
 
-- `tests/harness.lua` stubs the WoW API and loads the real addon files (locales, Constants, Emojis, Filters, Logs) into a fresh namespace. `H.Load({ interface = 16001, locale = "ruRU", name = "Joob", family = "Stabber" })` loads them as a given client.
-- Suites: locale parity and used keys, name comparison and client flags, chat filters (links, highlight, secret messages, memo), emojis, loot parsing and ring buffers, themes, slider helpers, and the whisper model (unread people, order, limits, latest, read on reply, Battle.net and Forever keys, secret values, ring geometry and tap).
+- `tests/harness.lua` stubs the WoW API, including `GetChannelList`, and loads the real addon files (locales, Constants, Emojis, Filters, Abbrev, Logs) into a fresh namespace. `H.Load({ interface = 16001, locale = "ruRU", name = "Joob", family = "Stabber" })` loads them as a given client.
+- Suites: locale parity and used keys, name comparison and client flags, chat filters (links, highlight, secret messages, memo), emojis, loot parsing and ring buffers, channel abbreviations (rule, typed values, padding against Blizzard's length check, filter arguments, secret values), themes, slider helpers, and the whisper model (unread people, order, limits, latest, read on reply, Battle.net and Forever keys, secret values, ring geometry and tap).
 - The exit code is 1 when a test fails.
 - UI behaviour needs the real client: see `tests/IN_GAME_CHECKLIST.md`.
 

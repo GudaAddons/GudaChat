@@ -90,6 +90,18 @@ local function ChannelLabel(channel)
     return channel
 end
 
+-- The "[Guild]" in front of a history line: the short label while abbreviations are on.
+-- Built at display time, so a changed setting also applies to lines saved earlier.
+local ABBREV_FIXED = {}
+for _, key in ipairs(ns.ABBREV_FIXED_KEYS) do ABBREV_FIXED[key] = true end
+
+local function BracketLabel(channel)
+    if ABBREV_FIXED[channel] and ns.AbbrevActive("chat") then
+        return ns.FixedAbbrev(channel)
+    end
+    return ChannelLabel(channel)
+end
+
 ---------------------------------------------------------------------------
 -- Message capture for chat history
 ---------------------------------------------------------------------------
@@ -303,7 +315,7 @@ local function ReplayHistory()
             if fmt then
                 body = fmt.pre .. nameLink .. fmt.post .. levelStr .. entry.message
             else
-                body = string.format("[%s] %s: %s%s", ChannelLabel(entry.channel), nameLink, levelStr, entry.message)
+                body = string.format("[%s] %s: %s%s", BracketLabel(entry.channel), nameLink, levelStr, entry.message)
             end
         end
 
@@ -666,7 +678,7 @@ local function CreateHistoryFrame()
                 body = fmt.pre .. nameLink .. fmt.post .. levelStr .. entry.message
             else
                 local chanLink = string.format("|Hgudachat:chat:%s|h", CHANNEL_SLASH_COMMANDS[entry.channel] or CHANNEL_SLASH_COMMANDS.Say)
-                body = string.format("|cff%s%s[%s]|h|r %s: %s%s", chanColor, chanLink, ChannelLabel(entry.channel), nameLink, levelStr, entry.message)
+                body = string.format("|cff%s%s[%s]|h|r %s: %s%s", chanColor, chanLink, BracketLabel(entry.channel), nameLink, levelStr, entry.message)
             end
         end
 

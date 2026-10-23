@@ -293,7 +293,7 @@ function Strip:CreateTabButton(def, tabIdx)
     local btn = AcquireTabButton(self.pool, self.config.parent)
     btn:SetHeight(TAB_HEIGHT)
     btn.tabIdx = tabIdx
-    btn.text:SetText(def.name)
+    btn.text:SetText(def.label or def.name)
     SetTabTextColor(btn.text, col, IsSelectedFrame(def.cf))
 
     btn:SetScript("OnClick", function(self, button)
@@ -316,11 +316,19 @@ function Strip:CreateTabButton(def, tabIdx)
             strip:StartPendingDrag(self, col)
         end
     end)
+    -- A shortened name shows the full one on hover
+    local fullName = def.label and def.label ~= def.name and def.name or nil
     btn:SetScript("OnEnter", function(self)
         ns.Theme.PaintTab(self.text, col, "hover")
         ns.RevealHeader()
+        if fullName and not state.dragging then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(fullName, 1, 1, 1)
+            GameTooltip:Show()
+        end
     end)
     btn:SetScript("OnLeave", function(self)
+        if fullName then GameTooltip:Hide() end
         if state.dragging and state.sourceBtn == self then return end
         if self.blinking then return end
         SetTabTextColor(self.text, col, IsSelectedFrame(def.cf))
@@ -472,7 +480,7 @@ function Strip:Refresh()
 
     local widths = {}
     for idx, def in ipairs(allTabs) do
-        widths[idx] = MeasureTabText(def.name) + TAB_TEXT_PADDING
+        widths[idx] = MeasureTabText(def.label or def.name) + TAB_TEXT_PADDING
     end
     self.fitCount = FitTabs(allTabs, widths, availableWidth, config.firstGap)
     self:GetDragIndicator()

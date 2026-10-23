@@ -455,6 +455,64 @@ end
 ns.CreateSlider = CreateSlider
 
 ---------------------------------------------------------------------------
+-- Text input
+---------------------------------------------------------------------------
+
+local TEXT_INPUT_WIDTH = 90
+
+-- A row with a short text box. Enter or clicking away applies through set(text), Escape
+-- restores. placeholder() is drawn greyed out while the box is empty. row:Bind(label,
+-- get, set, placeholder) points a pooled row at another value.
+local function CreateTextInput(label, get, set, placeholder, maxLetters)
+    local row = CreateRow(label, nil, TEXT_INPUT_WIDTH)
+
+    local box = CreateFrame("EditBox", nil, row, "BackdropTemplate")
+    box:SetSize(TEXT_INPUT_WIDTH, 20)
+    box:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    box:SetAutoFocus(false)
+    box:SetFontObject(GudaChatFontHighlightSmall)
+    box:SetJustifyH("CENTER")
+    box:SetTextInsets(4, 4, 0, 0)
+    if maxLetters then box:SetMaxLetters(maxLetters) end
+    ns.ApplyDarkBackdrop(box, C.fieldBg, C.controlBorder, true)
+    ns.Paint(box, C.editText)
+
+    local hint = box:CreateFontString(nil, "OVERLAY", "GudaChatFontDisableSmall")
+    hint:SetPoint("CENTER")
+    ns.Paint(hint, C.dimText)
+
+    local function Show()
+        if not box:HasFocus() then box:SetText(get() or "") end
+        hint:SetText(placeholder and placeholder() or "")
+        hint:SetShown(box:GetText() == "" and not box:HasFocus())
+    end
+
+    local cancelled = false
+    box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    box:SetScript("OnEscapePressed", function(self)
+        cancelled = true
+        self:ClearFocus()
+    end)
+    box:SetScript("OnEditFocusGained", function() hint:Hide() end)
+    box:SetScript("OnEditFocusLost", function(self)
+        if not cancelled then set(self:GetText()) end
+        cancelled = false
+        Show()
+    end)
+
+    function row:Bind(newLabel, newGet, newSet, newPlaceholder)
+        self.label:SetText(newLabel or "")
+        get, set, placeholder = newGet, newSet, newPlaceholder
+        Show()
+    end
+
+    row.Refresh = Show
+    Show()
+    return row
+end
+ns.CreateTextInput = CreateTextInput
+
+---------------------------------------------------------------------------
 -- Dropdown
 ---------------------------------------------------------------------------
 

@@ -47,6 +47,7 @@ local SUITES = {
     "test_filters",
     "test_emojis",
     "test_logs",
+    "test_abbrev",
     "test_theme",
     "test_controls",
     "test_whisper",

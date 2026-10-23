@@ -173,6 +173,18 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.whisperTab == nil then
             GudaChatDB.whisperTab = false
         end
+        if GudaChatDB.abbrevChannels == nil then
+            GudaChatDB.abbrevChannels = false
+        end
+        if GudaChatDB.abbrevInChat == nil then
+            GudaChatDB.abbrevInChat = true
+        end
+        if GudaChatDB.abbrevInHeader == nil then
+            GudaChatDB.abbrevInHeader = true
+        end
+        if type(GudaChatDB.channelAbbrev) ~= "table" then
+            GudaChatDB.channelAbbrev = {}
+        end
         if GudaChatDB.transparentInput == nil then
             GudaChatDB.transparentInput = false
         end
@@ -472,6 +484,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         ns.EnableCopyLinks()
         ns.EnableEmojis()
         ns.EnableNameHighlight()
+        ns.EnableChannelAbbrev()
         ns.SetupLinkHook()
         ns.InitHistorySeq()
         ns.RegisterHistoryEvents()
