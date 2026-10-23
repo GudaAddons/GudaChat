@@ -16,14 +16,6 @@ ns.MENU_ITEM_HEIGHT = MENU_ITEM_HEIGHT
 
 local C = ns.Theme.C
 
-local function SetTooltipFontSize(size)
-    if GameTooltipTextLeft1 then
-        local font, _, flags = GameTooltipTextLeft1:GetFont()
-        if font then GameTooltipTextLeft1:SetFont(font, size, flags) end
-    end
-end
-ns.SetTooltipFontSize = SetTooltipFontSize
-
 -- Shows the chat header at once (mouse over one of its controls, a tab starting to blink).
 -- Goes through the header's hover state (ns.ShowChatHeader) so the normal fade-out still
 -- runs when the mouse leaves; setting the alpha alone left the header stuck visible.
@@ -50,7 +42,6 @@ local function CreateIconButton(parent, texturePath, size, tooltip)
         if tooltip then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(tooltip, 1, 1, 1)
-            SetTooltipFontSize(12)
             GameTooltip:Show()
         end
         RevealHeader()
