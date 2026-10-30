@@ -202,6 +202,11 @@ L["ABBR_OFFICER"] = "O"
 L["ABBR_PARTY"] = "P"
 L["ABBR_RAID"] = "R"
 L["ABBR_INSTANCE"] = "I"
+L["SEC_AUTO_SELECT"] = "Auto-select tab"
+L["OPT_AUTO_SELECT"] = "Switch tab on new message"
+L["HINT_AUTO_SELECT"] = "Opens the tab that shows a checked chat type when someone writes in it. Not while typing, on the combat log, or within 10 seconds of the last switch."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "System messages and skill-ups on every tab"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Not on the combat log or the Whispers tab."
 
 ---------------------------------------------------------------------------
 -- Deutsch
@@ -380,6 +385,11 @@ L["ABBR_OFFICER"] = "O"
 L["ABBR_PARTY"] = "Gr"
 L["ABBR_RAID"] = "S"
 L["ABBR_INSTANCE"] = "I"
+L["SEC_AUTO_SELECT"] = "Tab automatisch wählen"
+L["OPT_AUTO_SELECT"] = "Bei neuer Nachricht Tab wechseln"
+L["HINT_AUTO_SELECT"] = "Öffnet den Tab, der eine markierte Chatart zeigt, wenn jemand darin schreibt. Nicht beim Tippen, im Kampflog oder innerhalb von 10 Sekunden nach dem letzten Wechsel."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "Systemmeldungen und Fertigkeitsanstiege in jedem Tab"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Nicht im Kampflog oder im Flüstern-Tab."
 
 ---------------------------------------------------------------------------
 -- Français
@@ -558,6 +568,11 @@ L["ABBR_OFFICER"] = "O"
 L["ABBR_PARTY"] = "Gr"
 L["ABBR_RAID"] = "R"
 L["ABBR_INSTANCE"] = "I"
+L["SEC_AUTO_SELECT"] = "Sélection auto de l'onglet"
+L["OPT_AUTO_SELECT"] = "Changer d'onglet à chaque nouveau message"
+L["HINT_AUTO_SELECT"] = "Ouvre l'onglet qui affiche un type de discussion coché quand quelqu'un y écrit. Pas pendant la saisie, sur le journal de combat ni dans les 10 secondes après le dernier changement."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "Messages système et gains de compétence dans chaque onglet"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Sauf le journal de combat et l'onglet Chuchotements."
 
 ---------------------------------------------------------------------------
 -- Русский
@@ -736,6 +751,11 @@ L["ABBR_OFFICER"] = "О"
 L["ABBR_PARTY"] = "Гр"
 L["ABBR_RAID"] = "Р"
 L["ABBR_INSTANCE"] = "П"
+L["SEC_AUTO_SELECT"] = "Автовыбор вкладки"
+L["OPT_AUTO_SELECT"] = "Переключать вкладку при новом сообщении"
+L["HINT_AUTO_SELECT"] = "Открывает вкладку с отмеченным типом чата, когда кто-то в нём пишет. Не во время набора текста, не на журнале боя и не в течение 10 секунд после последнего переключения."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "Системные сообщения и рост навыков во всех вкладках"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Кроме журнала боя и вкладки шепота."
 
 ---------------------------------------------------------------------------
 -- Español (EU)
@@ -914,6 +934,11 @@ L["ABBR_OFFICER"] = "O"
 L["ABBR_PARTY"] = "G"
 L["ABBR_RAID"] = "B"
 L["ABBR_INSTANCE"] = "E"
+L["SEC_AUTO_SELECT"] = "Selección automática de pestaña"
+L["OPT_AUTO_SELECT"] = "Cambiar de pestaña con cada mensaje nuevo"
+L["HINT_AUTO_SELECT"] = "Abre la pestaña que muestra un tipo de chat marcado cuando alguien escribe en él. No mientras escribes, en el registro de combate ni en los 10 segundos tras el último cambio."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "Mensajes del sistema y subidas de habilidad en todas las pestañas"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Excepto el registro de combate y la pestaña de susurros."
 
 ---------------------------------------------------------------------------
 -- Español (AL)
@@ -1105,6 +1130,11 @@ L["ABBR_OFFICER"] = "O"
 L["ABBR_PARTY"] = "Gr"
 L["ABBR_RAID"] = "R"
 L["ABBR_INSTANCE"] = "I"
+L["SEC_AUTO_SELECT"] = "Seleção automática de aba"
+L["OPT_AUTO_SELECT"] = "Trocar de aba a cada nova mensagem"
+L["HINT_AUTO_SELECT"] = "Abre a aba que mostra um tipo de chat marcado quando alguém escreve nele. Não enquanto você digita, no registro de combate nem nos 10 segundos após a última troca."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "Mensagens do sistema e avanços de perícia em todas as abas"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Exceto o registro de combate e a aba de sussurros."
 
 ---------------------------------------------------------------------------
 -- Italiano
@@ -1283,6 +1313,11 @@ L["ABBR_OFFICER"] = "U"
 L["ABBR_PARTY"] = "Gr"
 L["ABBR_RAID"] = "I"
 L["ABBR_INSTANCE"] = "Is"
+L["SEC_AUTO_SELECT"] = "Selezione automatica scheda"
+L["OPT_AUTO_SELECT"] = "Cambia scheda a ogni nuovo messaggio"
+L["HINT_AUTO_SELECT"] = "Apre la scheda che mostra un tipo di chat selezionato quando qualcuno ci scrive. Non mentre scrivi, sul registro di combattimento o entro 10 secondi dall'ultimo cambio."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "Messaggi di sistema e aumenti di abilità in ogni scheda"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "Tranne il registro di combattimento e la scheda sussurri."
 
 ---------------------------------------------------------------------------
 -- 简体中文
@@ -1461,6 +1496,11 @@ L["ABBR_OFFICER"] = "官"
 L["ABBR_PARTY"] = "队"
 L["ABBR_RAID"] = "团"
 L["ABBR_INSTANCE"] = "副"
+L["SEC_AUTO_SELECT"] = "自动选择标签页"
+L["OPT_AUTO_SELECT"] = "有新消息时切换标签页"
+L["HINT_AUTO_SELECT"] = "当有人在已勾选的聊天类型中发言时，打开显示该类型的标签页。输入时、查看战斗记录时或上次切换后 10 秒内不会切换。"
+L["OPT_SYSTEM_ON_ALL_TABS"] = "在每个标签页显示系统消息和技能提升"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "战斗记录和密语标签页除外。"
 
 ---------------------------------------------------------------------------
 -- 繁體中文
@@ -1639,6 +1679,11 @@ L["ABBR_OFFICER"] = "幹"
 L["ABBR_PARTY"] = "隊"
 L["ABBR_RAID"] = "團"
 L["ABBR_INSTANCE"] = "副"
+L["SEC_AUTO_SELECT"] = "自動選擇分頁"
+L["OPT_AUTO_SELECT"] = "有新訊息時切換分頁"
+L["HINT_AUTO_SELECT"] = "當有人在已勾選的聊天類型中發言時，開啟顯示該類型的分頁。輸入時、檢視戰鬥記錄時或上次切換後 10 秒內不會切換。"
+L["OPT_SYSTEM_ON_ALL_TABS"] = "在每個分頁顯示系統訊息和技能提升"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "戰鬥記錄和密語分頁除外。"
 
 ---------------------------------------------------------------------------
 -- 한국어
@@ -1817,3 +1862,8 @@ L["ABBR_OFFICER"] = "관"
 L["ABBR_PARTY"] = "파"
 L["ABBR_RAID"] = "공"
 L["ABBR_INSTANCE"] = "인"
+L["SEC_AUTO_SELECT"] = "탭 자동 선택"
+L["OPT_AUTO_SELECT"] = "새 메시지가 오면 탭 전환"
+L["HINT_AUTO_SELECT"] = "선택한 대화 종류에 누군가 글을 쓰면 그 종류를 보여 주는 탭을 엽니다. 입력 중, 전투 기록을 보는 중, 마지막 전환 후 10초 이내에는 전환하지 않습니다."
+L["OPT_SYSTEM_ON_ALL_TABS"] = "모든 탭에 시스템 메시지와 숙련도 상승 표시"
+L["HINT_SYSTEM_ON_ALL_TABS"] = "전투 기록과 귓속말 탭은 제외합니다."

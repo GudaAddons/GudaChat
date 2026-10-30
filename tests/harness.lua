@@ -19,6 +19,7 @@ H.FILES = {
     "Core/Emojis.lua",
     "Core/Filters.lua",
     "Core/Abbrev.lua",
+    "Core/TabRouting.lua",
     "Core/Logs.lua",
     "Core/WhisperModel.lua",
 }

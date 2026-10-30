@@ -99,6 +99,16 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 - [ ] Tab names: the tab bar and inline tabs show short names (General → G, a LookingForGroup window → LFG), with the full name on hover. The header label keeps the full name. Whisper windows keep the person's name. A custom name for a window applies at once.
 - [ ] Addon messages in General are not logged as chat, and abbreviated channel lines do not end up in History > Log.
 
+### Auto-select tab and shared System messages
+
+- [ ] Fresh install and upgrade: "System messages and skill-ups on every tab" is on. Every docked tab except the combat log and Whispers now shows online/offline notices, rolls and skill-ups. Right-click → Settings on a tab lists System and Skill.
+- [ ] Turn it off: System/Skill disappear only from tabs that did not have them before (General keeps its own). Turn it on again, make a new tab: it gets them. Close a tab: no errors.
+- [ ] Turn on the Whispers tab with the option on: the Whispers window gets no System/Skill.
+- [ ] Auto-select on, Guild checked, sitting on General or a Trade tab: a guild message from someone else selects the first non-General tab showing Guild (General only when no other tab shows it). Your own `/g` does not move you (the send-side switch still does its own thing).
+- [ ] Within 10 s of any switch, a second checked message does not switch. While typing in the chat input, or while on the combat log, nothing switches; the tab still blinks.
+- [ ] Settings card lists your joined custom channels but not General, Trade, LocalDefense, LookingForGroup. Check one, leave it: the row disappears. Rejoin: it is still checked.
+- [ ] Retail / Anniversary: after a few minutes with both options on, no "secret value … tainted by GudaChat" errors on monster speech or system messages.
+
 ## WoW: Forever only
 
 - [ ] Whisper icon with two-part names ("Given Family"): the person appears once, the reply reaches them, and whispering them from chat marks them read.

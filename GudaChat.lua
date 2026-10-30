@@ -185,6 +185,18 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if type(GudaChatDB.channelAbbrev) ~= "table" then
             GudaChatDB.channelAbbrev = {}
         end
+        if GudaChatDB.autoSelectTab == nil then
+            GudaChatDB.autoSelectTab = false
+        end
+        if type(GudaChatDB.autoSelectTypes) ~= "table" then
+            GudaChatDB.autoSelectTypes = {}
+        end
+        if type(GudaChatDB.autoSelectChannels) ~= "table" then
+            GudaChatDB.autoSelectChannels = {}
+        end
+        if GudaChatDB.systemOnAllTabs == nil then
+            GudaChatDB.systemOnAllTabs = true
+        end
         if GudaChatDB.transparentInput == nil then
             GudaChatDB.transparentInput = false
         end
@@ -498,6 +510,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.whisperTab then
             ns.SetupWhisperFrame()
         end
+        ns.ApplySharedGroups()
         ns.CreateChatHeader(ChatFrame1)
         ns.ApplyIdleText()
         ns.InitWhisperIcon()

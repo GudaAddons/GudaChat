@@ -816,6 +816,9 @@ AddCard("tabs", 10, function(page)
     end)
     ns.whisperTabCheckbox = whisperTab
     card:AddRow(whisperTab)
+    card:AddRow(Toggle(L["OPT_SYSTEM_ON_ALL_TABS"], "systemOnAllTabs", function()
+        ns.ApplySharedGroups()
+    end, L["HINT_SYSTEM_ON_ALL_TABS"]))
     return card
 end)
 
@@ -835,6 +838,60 @@ AddCard("tabs", 30, function(page)
     card:AddRow(NotificationToggle(L["OPT_NOTIFY_TRADE"], "trade"))
     card:AddRow(NotificationToggle(L["OPT_NOTIFY_LFG"], "lfg"))
     card:AddRow(NotificationToggle(L["OPT_NOTIFY_OTHER"], "other"))
+    return card
+end)
+
+local AUTO_SELECT_LABELS = {
+    Guild    = ns.Blizz(GUILD, "Guild"),
+    Officer  = ns.Blizz(OFFICER, "Officer"),
+    Party    = ns.Blizz(PARTY, "Party"),
+    Raid     = ns.Blizz(RAID, "Raid"),
+    Instance = ns.Blizz(INSTANCE_CHAT, "Instance"),
+    Whisper  = ns.Blizz(WHISPER, "Whisper"),
+}
+
+-- The master switch, one row per fixed chat type, then one per joined channel that is
+-- not a server channel. Channel rows are made once per name and collapsed while the
+-- channel is not joined; their setting is kept by name.
+AddCard("tabs", 50, function(page)
+    local card = ns.CreateCard(page, L["SEC_AUTO_SELECT"])
+    card:AddRow(Toggle(L["OPT_AUTO_SELECT"], "autoSelectTab", nil, L["HINT_AUTO_SELECT"]))
+    for _, key in ipairs(ns.AUTO_SELECT_KEYS) do
+        card:AddRow(ns.CreateToggle(AUTO_SELECT_LABELS[key],
+            function() return ns.GetAutoSelectType(key) end,
+            function(value) ns.SetAutoSelectType(key, value) end))
+    end
+
+    local channelRows = {}
+    local function Rebuild()
+        for _, row in pairs(channelRows) do
+            row.collapsed = true
+        end
+        for _, ch in ipairs(ns.JoinedChannels()) do
+            if not ns.IsGlobalChannel(ch.name) then
+                local key = ns.ChannelKey(ch.name)
+                local row = channelRows[key]
+                if not row then
+                    local name = ch.name
+                    row = card:AddRow(ns.CreateToggle(ns.BaseChannelName(name),
+                        function() return ns.GetAutoSelectChannel(name) end,
+                        function(value) ns.SetAutoSelectChannel(name, value) end))
+                    channelRows[key] = row
+                end
+                row.collapsed = false
+            end
+        end
+        card:Relayout()
+        page:Relayout()
+    end
+
+    local watcher = CreateFrame("Frame", nil, card)
+    watcher:RegisterEvent("CHANNEL_UI_UPDATE")
+    watcher:SetScript("OnEvent", function()
+        if card:IsVisible() then Rebuild() end
+    end)
+    card:SetScript("OnShow", Rebuild)
+    Rebuild()
     return card
 end)
 

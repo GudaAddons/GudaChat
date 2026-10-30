@@ -106,6 +106,8 @@ local function InitWhisperFrame(cf, idx)
     cf:SetFading(GudaChatDB.fading or false)
     cf:SetJustifyH("LEFT")
     ApplyWhisperRouting()
+    -- The Whispers tab keeps only whispers: System and Skill come off if GudaChat added them
+    if ns.ApplySharedGroups then ns.ApplySharedGroups() end
     ns.SafeSelectDockFrame(ChatFrame1)
 end
 
@@ -178,13 +180,6 @@ local AUTO_SELECT_EVENTS = {
     CHAT_MSG_WHISPER_INFORM = "WHISPER", CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
 }
 
-local function WindowHasGroup(idx, group)
-    for _, grp in ipairs({ GetChatWindowMessages(idx) }) do
-        if grp == group then return true end
-    end
-    return false
-end
-
 -- An outgoing whisper selects that person's temporary window, else the Whispers tab
 local function SelectWhisperTarget(target)
     if CHAT_FRAMES then
@@ -205,11 +200,11 @@ end
 -- otherwise selects the first docked non-General window that does
 local function SelectWindowForGroup(group)
     local selected = ns.GetUserSelectedFrame()
-    if selected and selected ~= ChatFrame2 and WindowHasGroup(selected:GetID(), group) then return end
+    if selected and selected ~= ChatFrame2 and ns.WindowHasGroup(selected:GetID(), group) then return end
     for i = 3, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
         local tab = _G["ChatFrame" .. i .. "Tab"]
-        if cf and tab and cf.isDocked and tab:IsShown() and WindowHasGroup(i, group) then
+        if cf and tab and cf.isDocked and tab:IsShown() and ns.WindowHasGroup(i, group) then
             ns.SafeSelectDockFrame(cf)
             return
         end
