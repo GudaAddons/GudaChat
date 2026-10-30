@@ -746,6 +746,9 @@ AddCard("messages", 10, function(page)
         UpdatePreview()
     end))
     card:AddRow(Toggle(L["OPT_SHOW_LEVEL"], "showLevel"))
+    if ns.CAN_HIDE_REALMS then
+        card:AddRow(Toggle(L["OPT_HIDE_REALMS"], "hideRealms", nil, L["HINT_HIDE_REALMS"]))
+    end
     card:AddRow(Toggle(L["OPT_COPYABLE_LINKS"], "copyLinks"))
     return card
 end)

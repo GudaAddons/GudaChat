@@ -18,6 +18,7 @@ H.FILES = {
     "Core/Constants.lua",
     "Core/Emojis.lua",
     "Core/Filters.lua",
+    "Core/RealmNames.lua",
     "Core/Abbrev.lua",
     "Core/TabRouting.lua",
     "Core/Logs.lua",

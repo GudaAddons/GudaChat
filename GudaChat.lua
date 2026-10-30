@@ -164,6 +164,9 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         if GudaChatDB.showLevel == nil then
             GudaChatDB.showLevel = false
         end
+        if GudaChatDB.hideRealms == nil then
+            GudaChatDB.hideRealms = false
+        end
         if GudaChatDB.emojis == nil then
             GudaChatDB.emojis = false
         end
@@ -493,6 +496,7 @@ loader:SetScript("OnEvent", function(self, event, arg1)
         end
         ns.ApplyClassColors()
         ns.EnableLevelDisplay()
+        ns.EnableRealmStrip()
         ns.EnableCopyLinks()
         ns.EnableEmojis()
         ns.EnableNameHighlight()

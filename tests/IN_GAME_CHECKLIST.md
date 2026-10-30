@@ -122,6 +122,9 @@ Run `git sync`, then check each client. Keep BugSack/BugGrabber on and look for 
 
 - [ ] URL links in General and whisper windows open the copy popup, and normal item and player links still work (Classic link-click exception).
 - [ ] Settings dropdowns (font, timestamps) open and set their values.
+- [ ] Hide realm names (Messages page, also MoP): a cross-realm player in a battleground, a channel or `/who` system lines shows as `[Name]`. Click the name, then whisper and invite from its menu: both reach that player on their realm. Turn it off: new lines show `Name-Realm` again.
+- [ ] Hide realm names on: after a battleground and a few minutes of chat, no "tainted by GudaChat" or "action blocked" errors (open Chat Configuration once too).
+- [ ] Hide realm names on Retail and Forever: the option is not on the Messages page.
 
 ## Retail only
 

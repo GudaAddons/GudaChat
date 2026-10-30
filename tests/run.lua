@@ -45,6 +45,7 @@ local SUITES = {
     "test_locales",
     "test_names",
     "test_filters",
+    "test_realms",
     "test_emojis",
     "test_logs",
     "test_abbrev",
