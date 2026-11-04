@@ -540,7 +540,7 @@ local function CreateHistoryFrame()
         histSlider:SetValue(maxScroll - offset)
     end
 
-    hooksecurefunc(msgFrame, "SetScrollOffset", SyncHistSlider)
+    ns.OnMessageFrameScroll(msgFrame, SyncHistSlider)
 
     local histTicker = CreateFrame("Frame", nil, f)
     histTicker:SetScript("OnUpdate", function(self, dt)

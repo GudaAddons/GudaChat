@@ -4,12 +4,10 @@ local addonName, ns = ...
 -- Scrollbar
 ---------------------------------------------------------------------------
 
--- Fallback sync period. Scrolling through any ScrollingMessageFrame method updates the bar
--- at once through the hooks below; the ticker only catches changes no method reports,
--- such as new lines growing the scroll range. It is parented to its chat frame, so it
+-- Fallback sync period. Scrolling updates the bar at once through ns.OnMessageFrameScroll
+-- (Core/Constants.lua); the ticker only catches changes it misses. It is parented to its chat frame, so it
 -- stops while the window is hidden.
 local SYNC_INTERVAL = 0.2
-local SCROLL_METHODS = { "ScrollUp", "ScrollDown", "ScrollToTop", "ScrollToBottom", "PageUp", "PageDown" }
 
 local FADE_IN_DURATION = 0.15
 local FADE_OUT_DURATION = 0.25
@@ -66,12 +64,7 @@ local function CreateScrollbar(chatFrame)
         end
     end
 
-    hooksecurefunc(chatFrame, "SetScrollOffset", SyncSlider)
-    for _, method in ipairs(SCROLL_METHODS) do
-        if chatFrame[method] then
-            hooksecurefunc(chatFrame, method, SyncSlider)
-        end
-    end
+    ns.OnMessageFrameScroll(chatFrame, SyncSlider)
 
     local ticker = CreateFrame("Frame", nil, chatFrame)
     local elapsed = 0

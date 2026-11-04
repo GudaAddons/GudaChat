@@ -26,6 +26,29 @@ local function KillFrame(frame)
 end
 ns.KillFrame = KillFrame
 
+-- Calls `callback` after a ScrollingMessageFrame scrolls or redraws.
+-- Never hooksecurefunc the scroll methods (SetScrollOffset, ScrollUp, ...) on Mainline-chat
+-- clients (Retail, Forever): there the frame's public methods are secure delegates generated
+-- from ScrollingMessageFrameSecureMixin, and once an addon hook replaces the frame's own
+-- `SetScrollOffset` field, Blizzard's secure path (`self:SetScrollOffset` in ScrollByAmount,
+-- and ScrollUtil's scroll-bar sync on every redraw) sees nil and throws "attempt to call a
+-- nil value" — mouse-wheel scrolling and every ChatFrame2 redraw error. AddOnDisplayRefreshed
+-- is the public hook Blizzard's own scroll bar uses, and every offset change refreshes the
+-- display. Older clients (Era, Anniversary) lack it and keep the method hooks, which are safe there.
+local SCROLL_HOOK_METHODS = { "SetScrollOffset", "ScrollUp", "ScrollDown", "ScrollToTop", "ScrollToBottom", "PageUp", "PageDown" }
+
+function ns.OnMessageFrameScroll(frame, callback)
+    if frame.AddOnDisplayRefreshedCallback then
+        frame:AddOnDisplayRefreshedCallback(function() callback() end)
+        return
+    end
+    for _, method in ipairs(SCROLL_HOOK_METHODS) do
+        if type(frame[method]) == "function" then
+            hooksecurefunc(frame, method, callback)
+        end
+    end
+end
+
 -- True for a Retail 12 / WoW: Forever "secret" value, which addon code must not read,
 -- compare or concatenate. Clients without secret values have no issecretvalue.
 local HAS_SECRET_CHECK = issecretvalue ~= nil
@@ -338,12 +361,12 @@ ns.SettleChatPosition = SettleChatPosition
 -- leaving Edit Mode, whenever it applies the chat system's anchor, and when its layouts
 -- reload. It also replaces the chat's clamp insets with ones sized to its selection box
 -- (EditModeSystemMixin:UpdateClampOffsets), which stay after Edit Mode closes and can pin
--- the chat into a screen corner. GudaChat's saved position and clamp insets win: each such
--- placement is followed by ReapplyChatFrame1Geometry, and closing Edit Mode re-applies the
--- margins and the position a few times while Blizzard finishes restoring its layout.
--- Dragging the chat inside Edit Mode is the player choosing a new spot, so only that drag
--- unlocks the re-apply and its end is saved as the GudaChat position. Only post-hooks and
--- callbacks are used, so no Blizzard method or field is replaced.
+-- the chat into a screen corner. GudaChat's saved position and clamp insets win: entering
+-- Edit Mode, closing it and every layout reload re-apply the margins and the position (a few
+-- times, while Blizzard finishes restoring its layout). Dragging the chat inside Edit Mode is
+-- the player choosing a new spot, so only that drag unlocks the re-apply and its end is saved
+-- as the GudaChat position. Only events, callbacks and script hooks are used: no Blizzard
+-- method is replaced or post-hooked.
 local EDIT_MODE_EXIT_REAPPLY_DELAYS = { 0, 0.2, 1 }
 
 local editModeDragging = false
@@ -371,13 +394,6 @@ local function RestoreAfterEditMode()
     end
 end
 
-local function RestoreMarginsOutsideEditMode()
-    if IsEditModeActive() then return end
-    C_Timer.After(0, function()
-        if ns.ApplyChatMargins then ns.ApplyChatMargins() end
-    end)
-end
-
 local function OnEditModeDragStart()
     if not IsEditModeActive() then return end
     if ChatFrame1.CanBeMoved and not ChatFrame1:CanBeMoved() then return end
@@ -395,17 +411,17 @@ end
 local function HookEditModeChatPosition()
     if ns.editModeHooked then return end
     ns.editModeHooked = true
-    for _, method in ipairs({ "ApplySystemAnchor", "UpdateSystem" }) do
-        if type(ChatFrame1[method]) == "function" then
-            hooksecurefunc(ChatFrame1, method, ReapplyNextFrame)
-        end
-    end
-    if type(ChatFrame1.UpdateClampOffsets) == "function" then
-        hooksecurefunc(ChatFrame1, "UpdateClampOffsets", RestoreMarginsOutsideEditMode)
-    end
-    if type(ChatFrame1.OnDragStart) == "function" and type(ChatFrame1.OnDragStop) == "function" then
-        hooksecurefunc(ChatFrame1, "OnDragStart", OnEditModeDragStart)
-        hooksecurefunc(ChatFrame1, "OnDragStop", OnEditModeDragStop)
+    -- Never hooksecurefunc ChatFrame1's Edit Mode methods (ApplySystemAnchor, UpdateSystem,
+    -- UpdateClampOffsets, OnDragStart/Stop). On Forever (and other secure-mixin builds) they are
+    -- secure delegates: an addon hook replaces the frame's field and Blizzard's own
+    -- EditModeSystemMixin:UpdateSystem then finds `self:ApplySystemAnchor` nil ("attempt to
+    -- call a nil value", EditModeSystemTemplates.lua). Same trap as ns.OnMessageFrameScroll.
+    -- Anchor/clamp changes are caught by the Edit Mode events and layout watcher below; the
+    -- drag by script hooks on the selection box, which forwards its drags to the chat frame.
+    local selection = ChatFrame1.Selection
+    if selection and selection.HookScript and selection:GetScript("OnDragStart") then
+        selection:HookScript("OnDragStart", OnEditModeDragStart)
+        selection:HookScript("OnDragStop", OnEditModeDragStop)
     end
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("EditMode.Enter", ReapplyNextFrame, ns)
