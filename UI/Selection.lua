@@ -18,13 +18,37 @@ local userSelectedFrame
 -- ChatFrame2 is kept Show()n on modern clients (alpha-toggled) to avoid combat taint.
 -- While transparent it overlaps the visible frame, so it must not intercept mouse input
 -- (a SetAlpha(0) frame still receives mouse wheel/clicks) — tie its mouse to its visibility.
+-- EnableMouse alone is not enough for links: the lines sit in FontStringContainer, which
+-- propagates hyperlinks to the frame, so the invisible combat log kept catching clicks and
+-- hovers meant for the window under it (its unit/spell links open combat-log menus and
+-- tooltips, and [Show Message] or player names below them could not be clicked).
+-- SetHyperlinksEnabled is the switch Blizzard itself uses for uninteractable windows, and
+-- the frame is toplevel (raised on click), so it is also lowered under the visible window.
 local function SetCombatLogVisible(visible)
     if not ChatFrame2 then return end
     ChatFrame2:SetAlpha(visible and 1 or 0)
     ChatFrame2:EnableMouseWheel(visible)
     ChatFrame2:EnableMouse(visible)
+    if ChatFrame2.SetHyperlinksEnabled then
+        ChatFrame2:SetHyperlinksEnabled(visible and not ChatFrame2.isUninteractable)
+    end
+    if visible then
+        ChatFrame2:Raise()
+    else
+        ChatFrame2:Lower()
+    end
 end
 ns.SetCombatLogVisible = SetCombatLogVisible
+
+-- Blizzard's interactable toggle turns hyperlinks back on for every docked window,
+-- including the hidden combat log, so the combat log state is re-applied after it.
+if FCF_SetUninteractable then
+    hooksecurefunc("FCF_SetUninteractable", function(frame)
+        if frame == ChatFrame2 and ns.GetSelectedChatFrame() ~= ChatFrame2 then
+            SetCombatLogVisible(false)
+        end
+    end)
+end
 
 local function IsDocked(dock, cf)
     for _, frame in pairs(dock.DOCKED_CHAT_FRAMES) do
