@@ -105,8 +105,12 @@ local function AttachEditBoxBehaviour(eb, index)
 
     emojiBtn:SetScript("OnEnter", function() emojiIcon:SetAlpha(1) end)
     emojiBtn:SetScript("OnLeave", function() emojiIcon:SetAlpha(0.5) end)
-    emojiBtn:SetScript("OnClick", function()
-        ns.ToggleEmojiPicker(eb)
+    -- On press, not on click: on modern clients the press costs the edit box its focus and
+    -- the box (with this button) can be hidden before a click would complete.
+    emojiBtn:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then
+            ns.ToggleEmojiPicker(eb)
+        end
     end)
     eb.emojiBtn = emojiBtn
 
@@ -133,6 +137,21 @@ local function AttachEditBoxBehaviour(eb, index)
         end
     end)
     eb:HookScript("OnEditFocusLost", function(self)
+        -- A press on the emoji button or the picker took the focus: keep the input and the
+        -- picker up and give the focus back next frame, so the emoji can still be picked.
+        local emojiPress, target = ns.IsEmojiPress(self)
+        if emojiPress then
+            if target == "button" then
+                ns.OpenEmojiPicker(self)
+            end
+            C_Timer.After(0, function()
+                if not self:HasFocus() then
+                    self:Show()
+                    self:SetFocus()
+                end
+            end)
+            return
+        end
         ns.hideHeaderForInput = false
         self:Hide()
         ns.ApplyEditBoxInset(index)

@@ -115,13 +115,13 @@ local function CreateEmojiPicker()
     return f
 end
 
-function ns.ToggleEmojiPicker(editBox)
+-- Opens the picker above (or below) editBox. openedAt lets a toggle in the same frame
+-- (the button press that also cost the edit box its focus) keep it open.
+local function OpenEmojiPicker(editBox)
     local picker = _G["GudaChatEmojiPicker"] or CreateEmojiPicker()
-    if picker:IsShown() then
-        picker:Hide()
-        return
-    end
-
+    -- closedAt: the same press already closed it (the button press fired before the focus loss)
+    if picker:IsShown() or picker.closedAt == GetTime() then return end
+    picker.openedAt = GetTime()
     picker.editBox = editBox
     picker:ClearAllPoints()
     local pos = GudaChatDB and GudaChatDB.inputPosition or "bottom"
@@ -131,6 +131,32 @@ function ns.ToggleEmojiPicker(editBox)
         picker:SetPoint("BOTTOMRIGHT", editBox, "TOPRIGHT", 0, 2)
     end
     picker:Show()
+end
+ns.OpenEmojiPicker = OpenEmojiPicker
+
+function ns.ToggleEmojiPicker(editBox)
+    local picker = _G["GudaChatEmojiPicker"]
+    if picker and picker:IsShown() then
+        if picker.openedAt ~= GetTime() then
+            picker.closedAt = GetTime()
+            picker:Hide()
+        end
+        return
+    end
+    OpenEmojiPicker(editBox)
+end
+
+-- Whether a left-button press is on the emoji button of editBox or on the open picker.
+-- Modern clients take keyboard focus away from the edit box on that press, before the
+-- button's own click runs, so the edit box focus-lost hook uses this to keep both up.
+function ns.IsEmojiPress(editBox)
+    if not (IsMouseButtonDown and IsMouseButtonDown("LeftButton")) then return false end
+    local btn = editBox.emojiBtn
+    -- IsShown, not IsVisible: Blizzard may already have hidden the edit box (its parent)
+    if btn and btn:IsShown() and btn:IsMouseOver() then return true, "button" end
+    local picker = _G["GudaChatEmojiPicker"]
+    if picker and picker:IsShown() and picker:IsMouseOver() then return true, "picker" end
+    return false
 end
 
 ---------------------------------------------------------------------------
